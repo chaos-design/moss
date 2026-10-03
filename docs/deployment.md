@@ -32,7 +32,9 @@ Web 与数据平台可以独立部署。TTS 设计为本机服务；ASR 可本�
 部署边界必须保持不变：
 
 - 浏览器的业务请求只进入同源 Next.js API。
-- 浏览器可以直接连接 ASR，但公网连接必须使用 WSS、Origin 白名单和令牌认证。
+- ASR **服务端**支持公网部署，必须使用 WSS、Origin 白名单和令牌认证；但前端
+  `use-streaming-asr.ts` 的 `validateLocalWebSocketUrl` 只接受回环主机，浏览器当前无法
+  直连公网 ASR。两者不冲突，但不能据此认为公网 ASR 已经可用。
 - 浏览器只访问 TTS Gateway；Audio8 与 CosyVoice 不提供公网入口。
 - 多实例 Next.js 不使用进程内状态完成用户级一致性或共享限流。
 
@@ -154,13 +156,18 @@ NEXT_PUBLIC_FUNASR_SERVICE_URL=ws://127.0.0.1:10095
 loopback WebSocket。浏览器页面使用 HTTPS 时，本机服务需提供受信任的 WSS。连接失败时，
 客户端自动回退到 `5580` 的 SenseVoice，并同步更新浏览器中的引擎选择。
 
-容器构建及完整配置见 [`backend/services/asr/README.md`](../backend/services/asr/README.md)。公网部署必须：
+容器构建及完整配置见 [`backend/services/asr/README.md`](../backend/services/asr/README.md)。ASR 服务端公网部署必须：
 
 1. 由反向代理终止 TLS 并提供 WSS。
 2. 设置精确的 `MOSS_ASR_ALLOWED_ORIGINS`。
 3. 设置 `MOSS_ASR_API_KEY`，客户端在 `start` 控制消息中认证。
 4. 使用 `/health` 作为 readiness 和 health check。
 5. 按 WebSocket 连接横向扩容，避免单容器 CPU 过载。
+
+以上是服务端能力的完整要求。浏览器能否使用这些端点，取决于前端的回环地址限制：
+当前 `validateLocalWebSocketUrl` 会拒绝任何非回环主机，因此这些服务端加固项属于
+预置能力而非可用链路。开放远程 ASR 前需要先修改该校验，并为非回环分支补上令牌
+注入、Origin 校验与失败降级测试。
 
 ## Supabase
 
@@ -285,11 +292,94 @@ pnpm memory:evaluate -- \
 
 ## Vercel
 
-1. 导入仓库并选择 Next.js Framework Preset。
-2. 配置 `.env.example` 中的环境变量。
-3. Build Command 使用 `pnpm build`。
-4. 在部署前运行 `pnpm check` 与 `pnpm test:coverage`。
-5. 将 Vercel 生产域名加入 Supabase Site URL 和 Redirect URLs。
+Vercel 只承载 Next.js Web 与业务 API。ASR、TTS 网关与 sidecar 都不能部署到 Vercel，
+原因见[多服务部署边界](#多服务部署边界)。语音能力由用户本机或独立 GPU 节点提供。
+
+### 项目设置
+
+| 设置项 | 值 | 说明 |
+| --- | --- | --- |
+| Root Directory | `frontend` | 必填，理由见下 |
+| Framework Preset | Next.js | 与 `frontend/vercel.json` 一致 |
+| Install Command | `pnpm install --frozen-lockfile` | 由 `vercel.json` 提供 |
+| Build Command | `pnpm build` | 由 `vercel.json` 提供 |
+| Node.js | 22.x | 由 `frontend/package.json` 的 `engines` 提供 |
+
+Root Directory 必须为 `frontend`，不能改为仓库根。`src/lib/memory/prompt-template.ts`
+通过 `process.cwd()` 定位 `src/lib/memory/prompts`，`next.config.ts` 的
+`outputFileTracingIncludes` 也按 `frontend` 为基准解析。仓库根构建会让运行时找不到
+对话系统 Prompt，`/api/conversation` 在首次调用时抛出 `ENOENT`。`vercel.json` 位于
+`frontend/`，与该设置对应。
+
+仓库只有 `frontend` 一个 workspace 包，`pnpm-lock.yaml` 与 `pnpm-workspace.yaml`
+位于仓库根。Vercel 依赖其 pnpm monorepo 支持向上查找 lockfile 并安装整个 workspace，
+因此 `installCommand` 才能解析到正确的锁文件。若把 Root Directory 改为仓库根，
+`vercel.json` 不会被读取，Vercel 将回退到根目录的 Next.js 检测结果并采用错误的
+Prompt 路径。
+
+`pnpm-workspace.yaml` 的 `allowBuilds` 已批准 `sharp`、`esbuild` 与 `protobufjs` 的构建
+脚本，Vercel 构建无需额外批准。Kokoro、Audio8 与 CosyVoice 的推理运行时全部位于
+Python 服务内，Node 侧不安装 `onnxruntime-node`。
+
+### 环境变量分层
+
+`next.config.ts` 在构建期对 `NEXT_PUBLIC_*` 求值并内联进产物，因此**必须配置在
+Production、Preview 和 Development 三个环境**，只在运行时补充不会生效。
+
+| 变量 | 注入时机 | 是否必需 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 构建期内联 | 必需 |
+| `NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED` | 构建期内联 | 启用 Google 登录时必需 |
+| `NEXT_PUBLIC_DEMO_MODE` | 构建期内联 | 部署环境必须为 `false` 或不设置 |
+| `NEXT_PUBLIC_TTS_SERVICE_URL`、`NEXT_PUBLIC_ASR_SERVICE_URL`、`NEXT_PUBLIC_FUNASR_SERVICE_URL` | 构建期内联 | 保持默认 loopback 值 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_MODEL` | 构建期内联 | 仅旧部署兼容 |
+| `SUPABASE_SERVICE_ROLE_KEY`、`ACCOUNT_DELETION_AUDIT_SECRET` | 运行时服务端 | 账户删除与导出必需 |
+| `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` | 运行时服务端 | 非演示模式必需 |
+| `AI_EMBEDDING_MODEL`、`AI_ALLOWED_BROWSER_MODEL_HOSTS` | 运行时服务端 | 可选 |
+| `MODEL_CONFIG_PRIVATE_KEY_BASE64` | 运行时服务端 | 生产多实例必需 |
+| `MOSS_TTS_*`、`MOSS_ASR_*`、`MOSS_KOKORO_*` | 不适用 | Vercel 上不要配置 |
+
+前三行未配置时，`next build` 仍会成功，但登录、云同步与对话会在运行时报
+`service_not_configured`。构建通过不代表配置正确。
+
+`MOSS_TTS_*` 与 `MOSS_ASR_*` 是 Python 服务的配置，在 Vercel 上设置无任何效果，
+却容易被误当作 Web 层变量。语音地址变量不要改成远程地址：`tts-client.ts` 只接受
+`http:` 且主机为回环地址，`use-streaming-asr.ts` 只接受 `ws:`/`wss:` 且主机为回环
+地址，配置远程域名会在运行时抛错而非静默降级。
+
+### 生产必需检查
+
+1. 生成并配置 `MODEL_CONFIG_PRIVATE_KEY_BASE64`，否则多实例无法解密同一份浏览器
+   模型配置信封。
+2. 确认 `NEXT_PUBLIC_DEMO_MODE` 未开启。演示模式会让 `proxy.ts` 跳过认证校验。
+3. 将 Vercel 生产域名与 `/auth/callback` 加入 Supabase Site URL 与 Redirect URLs。
+4. 部署前在本地运行 `pnpm check` 与 `pnpm test:coverage`。
+
+### 语音服务在 Vercel 部署下的行为
+
+Vercel 部署后，语音功能不会自动可用：
+
+- 文字对话、记忆、复习、跟读评分中的非录音部分正常。
+- ASR 与 TTS 只有在用户本机运行 `pnpm asr:start`、`pnpm tts:gateway` 时可用，
+  浏览器经 HTTPS 页面访问 `http://127.0.0.1:5578` 依赖浏览器的 loopback 豁免。
+- 连接失败时 TTS 回退到浏览器原生 `speechSynthesis`，ASR 保持文字模式。
+
+因此 Vercel 部署不构成语音能力的生产方案。若需要集中的 ASR，必须先解除前端
+`validateLocalWebSocketUrl` 的回环限制，并同时补齐令牌认证、Origin 白名单和租户配额。
+
+### 多服务部署边界
+
+| 组件 | 部署位置 | 依据 |
+| --- | --- | --- |
+| Next.js Web/API | Vercel | 无状态，实例间共享限流在 PostgreSQL |
+| Supabase | 托管 Supabase | Auth、PostgreSQL、Realtime、pgvector |
+| AI Provider | 外部服务 | 仅 Next.js 出站访问 |
+| ASR | 自托管 GPU 节点或用户本机 | 需要模型常驻与长连接 |
+| TTS 网关 | 用户本机 | 前端强制回环校验 |
+| Audio8/CosyVoice sidecar | TTS 网关同机 | 禁止直接公开 |
+
+更详细的组件矩阵、ASR 的 WSS 终止要求与自托管方式见[部署拓扑](#部署拓扑)与
+[语音服务生产化](#语音服务生产化)。
 
 ### Next.js 自托管
 

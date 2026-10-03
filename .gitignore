@@ -29,6 +29,7 @@ backend/services/tts/runtimes/cosyvoice/.modelscope
 backend/services/tts/runtimes/cosyvoice/models
 backend/services/tts/runtimes/cosyvoice/runtime
 .vscode
+.vercel
 
 __pycache__
 .venv
