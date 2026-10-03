@@ -1,0 +1,51 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/.next",
+      "!**/.next-*",
+      "!**/coverage",
+      "!**/next-env.d.ts",
+      "!frontend/src/components/ui",
+      "!backend/services/asr/.venv",
+      "!backend/services/asr/models",
+      "!backend/services/tts/.venv",
+      "!backend/services/tts/models",
+      "!backend/services/tts/runtimes/audio8/.venv",
+      "!backend/services/tts/runtimes/audio8/models",
+      "!backend/services/tts/runtimes/cosyvoice/.venv",
+      "!backend/services/tts/runtimes/cosyvoice/.cache",
+      "!backend/services/tts/runtimes/cosyvoice/.modelscope",
+      "!backend/services/tts/runtimes/cosyvoice/models",
+      "!backend/services/tts/runtimes/cosyvoice/runtime",
+      "!.tmp-*",
+      "!.vscode"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 96
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  }
+}

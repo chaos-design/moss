@@ -1,0 +1,46 @@
+{
+  "name": "moss-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "audio8:setup": "node backend/services/tts/runtimes/audio8/setup.mjs",
+    "audio8:start": "node backend/services/tts/runtimes/audio8/start.mjs",
+    "dev": "pnpm --dir frontend dev",
+    "dev:offline": "node backend/dev.mjs",
+    "build": "pnpm --dir frontend build",
+    "cosyvoice:setup": "node backend/services/tts/runtimes/cosyvoice/setup.mjs",
+    "cosyvoice:start": "node backend/services/tts/runtimes/cosyvoice/start.mjs",
+    "start": "pnpm --dir frontend start",
+    "tts:setup": "node backend/services/tts/setup.mjs",
+    "tts:test": "node backend/services/tts/test.mjs",
+    "tts:gateway": "node backend/services/tts/start-gateway.mjs",
+    "tts:start": "node backend/services/tts/start.mjs",
+    "asr:setup": "node backend/services/asr/setup.mjs",
+    "asr:setup:qwen": "node backend/services/asr/setup.mjs qwen3-asr",
+    "asr:setup:all": "node backend/services/asr/setup.mjs all",
+    "asr:start": "node backend/services/asr/start.mjs",
+    "asr:test": "node backend/services/asr/test.mjs",
+    "db:test": "node --test backend/tests/supabase/*.test.mjs",
+    "db:test:remote": "node --env-file-if-exists=.env.local backend/scripts/validate-supabase-remote.mjs",
+    "db:test:rls": "node --env-file-if-exists=.env.local frontend/scripts/validate-supabase-rls.mjs",
+    "expressions:generate": "node --env-file-if-exists=.env.local frontend/scripts/generate-expression-library.mjs",
+    "memory:backfill": "node --env-file-if-exists=.env.local frontend/scripts/backfill-memory-embeddings.mjs",
+    "memory:evaluate": "node frontend/scripts/evaluate-memory-retrieval.mjs",
+    "memory:test": "node --test backend/tests/memory-evaluation/*.test.mjs",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "pnpm --dir frontend typecheck",
+    "test": "pnpm --dir frontend test && pnpm tts:test && pnpm asr:test && pnpm db:test && pnpm memory:test",
+    "test:coverage": "pnpm --dir frontend test:coverage",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "typescript": "^5.9.2"
+  }
+}

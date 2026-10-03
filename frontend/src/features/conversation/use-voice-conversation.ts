@@ -1,0 +1,412 @@
+"use client"
+
+import { useCallback, useEffect, useReducer, useRef } from "react"
+import { toast } from "sonner"
+import {
+  type ConversationMessage,
+  conversationRuntimeReducer,
+  createConversationRuntimeState,
+  createMessageId,
+  createUserMessage,
+} from "@/features/conversation/conversation-machine"
+import {
+  isConversationAbort,
+  requestConversationReply,
+} from "@/features/conversation/conversation-transport"
+import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
+import { useConversationSessions } from "@/features/conversation/use-conversation-sessions"
+import { useVoiceCallRuntime } from "@/features/conversation/use-voice-call-runtime"
+import { formatCallDuration, normalizeSpeechTranscript } from "@/lib/call-runtime"
+import {
+  analyzeConversationInput,
+  createExpressionValidation,
+} from "@/lib/conversation-feedback"
+import type { ConversationInputMode } from "@/lib/conversation-history"
+import type { ConversationScene } from "@/lib/conversation-scenes"
+import type { ConversationMemoryContextItem, ConversationTurnMemoryInput } from "@/lib/memory"
+
+export type { ConversationMessage } from "@/features/conversation/conversation-machine"
+export type { ConversationVoiceOption } from "@/features/conversation/use-voice-call-runtime"
+export {
+  voiceIdleReminderDelayMs,
+  voiceIdleReminderLimit,
+} from "@/features/conversation/use-voice-call-runtime"
+
+function waitForQuestionWindow(delayMs: number, signal: AbortSignal) {
+  if (delayMs <= 0) {
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", handleAbort)
+      resolve()
+    }, delayMs)
+    const handleAbort = () => {
+      window.clearTimeout(timer)
+      reject(new DOMException("Request aborted", "AbortError"))
+    }
+    signal.addEventListener("abort", handleAbort, { once: true })
+  })
+}
+
+export function useVoiceConversation({
+  scene,
+  memoryContext = [],
+  onTurnComplete,
+}: {
+  scene: ConversationScene
+  memoryContext?: ConversationMemoryContextItem[]
+  onTurnComplete?: (input: ConversationTurnMemoryInput) => void
+}) {
+  const { prefs } = useConversationPrefs()
+  const [runtime, dispatch] = useReducer(
+    conversationRuntimeReducer,
+    scene,
+    createConversationRuntimeState,
+  )
+  const {
+    callActive,
+    callSeconds,
+    callStatus,
+    currentSessionId,
+    draft,
+    history,
+    idlePrompt,
+    liveTranscript,
+    messages,
+    muted,
+    pending,
+    previewingVoice,
+    speakerEnabled,
+  } = runtime
+
+  const {
+    callSecondsRef,
+    deleteSession,
+    findSession,
+    markLocalInteraction,
+    messagesRef,
+    persistSession,
+    resetSession,
+    restoreSession,
+  } = useConversationSessions({
+    currentSessionId,
+    dispatch,
+    initialMessages: messages,
+    resumeWindowMs: prefs.sessionResumeMinutes * 60_000,
+    scene,
+  })
+  const pendingRef = useRef(false)
+  const conversationRequestRef = useRef(0)
+  const conversationAbortRef = useRef<AbortController | null>(null)
+  const submitMessageRef = useRef<
+    (content: string, inputMode?: ConversationInputMode) => Promise<void>
+  >(async () => {})
+
+  const cancelRequest = useCallback(() => {
+    conversationRequestRef.current += 1
+    conversationAbortRef.current?.abort()
+    conversationAbortRef.current = null
+    pendingRef.current = false
+    dispatch({ type: "request-finished" })
+  }, [])
+
+  const {
+    asrEngineOptions,
+    callActiveRef,
+    endCall,
+    endCallWithoutPersisting,
+    interruptAssistant,
+    mutedRef,
+    previewVoice,
+    selectedAsrEngine,
+    selectedVoice,
+    selectAsrEngine,
+    selectVoice,
+    speak,
+    speakingRef,
+    speechPlaybackState,
+    speechRecognitionAvailable,
+    speechRecognitionProgress,
+    startCall: startVoiceCall,
+    startRecognition,
+    toggleMute,
+    toggleSpeaker,
+    voiceOptions,
+  } = useVoiceCallRuntime({
+    callActive,
+    callSecondsRef,
+    cancelRequest,
+    dispatch,
+    messagesRef,
+    pendingRef,
+    persistSession,
+    scene,
+    submitMessageRef,
+    voiceSentenceDelayMs: prefs.voiceSentenceDelayMs,
+  })
+
+  const submitMessage = useCallback(
+    async (rawContent: string, inputMode: ConversationInputMode = "text", retry = false) => {
+      const content = normalizeSpeechTranscript(rawContent)
+      if (!content) {
+        return
+      }
+
+      if (pendingRef.current || speakingRef.current) {
+        interruptAssistant()
+      }
+      const requestId = conversationRequestRef.current + 1
+      conversationRequestRef.current = requestId
+      const abortController = new AbortController()
+      conversationAbortRef.current = abortController
+      pendingRef.current = true
+      dispatch({ type: "request-started" })
+
+      const requestMessages = retry
+        ? messagesRef.current.filter((message) => !message.transient)
+        : [
+            ...messagesRef.current,
+            createUserMessage(content, inputMode, callSecondsRef.current),
+          ]
+      messagesRef.current = requestMessages
+      dispatch({
+        type: "message-committed",
+        messages: requestMessages,
+        clearInput: !retry,
+      })
+      if (!retry) {
+        persistSession(requestMessages)
+      }
+      const localInputAnalysis = analyzeConversationInput(content)
+
+      try {
+        await waitForQuestionWindow(
+          inputMode === "text" ? prefs.consecutiveQuestionDelayMs : 0,
+          abortController.signal,
+        )
+        const result = await requestConversationReply({
+          scene,
+          memoryContext,
+          messages: requestMessages,
+          signal: abortController.signal,
+          tutorMode: prefs.tutorMode,
+        })
+        if (requestId !== conversationRequestRef.current) {
+          return
+        }
+
+        const validation =
+          result.validation ??
+          createExpressionValidation(
+            content,
+            scene.focusPhrases[0]?.[1] ?? "Could you tell me more?",
+            scene.tags[0] ?? "自然交流",
+          )
+        const inputAnalysis = result.inputAnalysis ?? localInputAnalysis
+        const assistantMessage: ConversationMessage = {
+          id: createMessageId("assistant"),
+          role: "assistant",
+          content: result.content,
+          feedbackFor: content,
+          inputAnalysis,
+          translation: result.translation,
+          note: result.recall,
+          timestamp: formatCallDuration(callSecondsRef.current),
+          validation,
+        }
+        const nextMessages = [...messagesRef.current, assistantMessage]
+        messagesRef.current = nextMessages
+        dispatch({ type: "message-committed", messages: nextMessages })
+        persistSession(nextMessages)
+        conversationAbortRef.current = null
+        pendingRef.current = false
+        dispatch({ type: "request-finished" })
+        onTurnComplete?.({
+          sceneId: scene.id,
+          sceneTitle: scene.title,
+          userInput: content,
+          targetExpression:
+            validation.status === "guidance"
+              ? validation.corrected
+              : (scene.focusPhrases[0]?.[1] ?? content),
+          targetLabel:
+            validation.status === "guidance"
+              ? "本轮英文表达"
+              : (scene.focusPhrases[0]?.[0] ?? scene.tags[0] ?? "自然表达"),
+          corrected: validation.corrected,
+          explanation: validation.explanation,
+          accurate: validation.status !== "improve",
+        })
+
+        speak(assistantMessage.content)
+      } catch (error) {
+        if (
+          requestId !== conversationRequestRef.current ||
+          isConversationAbort(error, abortController.signal)
+        ) {
+          return
+        }
+        const errorMessage = error instanceof Error ? error.message : "对话服务暂时不可用"
+        const errorTurn: ConversationMessage = {
+          id: createMessageId("assistant"),
+          role: "assistant",
+          content: errorMessage,
+          translation: "",
+          note: "",
+          timestamp: formatCallDuration(callSecondsRef.current),
+          transient: true,
+          variant: "error",
+        }
+        const nextMessages = [...messagesRef.current, errorTurn]
+        messagesRef.current = nextMessages
+        dispatch({ type: "message-committed", messages: nextMessages })
+        conversationAbortRef.current = null
+        pendingRef.current = false
+        dispatch({ type: "request-finished" })
+        toast.error(errorMessage)
+        if (callActiveRef.current && !mutedRef.current) {
+          startRecognition()
+        }
+      }
+    },
+    [
+      interruptAssistant,
+      memoryContext,
+      onTurnComplete,
+      persistSession,
+      prefs.consecutiveQuestionDelayMs,
+      prefs.tutorMode,
+      scene,
+      speak,
+      startRecognition,
+    ],
+  )
+
+  submitMessageRef.current = submitMessage
+
+  const sendDraft = useCallback(() => {
+    if (callActiveRef.current) {
+      return
+    }
+    void submitMessage(draft, "text")
+  }, [draft, submitMessage])
+
+  const startCall = useCallback(() => {
+    markLocalInteraction()
+    return startVoiceCall()
+  }, [markLocalInteraction, startVoiceCall])
+
+  const retryLastReply = useCallback(() => {
+    const retryMessages = messagesRef.current.filter((message) => !message.transient)
+    const latestUserMessage = retryMessages.findLast((message) => message.role === "user")
+    if (!latestUserMessage) {
+      return
+    }
+    messagesRef.current = retryMessages
+    dispatch({ type: "message-committed", messages: retryMessages })
+    void submitMessage(latestUserMessage.content, latestUserMessage.inputMode ?? "text", true)
+  }, [messagesRef, submitMessage])
+
+  const startNewConversation = useCallback(() => {
+    if (callActiveRef.current) {
+      endCall()
+    } else {
+      interruptAssistant()
+    }
+    resetSession()
+  }, [endCall, interruptAssistant, resetSession])
+
+  const loadConversation = useCallback(
+    (sessionId: string) => {
+      const session = findSession(sessionId)
+      if (!session) {
+        return
+      }
+      if (callActiveRef.current) {
+        endCall()
+      } else {
+        interruptAssistant()
+      }
+      restoreSession(session)
+    },
+    [endCall, findSession, interruptAssistant, restoreSession],
+  )
+
+  const deleteConversation = useCallback(
+    (sessionId: string) => {
+      const deletingCurrentSession = sessionId === currentSessionId
+      if (deletingCurrentSession) {
+        if (callActiveRef.current) {
+          endCallWithoutPersisting()
+        } else {
+          interruptAssistant()
+        }
+      }
+      if (deleteSession(sessionId)) {
+        resetSession(false)
+      }
+    },
+    [
+      currentSessionId,
+      deleteSession,
+      endCallWithoutPersisting,
+      interruptAssistant,
+      resetSession,
+    ],
+  )
+
+  useEffect(
+    () => () => {
+      conversationRequestRef.current += 1
+      conversationAbortRef.current?.abort()
+      conversationAbortRef.current = null
+    },
+    [],
+  )
+
+  const setDraft = useCallback(
+    (nextDraft: string) => {
+      markLocalInteraction()
+      dispatch({ type: "draft-changed", draft: nextDraft })
+    },
+    [markLocalInteraction],
+  )
+
+  return {
+    callActive,
+    callSeconds,
+    callStatus,
+    currentSessionId,
+    deleteConversation,
+    draft,
+    endCall,
+    history,
+    idlePrompt,
+    liveTranscript,
+    loadConversation,
+    messages,
+    muted,
+    pending,
+    previewingVoice,
+    previewVoice,
+    retryLastReply,
+    sendDraft,
+    setDraft,
+    selectedVoice,
+    selectedAsrEngine,
+    selectAsrEngine,
+    selectVoice,
+    speakerEnabled,
+    speechPlaybackState,
+    speechRecognitionAvailable,
+    speechRecognitionProgress,
+    speak,
+    startCall,
+    startNewConversation,
+    toggleMute,
+    toggleSpeaker,
+    voiceOptions,
+    asrEngineOptions,
+  }
+}

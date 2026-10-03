@@ -1,0 +1,64 @@
+// @vitest-environment jsdom
+
+import { cleanup, render, screen } from "@testing-library/react"
+import { SettingsIcon } from "lucide-react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { AppNavigation } from "@/components/app-navigation"
+import { PageHeading } from "@/components/page-heading"
+import { SidebarLearningProgress } from "@/components/workspace-shell"
+import { createDefaultLearningMemory } from "@/lib/memory"
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/workspace/settings",
+}))
+
+afterEach(cleanup)
+
+describe("workspace navigation", () => {
+  it("renders shared page headers without a border", () => {
+    const view = render(
+      <PageHeading
+        eyebrow="Preferences"
+        title="学习配置"
+        description="调整学习和对话偏好。"
+        icon={SettingsIcon}
+        motif="settings"
+      />,
+    )
+
+    const headerClassName = view.container.querySelector("header")?.className
+    expect(headerClassName).not.toContain("border")
+    expect(headerClassName).not.toContain("pb-")
+  })
+
+  it("uses a recognizable settings gear in collapsed navigation", () => {
+    render(<AppNavigation collapsed />)
+
+    const settingsLink = screen.getByRole("link", { name: "偏好设置" })
+
+    expect(settingsLink.querySelector(".lucide-settings")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "地道表达" }).getAttribute("href")).toBe(
+      "/workspace/expressions",
+    )
+  })
+
+  it("summarizes learning progress as average memory strength", () => {
+    const state = createDefaultLearningMemory(new Date("2026-08-29T08:00:00.000Z"))
+    const expectedStrength = Math.round(
+      state.items.reduce((total, item) => total + item.strength, 0) / state.items.length,
+    )
+
+    const view = render(<SidebarLearningProgress collapsed={false} state={state} />)
+
+    expect(screen.getByText("记忆强度")).toBeTruthy()
+    expect(screen.getByText(`${expectedStrength}%`)).toBeTruthy()
+    expect(
+      screen.getByText(`${state.items.length} 条记忆 · ${state.events.length} 次练习`),
+    ).toBeTruthy()
+
+    view.rerender(<SidebarLearningProgress collapsed state={state} />)
+    expect(
+      screen.getByRole("button", { name: `平均记忆强度 ${expectedStrength}%` }),
+    ).toBeTruthy()
+  })
+})

@@ -1,0 +1,30 @@
+import Link from "next/link"
+import { cn } from "@/lib/utils"
+
+export function Brand({
+  href = "/workspace",
+  compact = false,
+  className,
+}: {
+  href?: string
+  compact?: boolean
+  className?: string
+}) {
+  return (
+    <Link
+      href={href}
+      aria-label="Moss 学习首页"
+      className={cn("inline-flex min-h-11 items-center gap-2.5", className)}
+    >
+      <span className="grid size-8 place-items-center rounded-md bg-foreground text-background">
+        <span className="font-serif text-xl leading-none">M</span>
+      </span>
+      <span className={cn("flex flex-col leading-none", compact && "sr-only")}>
+        <strong className="font-serif text-lg font-semibold">Moss</strong>
+        <span className="mt-1 font-mono text-[9px] uppercase text-muted-foreground">
+          Language Lab
+        </span>
+      </span>
+    </Link>
+  )
+}

@@ -1,0 +1,1 @@
+"""Independent CosyVoice inference sidecar."""

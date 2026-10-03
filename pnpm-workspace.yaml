@@ -1,0 +1,8 @@
+packages:
+  - "frontend"
+
+allowBuilds:
+  esbuild: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
