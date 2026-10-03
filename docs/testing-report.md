@@ -20,10 +20,10 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 56 文件，345 测试通过 |
-| TTS unittest | gateway、Audio8、CosyVoice | 15 测试通过 |
-| `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 18 测试通过 |
-| `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 13 测试通过 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 62 文件，384 测试通过 |
+| `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
+| `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
+| `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 14 测试通过 |
 | `pnpm memory:test` | 评估集校验、召回排序、参数网格和学习指标 | 6 测试通过 |
 | `pnpm test:coverage` | 核心学习算法 | 语句/函数/行 100%，分支 94.73% |
 | `pnpm build` | Next.js 路由、打包和服务端边界 | 通过 |
@@ -195,6 +195,27 @@ PUT/DELETE 校验和仓储冲突键。`pnpm check` 通过 382 项前端、15 项
 保留文件选择和模板下载。预检统计压缩为高 `34px` 的单行摘要；移动编辑区
 `clientHeight/scrollHeight` 为 `587/770`，底部操作栏无重叠，页面和弹窗
 `scrollWidth/clientWidth` 均无溢出。
+
+2026-10-03 验证质量门稳定性与 Vercel 部署配置。`pnpm check` 与 `pnpm build` 通过
+384 项前端、15 项 TTS、35 项 ASR、14 项数据库契约和 6 项记忆评估测试。
+
+前端套件此前会在全量运行时随机超时，单次插桩测得工作区组件一次 `getByRole` 查询耗时
+1–2 秒。根因是 jsdom 通过 `getComputedStyle` 解析隐式 ARIA role，且 worker 数按超线程
+分配后内存带宽饱和：单测从 4.9 秒恶化到 20 秒仍超时，全量耗时 158 秒。将
+`maxWorkers` 限制为 2 后 62 个文件全部通过，全量耗时降至 53 秒。本轮未执行浏览器或
+目标硬件验证。
+
+确认「构建通过不代表配置正确」：移走根 `.env.local` 并清空 `NEXT_PUBLIC_SUPABASE_*`、
+`AI_*` 与 `MODEL_CONFIG_PRIVATE_KEY_BASE64` 后 `pnpm build` 仍零错误产出全部 23 个路由。
+恢复配置后，真实 Supabase 主机名出现在 `frontend/.next/static` 的客户端 chunk 中，
+证实 `next.config.ts` 的 `env` 在构建期内联公开变量。已确认 `.next/` 被 `.gitignore`
+覆盖，构建产物未进入提交。
+
+新增 `frontend/vercel.json` 与 `frontend/package.json` 的 `engines`。确认
+`prompt-template.ts` 依赖 `process.cwd()`，且 `route.js.nft.json` 将 Prompt 解析到
+`frontend/src/lib/memory/prompts`，因此 Vercel 的 Root Directory 必须为 `frontend`。
+
+本次未执行真实 Provider、真实语音、远端数据库或跨浏览器验证。
 
 ## 真实服务证据
 
