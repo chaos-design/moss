@@ -1,8 +1,11 @@
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
+// The logo exits to the public landing page from anywhere in the workspace, while the public
+// and auth routes keep learners pointed at the workspace. Defaults to "/" so an omitted href
+// never silently traps someone inside the workspace.
 export function Brand({
-  href = "/workspace",
+  href = "/",
   compact = false,
   className,
 }: {

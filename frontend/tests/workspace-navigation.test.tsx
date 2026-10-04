@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { SettingsIcon } from "lucide-react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AppNavigation } from "@/components/app-navigation"
+import { Brand } from "@/components/brand"
 import { PageHeading } from "@/components/page-heading"
 import { SidebarLearningProgress } from "@/components/workspace-shell"
 import { createDefaultLearningMemory } from "@/lib/memory"
@@ -60,5 +61,19 @@ describe("workspace navigation", () => {
     expect(
       screen.getByRole("button", { name: `平均记忆强度 ${expectedStrength}%` }),
     ).toBeTruthy()
+  })
+
+  it("points the brand out of the workspace so it acts as an exit", () => {
+    render(<Brand />)
+
+    expect(screen.getByRole("link", { name: "Moss 学习首页" }).getAttribute("href")).toBe("/")
+  })
+
+  it("keeps the brand destination overridable per route", () => {
+    render(<Brand href="/workspace" />)
+
+    expect(screen.getByRole("link", { name: "Moss 学习首页" }).getAttribute("href")).toBe(
+      "/workspace",
+    )
   })
 })

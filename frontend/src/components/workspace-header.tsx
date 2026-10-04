@@ -127,7 +127,7 @@ export function WorkspaceHeader() {
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-3 bg-background px-4 md:px-5">
       <div className="w-auto shrink-0 sm:w-56">
-        <Brand />
+        <Brand href="/" />
       </div>
 
       <GlobalSearchDialog />
@@ -218,7 +218,7 @@ export function WorkspaceHeader() {
               <SheetDescription className="sr-only">
                 前往对话、跟读、学习地图和复习页面。
               </SheetDescription>
-              <Brand />
+              <Brand href="/" />
             </SheetHeader>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <AppNavigation />
