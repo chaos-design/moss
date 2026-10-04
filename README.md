@@ -1,5 +1,9 @@
 # Moss
 
+**Memory-driven Optimized Smart Study · 记忆驱动的优化智能学习**
+
+> Fight forgetting with science; make every study count.
+
 Moss 是一个记忆驱动的英语学习工作区。它把场景对话、表达反馈、间隔复习、影子跟读和
 跨场景迁移组织为同一条学习链路，而不是静态课程目录或通用聊天界面。
 
@@ -101,6 +105,7 @@ pnpm tts:start
 | `pnpm test:coverage` | 前端覆盖率 |
 | `pnpm build` | Next.js 生产构建 |
 | `pnpm asr:test` | ASR 单元与协议测试 |
+| `pnpm tts:test` | TTS 网关与 sidecar 单元测试 |
 | `pnpm db:test` | 校验全量与增量 SQL 契约 |
 | `pnpm expressions:generate` | 使用服务端模型配置重新生成内置表达数据 |
 
