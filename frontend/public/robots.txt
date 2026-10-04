@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# llm.txt 是面向语言模型的公开说明，务必允许抓取。
+Allow: /llm.txt

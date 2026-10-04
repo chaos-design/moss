@@ -139,5 +139,8 @@ pnpm tts:start
 | [测试报告](docs/testing-report.md) | 自动化范围、最近结果与剩余风险 |
 | [工程协作规范](AGENTS.md) | 代码边界、命名、测试和完成标准 |
 
+面向语言模型的站点说明位于 [`frontend/public/llm.txt`](frontend/public/llm.txt)，
+部署后可通过 `/llm.txt` 访问。
+
 任务状态记录在 `plans/planned.md`、`plans/in-progress.md`、`plans/blocked.md` 和
 `plans/archived.md`。

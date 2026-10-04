@@ -1,0 +1,71 @@
+# Moss
+
+> Memory-driven Optimized Smart Study（记忆驱动的优化智能学习）—— 一个以长期记忆为核心
+> 的英语学习工作区。它把场景对话、表达反馈、间隔重复、影子跟读和跨场景迁移组织为同一条
+> 学习链路，而不是静态课程目录或通用聊天界面。
+
+Moss 的主张是：语言能力来自"在需要时自然说出"，而不是"看过"。系统记录每次对话中学到的
+表达、犯错的原因和使用的场景，在后续对话、跟读和复习中重新调用这些记忆，并在新的场景
+中迁移使用。
+
+## 站点结构
+
+- [首页](https://moss.example.com/)：产品入口，说明学习闭环与精选场景
+- [登录](https://moss.example.com/login)：邮箱注册与登录，OAuth（需启用 Google Provider）
+- [对话工作区](https://moss.example.com/workspace)：AI 对话、影子跟读、学习地图、智能复习、
+  地道表达库、学习分析、长期记忆、句子列表与偏好设置
+- [隐私政策](https://moss.example.com/privacy)：收集哪些学习数据、存储位置与导出删除方式
+- [服务条款](https://moss.example.com/terms)：适用主体、用户责任与终止条件
+
+以上域名请替换为实际部署地址。
+
+## 核心能力
+
+- **场景对话**：在生活与职场具体任务中进行双语角色扮演，主回复为英文，中文翻译与纠错
+  说明放在独立辅助区域，纠错采用词级高亮而非 Markdown 加粗。
+- **学习记忆**：浏览器本地优先写入，登录后通过 Supabase 同步；冲突按条目标识、较新时间戳、
+  累计量取最大值、迁移目标取并集合并。
+- **间隔重复**：依据记忆强度与作答表现安排复习时间。
+- **影子跟读**：场景预设与生成脚本按说话人分配两个音色，支持角色互换、中文翻译开关与
+  发音评分。原始麦克风音频不持久化。
+- **地道表达库**：内置 900 条中英表达，含含义、语义解释、来源与完整例句；支持 CSV/JSON
+  导入、按用户与场景隔离云同步。
+- **向量检索**：可选的 1536 维 embedding 与 pgvector 检索，不可用时回退到本地长期记忆。
+- **实时语音**：可切换 Qwen3-ASR 与 SenseVoice 识别，Kokoro / Audio8 / CosyVoice 合成。
+
+## 数据与隐私
+
+- 学习记录先写入浏览器本地，登录后才同步到 Supabase。
+- Supabase 提供 Auth、PostgreSQL、Realtime 与 pgvector；所有用户数据表启用 RLS。
+- 原始麦克风音频不持久化；模型配置只保存在浏览器 `moss:model-config:v1`，不进入学习
+  记忆、日志或数据库。
+- 账户数据可在设置页导出与删除。
+- 模型配置信封由服务端 `MODEL_CONFIG_PRIVATE_KEY_BASE64` 加密；服务端密钥不出现在任何
+  `NEXT_PUBLIC_*` 变量中。
+
+## 技术栈
+
+- Next.js 16 App Router、React、TypeScript、Tailwind CSS v4、shadcn/ui（Base UI）
+- Supabase Auth / PostgreSQL / RLS / RPC / Realtime / pgvector
+- Python 语音服务：ASR（SenseVoice、Qwen3-ASR）、TTS 网关（Kokoro）与可选 sidecar
+  （Audio8、CosyVoice）
+
+## 语音服务说明
+
+浏览器端的 TTS 与 ASR 连接地址被限制为回环地址（`localhost`、`127.0.0.1`、`::1`），
+不接受远程域名。因此语音功能需要在用户本机运行对应服务；连接失败时 TTS 回退到浏览器
+原生 `speechSynthesis`，ASR 保持文字模式。
+
+## 自部署
+
+自部署需要 Node.js 22+、pnpm 11+ 与 Python 3.10+。最小 Web 与演示模式：
+
+```bash
+pnpm install
+cp .env.example .env.local
+# 将 NEXT_PUBLIC_DEMO_MODE 设为 true
+pnpm dev
+```
+
+完整语音能力与生产部署步骤见 [仓库 README](https://github.com/chaos-design/moss)。
+以 Apache-2.0 许可证开源。
