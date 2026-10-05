@@ -142,7 +142,8 @@ function SentenceRows({
             : `还没有${kindOptions.find((item) => item.value === filter)?.label}记录`}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          完成对话、复习或跟读后，真实使用过的表达会出现在这里。
+          完成对话、复习、跟读或表达学习后，真实使用过的表达会出现在这里。点击进入练习，
+          练习本身才会更新这条记忆。
         </p>
       </section>
     )

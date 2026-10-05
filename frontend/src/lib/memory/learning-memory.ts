@@ -10,6 +10,7 @@ export type LearningMemoryKind = "expression" | "grammar" | "pronunciation" | "v
  * 新增学习面时只在这里增加一个值，分析、图表与云端契约都从它派生，避免并行枚举漂移。
  */
 export const learningActivityTypes = [
+  "recall",
   "conversation",
   "review",
   "shadowing",
@@ -19,6 +20,7 @@ export const learningActivityTypes = [
 export type LearningActivityType = (typeof learningActivityTypes)[number]
 
 export const learningActivityLabels: Record<LearningActivityType, string> = {
+  recall: "记忆回想",
   conversation: "AI 对话",
   review: "智能复习",
   shadowing: "影子跟读",
@@ -68,6 +70,13 @@ export type LearningMemoryEvent = {
   sceneId: string
   successful: boolean
   occurredAt: string
+  /** `recall` 事件记录的是观察到的尝试，而不是学习者的自评结果。 */
+  recall?: {
+    /** 从看到线索到揭示答案之间的实际思考时长。 */
+    elapsedMs: number
+    /** 揭示答案后学习者是否自行评分。未评分说明这次尝试没有被结论覆盖。 */
+    rated: boolean
+  }
   shadowing?: {
     overallScore: number
     clarityScore: number
@@ -137,6 +146,16 @@ export type ShadowingAttemptMemoryInput = {
   fluencyScore: number
   rhythmScore: number
   durationSeconds: number
+}
+
+/**
+ * 一次真实的回想尝试：看到线索、思考、揭示答案。
+ * 这与自评结果分开记录，因为自评无法证明学习者真的想起了目标表达。
+ */
+export type RecallAttemptMemoryInput = {
+  itemId: string
+  /** 从线索呈现到揭示答案之间的实际思考时长。 */
+  elapsedMs: number
 }
 
 /**
@@ -615,6 +634,7 @@ export function createLearningPlan(
  * 调用方不再各自硬编码 `kind`，因此新增学习面只会增加一个分支。
  */
 export type LearningActivity =
+  | { type: "recall"; input: RecallAttemptMemoryInput }
   | { type: "conversation"; input: ConversationTurnMemoryInput }
   | { type: "review"; input: { itemId: string; rating: RecallRating } }
   | { type: "shadowing"; input: ShadowingAttemptMemoryInput }
@@ -700,6 +720,44 @@ function stripLegacyDueAt(item: LearningMemoryItem) {
 }
 
 /**
+ * 记录一次回想尝试。尝试本身不代表成功，因此不改写强度与间隔：
+ * 强度只由揭示答案后的自评决定，而这里保留了"被想起过"这一事实。
+ * 未评分的尝试同样进入事件流，因此分析页能区分"练过"与"得出结论"。
+ */
+export function recordRecallAttempt(
+  state: LearningMemoryState,
+  input: RecallAttemptMemoryInput,
+  now = new Date(),
+): LearningMemoryState {
+  const item = state.items.find((candidate) => candidate.id === input.itemId)
+  if (!item) {
+    return state
+  }
+
+  const nowIso = now.toISOString()
+  return {
+    ...state,
+    events: appendEvent(
+      state,
+      {
+        type: "recall",
+        itemId: input.itemId,
+        sceneId: item.sourceSceneId,
+        // 观察到的尝试没有成败结论，成功与否留给随后（或缺席）的自评。
+        successful: false,
+        occurredAt: nowIso,
+        recall: {
+          elapsedMs: Math.max(0, Math.round(input.elapsedMs)),
+          rated: false,
+        },
+      },
+      now,
+    ),
+    updatedAt: nowIso,
+  }
+}
+
+/**
  * 词库表达在长期记忆中的稳定身份。词库条目以 `clientId` 为主键，
  * 因此重复学习同一条表达始终命中同一条记忆，跨设备合并后仍然幂等。
  */
@@ -756,24 +814,34 @@ export function recordExpressionStudy(
 }
 
 /**
- * 统一记忆写入入口。对话、复习、跟读与表达学习都在此汇合，
- * 学习面只负责提供活动事实，不再各自实现条目合并与事件追加。
+ * 活动分发的唯一位置。每个活动各自决定"如何找到目标条目、记为成功还是失败、
+ * 强度如何变化、下次何时到期"，共享的条目合并、计数更新与事件追加只发生在
+ * `applyMemoryOutcome` 一处。
+ *
+ * `switch` 的 `default` 分支在类型层面穷尽联合：新增一种活动而未在此登记时，
+ * `never` 断言会失败，编译直接拦住，而不是静默落到某个分支。
  */
 export function recordLearningActivity(
   state: LearningMemoryState,
   activity: LearningActivity,
   now = new Date(),
 ): LearningMemoryState {
-  if (activity.type === "expression") {
-    return recordExpressionStudy(state, activity.input, now)
+  switch (activity.type) {
+    case "recall":
+      return recordRecallAttempt(state, activity.input, now)
+    case "conversation":
+      return recordConversationMemory(state, activity.input, now)
+    case "review":
+      return recordReviewMemory(state, activity.input.itemId, activity.input.rating, now)
+    case "shadowing":
+      return recordShadowingMemory(state, activity.input, now)
+    case "expression":
+      return recordExpressionStudy(state, activity.input, now)
+    default: {
+      const unhandled: never = activity
+      throw new Error(`未处理的学习活动：${JSON.stringify(unhandled)}`)
+    }
   }
-  if (activity.type === "review") {
-    return recordReviewMemory(state, activity.input.itemId, activity.input.rating, now)
-  }
-  if (activity.type === "shadowing") {
-    return recordShadowingMemory(state, activity.input, now)
-  }
-  return recordConversationMemory(state, activity.input, now)
 }
 
 export function recordConversationMemory(

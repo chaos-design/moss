@@ -169,7 +169,7 @@ sequenceDiagram
 type LearningMemoryDocument = {
   id: string
   userId: string
-  // 与本地 LearningActivityType 同源，新增学习面只在这一处扩展
+  // 本地 LearningActivityType 的真子集：recall 尝试没有可检索内容，因此不入库
   sourceType: "conversation" | "review" | "shadowing" | "expression"
   sourceId: string
   sceneId: string

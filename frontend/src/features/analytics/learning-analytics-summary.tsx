@@ -14,7 +14,7 @@ import { createLearningPlan } from "@/lib/memory"
 import { cn } from "@/lib/utils"
 
 export function LearningScoreSummary({ summary }: { summary: LearningAnalyticsSummaryData }) {
-  const items = [
+  const items: Array<{ label: string; value: string; detail?: string }> = [
     {
       label: "表达准确度",
       value:
@@ -23,6 +23,12 @@ export function LearningScoreSummary({ summary }: { summary: LearningAnalyticsSu
     {
       label: "找回成功率",
       value: summary.recallRate === null ? "暂无数据" : `${summary.recallRate}%`,
+    },
+    {
+      label: "主动回想",
+      // 回想尝试与自评分开统计：前者是"被想起过"，后者才有成败结论。
+      detail: `${summary.unresolvedAttempts} 次未确认`,
+      value: String(summary.recallAttempts),
     },
     { label: "活跃记忆", value: String(summary.activeMemoryCount) },
     { label: "有效练习", value: String(summary.eventCount) },
@@ -41,7 +47,9 @@ export function LearningScoreSummary({ summary }: { summary: LearningAnalyticsSu
         >
           <p className="text-xs text-muted-foreground">{item.label}</p>
           <strong className="mt-2 block font-serif text-2xl font-semibold">{item.value}</strong>
-          <p className="mt-1 text-[11px] text-muted-foreground">来自实际学习记录</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {item.detail ?? "来自实际学习记录"}
+          </p>
         </div>
       ))}
     </section>
