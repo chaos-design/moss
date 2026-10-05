@@ -84,6 +84,13 @@ that retrieval happened, while a review rating is the only signal allowed to cha
 interval. Navigation and passive views must never record a learning event, and UI copy must not
 imply otherwise.
 
+Key memory by the fact, not by the action. A retried turn must not read as a second practice and
+a deleted turn must not leave progress behind, so a conversation turn is identified by
+`conversation.turnId` and the event records the exact deltas it applied. `mergeEvents` still
+unions by event ID, which cannot express a deletion arriving from another device: a cross-device
+snapshot may resurrect a locally removed turn's counters. This is a known limit of the current
+merge contract, not a solved problem.
+
 Dependency direction is one-way:
 
 1. `app` composes routes and layouts; it does not own domain rules.

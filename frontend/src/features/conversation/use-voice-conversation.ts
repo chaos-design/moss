@@ -53,10 +53,12 @@ function waitForQuestionWindow(delayMs: number, signal: AbortSignal) {
 export function useVoiceConversation({
   scene,
   memoryContext = [],
+  onForgetTurn,
   onTurnComplete,
 }: {
   scene: ConversationScene
   memoryContext?: ConversationMemoryContextItem[]
+  onForgetTurn?: (turnId: string) => void
   onTurnComplete?: (input: ConversationTurnMemoryInput) => void
 }) {
   const { prefs } = useConversationPrefs()
@@ -185,6 +187,9 @@ export function useVoiceConversation({
       if (!retry) {
         persistSession(requestMessages)
       }
+      // 重试复用同一条学习者消息，因此回合身份在重试前后保持不变。
+      const turnMessage = requestMessages.findLast((message) => message.role === "user")
+      const turnId = turnMessage?.id ?? createMessageId("user")
       const localInputAnalysis = analyzeConversationInput(content)
 
       try {
@@ -231,6 +236,7 @@ export function useVoiceConversation({
         pendingRef.current = false
         dispatch({ type: "request-finished" })
         onTurnComplete?.({
+          turnId,
           sceneId: scene.id,
           sceneTitle: scene.title,
           userInput: content,
@@ -338,9 +344,17 @@ export function useVoiceConversation({
       }
       const removeCount =
         current[index].role === "user" && current[index + 1]?.role === "assistant" ? 2 : 1
+      const removed = current.slice(index, index + removeCount)
       const nextMessages = [...current.slice(0, index), ...current.slice(index + removeCount)]
       messagesRef.current = nextMessages
       dispatch({ type: "message-committed", messages: nextMessages })
+
+      // 记录从转写里删掉，这一轮就不该继续计入记忆，否则进度与记录不一致。
+      for (const message of removed) {
+        if (message.role === "user") {
+          onForgetTurn?.(message.id)
+        }
+      }
 
       if (nextMessages.some((message) => message.role === "user")) {
         persistSession(nextMessages)
@@ -356,6 +370,7 @@ export function useVoiceConversation({
       dispatch,
       interruptAssistant,
       messagesRef,
+      onForgetTurn,
       persistSession,
       resetSession,
     ],

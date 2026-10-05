@@ -77,6 +77,19 @@ export type LearningMemoryEvent = {
     /** 揭示答案后学习者是否自行评分。未评分说明这次尝试没有被结论覆盖。 */
     rated: boolean
   }
+  /**
+   * `conversation` 事件的回合身份与它当时对记忆产生的增量。
+   * 重试改写同一个 `turnId`，删除回合按这些增量精确回滚，
+   * 因此重试不会被计成第二次练习，删除也不会留下残余进度。
+   */
+  conversation?: {
+    turnId: string
+    accurate: boolean
+    strengthDelta: number
+    /** 该回合为其记忆条目贡献的计数，重试与删除都以此为准。 */
+    counters: Pick<LearningMemoryItem, "encounters" | "successfulRecalls" | "lapseCount">
+    practicedExpression: string
+  }
   shadowing?: {
     overallScore: number
     clarityScore: number
@@ -124,6 +137,11 @@ export type ConversationMemoryPayload = {
 }
 
 export type ConversationTurnMemoryInput = {
+  /**
+   * 该回合的稳定身份，使用学习者消息 ID。重试会复用同一个消息，
+   * 因此同一个 `turnId` 永远代表同一轮对话，而不是第二次练习。
+   */
+  turnId: string
   sceneId: string
   sceneTitle: string
   userInput: string
@@ -212,6 +230,11 @@ export function createEmptyLearningMemory(now = new Date()): LearningMemoryState
 
 function clamp(value: number, minimum = 0, maximum = 100) {
   return Math.min(maximum, Math.max(minimum, Math.round(value)))
+}
+
+/** 撤销一次记录后，计数不应为负，否则跨设备合并会把负值传播出去。 */
+function atLeastZero(value: number) {
+  return Math.max(0, Math.round(value))
 }
 
 function offsetIso(now: Date, milliseconds: number) {
@@ -659,6 +682,13 @@ type MemoryOutcome = {
   ignoreWhenMissing?: boolean
   successful: boolean
   strengthDelta: number
+  /**
+   * 计数增量默认为一次接触。撤销一次已记录的回合时传入负值，
+   * 因此"改写"与"撤销"共用同一条路径，不会各自实现一套回滚。
+   */
+  counters?: Partial<
+    Pick<LearningMemoryItem, "encounters" | "successfulRecalls" | "lapseCount">
+  >
   nextReviewAt: string
   reviewSchedule?: Pick<ReviewState, "intervalDays" | "easeFactor" | "repetitions">
 }
@@ -691,13 +721,18 @@ function applyMemoryOutcome(
     lastSeenAt: nowIso,
     nextReviewAt: nowIso,
   }
+  const counterDelta = {
+    encounters: outcome.counters?.encounters ?? 1,
+    successfulRecalls: outcome.counters?.successfulRecalls ?? (outcome.successful ? 1 : 0),
+    lapseCount: outcome.counters?.lapseCount ?? (outcome.successful ? 0 : 1),
+  }
   const nextItem: LearningMemoryItem = {
     ...baseItem,
     ...(outcome.reviewSchedule ?? {}),
     strength: clamp(baseItem.strength + outcome.strengthDelta),
-    encounters: baseItem.encounters + 1,
-    successfulRecalls: baseItem.successfulRecalls + (outcome.successful ? 1 : 0),
-    lapseCount: baseItem.lapseCount + (outcome.successful ? 0 : 1),
+    encounters: atLeastZero(baseItem.encounters + counterDelta.encounters),
+    successfulRecalls: atLeastZero(baseItem.successfulRecalls + counterDelta.successfulRecalls),
+    lapseCount: atLeastZero(baseItem.lapseCount + counterDelta.lapseCount),
     lastSeenAt: nowIso,
     nextReviewAt: outcome.nextReviewAt,
   }
@@ -844,20 +879,30 @@ export function recordLearningActivity(
   }
 }
 
+/**
+ * 写入一个对话回合。
+ *
+ * 回合以 `turnId` 为主键而不是以"动作"为主键：重试复用同一条学习者消息，
+ * 因此这里先撤销该回合此前的贡献再写入新结果，重试不会被计成第二次练习。
+ */
 export function recordConversationMemory(
   state: LearningMemoryState,
   input: ConversationTurnMemoryInput,
   now = new Date(),
 ): LearningMemoryState {
   const nowIso = now.toISOString()
+  // 重试前先清掉上一版结论，让本函数对同一个 turnId 始终是幂等的。
+  const withoutPrevious = forgetConversationTurn(state, input.turnId, now)
   const targetExpression = normalizeMemoryExpression(input.targetExpression)
   const corrected = normalizeMemoryExpression(input.corrected)
+
   if (!targetExpression) {
-    const currentProgress = state.sceneProgress[input.sceneId]
+    // 没有目标表达时只推进场景进度，仍然以回合身份记账以便重试不会重复累加。
+    const currentProgress = withoutPrevious.sceneProgress[input.sceneId]
     return {
-      ...state,
+      ...withoutPrevious,
       sceneProgress: {
-        ...state.sceneProgress,
+        ...withoutPrevious.sceneProgress,
         [input.sceneId]: {
           sceneId: input.sceneId,
           sceneTitle: input.sceneTitle,
@@ -867,9 +912,29 @@ export function recordConversationMemory(
           lastPracticedAt: nowIso,
         },
       },
+      events: [
+        {
+          id: createEventId("conversation", now),
+          type: "conversation",
+          // 没有目标表达时不产生记忆条目，itemId 留空以免被误算成一条活跃记忆。
+          itemId: "",
+          sceneId: input.sceneId,
+          successful: false,
+          occurredAt: nowIso,
+          conversation: {
+            turnId: input.turnId,
+            accurate: input.accurate,
+            strengthDelta: 0,
+            counters: { encounters: 0, successfulRecalls: 0, lapseCount: 0 },
+            practicedExpression: "",
+          },
+        },
+        ...withoutPrevious.events,
+      ],
       updatedAt: nowIso,
     }
   }
+
   const matchingItem = state.items.find(
     (item) =>
       item.answer === targetExpression ||
@@ -882,29 +947,32 @@ export function recordConversationMemory(
     : usedTarget
   const successful = input.accurate && usedRememberedExpression
   const itemId = matchingItem?.id ?? `expression-${input.sceneId}-${state.items.length + 1}`
-  const currentProgress = state.sceneProgress[input.sceneId]
+  const currentProgress = withoutPrevious.sceneProgress[input.sceneId]
   const practicedExpressions = Array.from(
     new Set([...(currentProgress?.practicedExpressions ?? []), targetExpression]),
   )
-  const nextProgress: SceneMemoryProgress = {
-    sceneId: input.sceneId,
-    sceneTitle: input.sceneTitle,
-    turns: (currentProgress?.turns ?? 0) + 1,
-    accurateTurns: (currentProgress?.accurateTurns ?? 0) + (input.accurate ? 1 : 0),
-    practicedExpressions,
-    lastPracticedAt: nowIso,
-  }
-
-  const withProgress: LearningMemoryState = {
-    ...state,
-    sceneProgress: {
-      ...state.sceneProgress,
-      [input.sceneId]: nextProgress,
-    },
+  const strengthDelta = successful ? 9 : input.accurate ? 3 : -12
+  const counters = {
+    encounters: 1,
+    successfulRecalls: successful ? 1 : 0,
+    lapseCount: input.accurate ? 0 : 1,
   }
 
   return applyMemoryOutcome(
-    withProgress,
+    {
+      ...withoutPrevious,
+      sceneProgress: {
+        ...withoutPrevious.sceneProgress,
+        [input.sceneId]: {
+          sceneId: input.sceneId,
+          sceneTitle: input.sceneTitle,
+          turns: (currentProgress?.turns ?? 0) + 1,
+          accurateTurns: (currentProgress?.accurateTurns ?? 0) + (input.accurate ? 1 : 0),
+          practicedExpressions,
+          lastPracticedAt: nowIso,
+        },
+      },
+    },
     {
       itemId,
       create: {
@@ -919,7 +987,8 @@ export function recordConversationMemory(
         transferTargets: [],
       },
       successful,
-      strengthDelta: successful ? 9 : input.accurate ? 3 : -12,
+      strengthDelta,
+      counters,
       nextReviewAt: successful
         ? offsetIso(now, Math.max(2, matchingItem?.intervalDays ?? 1) * dayMs)
         : offsetIso(now, input.accurate ? dayMs : 10 * 60 * 1000),
@@ -930,9 +999,76 @@ export function recordConversationMemory(
       sceneId: input.sceneId,
       successful,
       occurredAt: nowIso,
+      conversation: {
+        turnId: input.turnId,
+        accurate: input.accurate,
+        strengthDelta,
+        counters,
+        practicedExpression: targetExpression,
+      },
     },
     now,
   )
+}
+
+/**
+ * 撤销一个对话回合已经写入的结论：移除它的事件，并把计数与强度按事件记录的
+ * 增量精确回滚。重试和删除共用这一条路径，因此两者的结果一致。
+ */
+export function forgetConversationTurn(
+  state: LearningMemoryState,
+  turnId: string,
+  now = new Date(),
+): LearningMemoryState {
+  const turn = state.events.find(
+    (event) => event.type === "conversation" && event.conversation?.turnId === turnId,
+  )
+  if (!turn?.conversation) {
+    return state
+  }
+
+  const nowIso = now.toISOString()
+  const contribution = turn.conversation
+  const progress = state.sceneProgress[turn.sceneId]
+
+  return {
+    ...state,
+    items: state.items.map((item) => {
+      if (item.id !== turn.itemId) {
+        return item
+      }
+      return {
+        ...item,
+        strength: clamp(item.strength - contribution.strengthDelta),
+        encounters: atLeastZero(item.encounters - contribution.counters.encounters),
+        successfulRecalls: atLeastZero(
+          item.successfulRecalls - contribution.counters.successfulRecalls,
+        ),
+        lapseCount: atLeastZero(item.lapseCount - contribution.counters.lapseCount),
+      }
+    }),
+    sceneProgress: progress
+      ? {
+          ...state.sceneProgress,
+          [turn.sceneId]: {
+            ...progress,
+            turns: atLeastZero(progress.turns - 1),
+            accurateTurns: atLeastZero(
+              progress.accurateTurns - (contribution.accurate ? 1 : 0),
+            ),
+            practicedExpressions: contribution.practicedExpression
+              ? progress.practicedExpressions.filter(
+                  (expression) => expression !== contribution.practicedExpression,
+                )
+              : progress.practicedExpressions,
+            // 该场景可能已经没有记录，保留最后练习时间而不是猜测。
+            lastPracticedAt: progress.lastPracticedAt,
+          },
+        }
+      : state.sceneProgress,
+    events: state.events.filter((event) => event.id !== turn.id),
+    updatedAt: nowIso,
+  }
 }
 
 export function recordReviewMemory(

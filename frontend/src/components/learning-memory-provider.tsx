@@ -16,6 +16,7 @@ import {
   type ConversationTurnMemoryInput,
   createEmptyLearningMemory,
   type ExpressionStudyMemoryInput,
+  forgetConversationTurn,
   getLearningMemoryFingerprint,
   type LearnerProfile,
   type LearningMemorySnapshotRow,
@@ -50,6 +51,7 @@ type LearningMemoryContextValue = {
   lastSyncedAt: string | null
   syncError: string
   recordConversationTurn: (input: ConversationTurnMemoryInput) => void
+  forgetConversationTurn: (turnId: string) => void
   rateReview: (itemId: string, rating: RecallRating) => void
   recordShadowingAttempt: (input: ShadowingAttemptMemoryInput) => void
   recordExpressionStudy: (input: ExpressionStudyMemoryInput) => void
@@ -465,6 +467,15 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
     setState(nextState)
   }, [])
 
+  const forgetTurn = useCallback((turnId: string) => {
+    const nextState = forgetConversationTurn(stateRef.current, turnId)
+    if (nextState === stateRef.current) {
+      return
+    }
+    stateRef.current = nextState
+    setState(nextState)
+  }, [])
+
   const rateReview = useCallback(
     (itemId: string, rating: RecallRating) => {
       const currentItem = stateRef.current.items.find((item) => item.id === itemId)
@@ -613,6 +624,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordShadowingAttempt,
       recordExpressionStudy: recordExpressionStudyAttempt,
       recordRecallAttempt: recordRecallAttemptInMemory,
+      forgetConversationTurn: forgetTurn,
       updateProfile,
       resetMemory,
       syncNow,
@@ -628,6 +640,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordShadowingAttempt,
       recordExpressionStudyAttempt,
       recordRecallAttemptInMemory,
+      forgetTurn,
       updateProfile,
       resetMemory,
       syncNow,
