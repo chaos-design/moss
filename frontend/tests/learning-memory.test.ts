@@ -4,6 +4,7 @@ import {
   createDefaultLearningMemory,
   createEmptyLearningMemory,
   createLearningPlan,
+  forgetConversationTurn,
   getDueMemoryItems,
   getReviewQueue,
   type LearningMemoryState,
@@ -105,6 +106,7 @@ describe("learning memory", () => {
     const next = recordConversationMemory(
       state,
       {
+        turnId: "user-1",
         sceneId: "restaurant",
         sceneTitle: "餐厅用餐",
         userInput: "Could I get the pasta, please?",
@@ -136,6 +138,7 @@ describe("learning memory", () => {
     const next = recordConversationMemory(
       state,
       {
+        turnId: "user-2",
         sceneId: "coffee",
         sceneTitle: "咖啡店点单",
         userInput: "Thank you.",
@@ -149,7 +152,10 @@ describe("learning memory", () => {
     )
 
     expect(next.items).toEqual([])
-    expect(next.events).toEqual([])
+    // 回合本身仍被记录，否则重试会把这一轮计成两次；但它不产生记忆条目。
+    expect(next.events).toEqual([
+      expect.objectContaining({ type: "conversation", itemId: "", sceneId: "coffee" }),
+    ])
     expect(next.sceneProgress.coffee?.turns).toBe(1)
     expect(next.sceneProgress.coffee?.practicedExpressions).toEqual([])
   })
@@ -414,6 +420,127 @@ describe("learning memory", () => {
     expect(afterRating.events.filter((event) => event.type === "review")).toHaveLength(1)
   })
 
+  it("treats a retried turn as the same turn instead of a second practice", () => {
+    const state = createDefaultLearningMemory(now)
+    const turn = {
+      turnId: "user-retry",
+      sceneId: "restaurant",
+      sceneTitle: "餐厅用餐",
+      userInput: "Could I get the pasta, please?",
+      targetExpression: "Could I get ..., please?",
+      targetLabel: "礼貌提出请求",
+      corrected: "Could I get the pasta, please?",
+      explanation: "表达自然。",
+      accurate: true,
+    } as const
+
+    const first = recordConversationMemory(state, turn, now)
+    const retried = recordConversationMemory(first, turn, new Date(now.getTime() + 60_000))
+
+    // 重试改写同一个回合：场景进度不翻倍，条目计数不翻倍，事件也只有一条。
+    expect(retried.sceneProgress.restaurant?.turns).toBe(1)
+    expect(retried.sceneProgress.restaurant?.accurateTurns).toBe(1)
+    expect(retried.items.find((item) => item.id === "polite-request")?.encounters).toBe(
+      first.items.find((item) => item.id === "polite-request")?.encounters,
+    )
+    expect(retried.items.find((item) => item.id === "polite-request")?.strength).toBe(
+      first.items.find((item) => item.id === "polite-request")?.strength,
+    )
+    expect(retried.events.filter((event) => event.type === "conversation")).toHaveLength(1)
+  })
+
+  it("replaces the previous outcome when a retry improves or worsens the turn", () => {
+    const state = createEmptyLearningMemory(now)
+    const accurate = {
+      turnId: "user-turn",
+      sceneId: "coffee",
+      sceneTitle: "咖啡店点单",
+      userInput: "Do you still have this in stock?",
+      targetExpression: "Do you still have this in stock?",
+      targetLabel: "确认库存",
+      corrected: "Do you still have this in stock?",
+      explanation: "表达自然。",
+      accurate: true,
+    } as const
+
+    const first = recordConversationMemory(state, accurate, now)
+    const itemId = first.items[0]?.id
+    const strengthAfterFirst = first.items[0]?.strength
+
+    // 同一回合重试后被判定为需要改进，结论必须整体改写而不是叠加。
+    const retried = recordConversationMemory(
+      first,
+      { ...accurate, accurate: false },
+      new Date(now.getTime() + 60_000),
+    )
+
+    expect(retried.items.find((item) => item.id === itemId)?.strength).toBeLessThan(
+      strengthAfterFirst ?? 100,
+    )
+    expect(retried.sceneProgress.coffee?.turns).toBe(1)
+    expect(retried.sceneProgress.coffee?.accurateTurns).toBe(0)
+    expect(retried.events.filter((event) => event.type === "conversation")).toHaveLength(1)
+  })
+
+  it("rolls a deleted turn back out of memory, progress and the transcript count", () => {
+    const state = createDefaultLearningMemory(now)
+    const recorded = recordConversationMemory(
+      state,
+      {
+        turnId: "user-removed",
+        sceneId: "restaurant",
+        sceneTitle: "餐厅用餐",
+        userInput: "Could I get the pasta, please?",
+        targetExpression: "Could I get ..., please?",
+        targetLabel: "礼貌提出请求",
+        corrected: "Could I get the pasta, please?",
+        explanation: "表达自然。",
+        accurate: true,
+      },
+      now,
+    )
+    const before = recorded.items.find((item) => item.id === "polite-request")
+
+    const forgotten = forgetConversationTurn(recorded, "user-removed", now)
+    const after = forgotten.items.find((item) => item.id === "polite-request")
+
+    // 删除回合后，这一轮不再占用任何记忆或进度。
+    expect(after?.encounters).toBe((before?.encounters ?? 0) - 1)
+    expect(after?.successfulRecalls).toBe((before?.successfulRecalls ?? 0) - 1)
+    expect(after?.strength).toBe((before?.strength ?? 0) - 9)
+    expect(forgotten.sceneProgress.restaurant?.turns).toBe(0)
+    expect(forgotten.sceneProgress.restaurant?.accurateTurns).toBe(0)
+    expect(forgotten.sceneProgress.restaurant?.practicedExpressions).toEqual([])
+    expect(forgotten.events.some((event) => event.type === "conversation")).toBe(false)
+  })
+
+  it("keeps counters non-negative and ignores an unknown turn when forgetting", () => {
+    const state = createEmptyLearningMemory(now)
+
+    expect(forgetConversationTurn(state, "missing-turn", now)).toBe(state)
+
+    const failed = recordConversationMemory(
+      state,
+      {
+        turnId: "user-failed",
+        sceneId: "coffee",
+        sceneTitle: "咖啡店点单",
+        userInput: "I want coffee.",
+        targetExpression: "Could I get a coffee, please?",
+        targetLabel: "礼貌提出请求",
+        corrected: "Could I get a coffee, please?",
+        explanation: "换成更礼貌的说法。",
+        accurate: false,
+      },
+      now,
+    )
+    const forgotten = forgetConversationTurn(failed, "user-failed", now)
+
+    expect(forgotten.items[0]?.encounters).toBe(0)
+    expect(forgotten.items[0]?.lapseCount).toBe(0)
+    expect(forgotten.items[0]?.strength).toBeGreaterThanOrEqual(0)
+  })
+
   it("ignores a recall attempt for an unknown memory item", () => {
     const state = createDefaultLearningMemory(now)
 
@@ -432,6 +559,7 @@ describe("learning memory", () => {
       recordLearningActivity(state, {
         type: "conversation",
         input: {
+          turnId: "user-unified",
           sceneId: "coffee",
           sceneTitle: "咖啡店点单",
           userInput: "Could I get a latte, please?",

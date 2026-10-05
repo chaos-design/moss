@@ -193,7 +193,10 @@ export function createLearningAnalytics(
     currentStage: getCurrentLearningStage(state),
     events,
     summary: {
-      activeMemoryCount: new Set(events.map((event) => event.itemId)).size,
+      // 只统计真正落到记忆条目上的练习，没有目标表达的回合不计入活跃记忆。
+      activeMemoryCount: new Set(
+        events.filter((event) => event.itemId).map((event) => event.itemId),
+      ).size,
       conversationAccuracy: percentage(
         conversationEvents.filter((event) => event.successful).length,
         conversationEvents.length,

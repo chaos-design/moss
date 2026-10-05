@@ -276,7 +276,7 @@ export function ConversationWorkspace({
   const router = useRouter()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
-  const { state, recordConversationTurn } = useLearningMemory()
+  const { forgetConversationTurn, state, recordConversationTurn } = useLearningMemory()
   const { prefs, setPrefs } = useConversationPrefs()
   const memoryContext = useMemo(
     () => buildConversationMemoryContext(state, scene.id, focusMemoryItemId),
@@ -287,6 +287,12 @@ export function ConversationWorkspace({
       recordConversationTurn(input)
     },
     [recordConversationTurn],
+  )
+  const handleForgetTurn = useCallback(
+    (turnId: string) => {
+      forgetConversationTurn(turnId)
+    },
+    [forgetConversationTurn],
   )
   const selectTutorMode = useCallback(
     (tutorMode: TutorMode) => {
@@ -349,6 +355,7 @@ export function ConversationWorkspace({
   } = useVoiceConversation({
     scene,
     memoryContext,
+    onForgetTurn: handleForgetTurn,
     onTurnComplete: handleTurnComplete,
   })
   const { latestInputMode, turnCount } = useMemo(() => {

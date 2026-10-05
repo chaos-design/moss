@@ -249,6 +249,68 @@ describe("useVoiceConversation", () => {
     unmount()
   })
 
+  it("reuses the same turn identity when a reply is retried", async () => {
+    const scene = getConversationScene("coffee")
+    const turnComplete = vi.fn()
+    // 每次请求都要新的 Response：默认 mock 返回同一个实例，第二次读取正文会失败。
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              content: "Would you like it hot or iced?",
+              translation: "你想要热的还是冰的？",
+              recall: "继续使用礼貌请求。",
+            },
+          }),
+          { status: 200 },
+        ),
+    )
+    const { result, unmount } = renderHook(() =>
+      useVoiceConversation({ scene, onTurnComplete: turnComplete }),
+    )
+
+    act(() => result.current.setDraft("Could I get a latte, please?"))
+    act(() => result.current.sendDraft())
+    await waitFor(() => expect(turnComplete).toHaveBeenCalledTimes(1))
+
+    act(() => result.current.retryLastReply())
+    await waitFor(() => expect(turnComplete).toHaveBeenCalledTimes(2))
+
+    const first = turnComplete.mock.calls[0]?.[0]
+    const retried = turnComplete.mock.calls[1]?.[0]
+    // 重试复用同一条学习者消息，因此回合身份必须相同，否则记忆会把重试
+    // 当成第二次练习而重复计数。
+    expect(retried.turnId).toBe(first.turnId)
+    expect(first.turnId).toBeTruthy()
+    unmount()
+  })
+
+  it("reports the removed turn when a learner deletes their own message", async () => {
+    const scene = getConversationScene("coffee")
+    const forgetTurn = vi.fn()
+    const turnComplete = vi.fn()
+    const { result, unmount } = renderHook(() =>
+      useVoiceConversation({ scene, onForgetTurn: forgetTurn, onTurnComplete: turnComplete }),
+    )
+
+    act(() => result.current.setDraft("Could I get a latte, please?"))
+    act(() => result.current.sendDraft())
+    await waitFor(() => expect(turnComplete).toHaveBeenCalledTimes(1))
+
+    const turnId = turnComplete.mock.calls[0]?.[0].turnId
+    const userMessage = result.current.messages.find((message) => message.id === turnId)
+    if (!userMessage) {
+      throw new Error("Missing the learner turn that produced the memory event")
+    }
+
+    act(() => result.current.deleteMessage(userMessage.id))
+
+    // 记录已从转写删除，这一轮必须同步退出记忆，否则进度与转写不一致。
+    expect(forgetTurn).toHaveBeenCalledWith(turnId)
+    unmount()
+  })
+
   it("continues a selected history topic with its complete message context", async () => {
     const { scene, session } = seedHistoricalConversation()
     const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
