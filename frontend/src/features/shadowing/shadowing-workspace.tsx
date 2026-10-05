@@ -239,6 +239,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   }
 
   // 播单句台词。不做“播放中即停止”的切换，切换语义只留在玩家点击的按钮上。
+  // 返回本次是否播完，被停止或被新一句取代时为 false，调用方据此中断串行播放。
   async function speakLine(line: ShadowingDialogueLine) {
     const runId = playbackRunRef.current + 1
     playbackRunRef.current = runId
@@ -254,6 +255,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
         setPlayingLineId(null)
       }
     }
+    return playbackRunRef.current === runId
   }
 
   // 跟读前的提示：让学习者先听到对方上一句，再开始录自己的台词。
@@ -290,11 +292,11 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   }
 
   // 目标句变化时补上对方的提示，构成“提示 -> 跟读 -> 接话”的循环。
+  // 依赖只取目标句 ID 和阶段：剧本、配音与语速变化不应触发额外播放。
   useEffect(() => {
     if (stage === "shadow") {
       cuePartnerTurn(activeLine)
     }
-    // biome-ignore lint/correctness/useExhaustiveDependencies: 只在目标句或阶段变化时补提示
   }, [activeLine.id, stage])
 
   async function playLine(line: ShadowingDialogueLine) {
@@ -312,23 +314,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
       return
     }
 
-    const runId = playbackRunRef.current + 1
-    playbackRunRef.current = runId
-    try {
-      for (const line of dialogue.lines) {
-        if (playbackRunRef.current !== runId) {
-          break
-        }
-        setPlayingLineId(line.id)
-        await speakWithVoice(line.text, activeVoicePair[line.speaker], {
-          speed: Number(speed),
-        })
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "TTS 播放失败")
-    } finally {
-      if (playbackRunRef.current === runId) {
-        setPlayingLineId(null)
+    for (const line of dialogue.lines) {
+      const completed = await speakLine(line)
+      if (!completed) {
+        return
       }
     }
   }
@@ -459,6 +448,15 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                 aria-label="显示中文翻译"
               />
             </div>
+            <div className="flex h-7 items-center gap-2 rounded-lg border bg-background px-2.5">
+              <span className="whitespace-nowrap text-xs text-muted-foreground">自动接话</span>
+              <Switch
+                size="sm"
+                checked={autoTurn}
+                onCheckedChange={setAutoTurn}
+                aria-label="录完后自动播放对方台词"
+              />
+            </div>
             <Button type="button" variant="outline" size="sm" onClick={swapRole}>
               <Repeat2Icon data-icon="inline-start" />
               <span className="whitespace-nowrap">扮演：{roleLabel}</span>
@@ -486,7 +484,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
 
         <Tabs
           value={stage}
-          onValueChange={(value) => setStage(value)}
+          onValueChange={(value) => changeStage(value ?? "listen")}
           className="min-h-0 flex-1 gap-0 overflow-hidden"
         >
           <div className="shrink-0 overflow-x-auto border-y px-4 md:px-5">
@@ -536,7 +534,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                 <Volume2Icon data-icon="inline-start" />
                 播放当前台词
               </Button>
-              <Button className="ml-auto" onClick={() => setStage("shadow")}>
+              <Button className="ml-auto" onClick={() => changeStage("shadow")}>
                 开始角色跟读
                 <ArrowRightIcon data-icon="inline-end" />
               </Button>
@@ -548,7 +546,11 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
               <StageIntroduction
                 eyebrow="Shadow the dialogue"
                 title={`现在扮演${roleLabel}。`}
-                description={`从高亮台词开始，完成后选择下一句。你可以随时互换角色，练习同一段对话的另一侧。`}
+                description={
+                  autoTurn
+                    ? `先听${otherRoleName}说完上一句，再录你自己的那句；录完对方会直接接话。你可以随时互换角色，练习同一段对话的另一侧。`
+                    : "从高亮台词开始，完成后手动选择下一句。你可以随时互换角色，练习同一段对话的另一侧。"
+                }
               />
 
               <DialogueTranscript
@@ -567,7 +569,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
               ) : null}
             </div>
 
-            <div className="shrink-0 border-t border-primary/20 bg-accent/25 px-4 py-3 md:px-6">
+            <section
+              aria-label="跟读操作"
+              className="shrink-0 border-t border-primary/20 bg-accent/25 px-4 py-3 md:px-6"
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-[10px] text-primary">CURRENT LINE</p>
@@ -588,8 +593,25 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                 active={recorder.recording}
                 className="mt-2 h-9"
               />
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                {partnerSpeaking ? (
+                  <>
+                    <Volume2Icon className="size-3.5 text-primary" aria-hidden="true" />
+                    {`${otherRoleName}正在接话，听完就录下一句`}
+                  </>
+                ) : turn.next === null ? (
+                  "这是你在这段对话里的最后一句"
+                ) : autoTurn ? (
+                  `录完后${otherRoleName}会接话，再轮到你`
+                ) : (
+                  "录完后手动选择下一句"
+                )}
+              </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button disabled={recorder.processing} onClick={handleRecord}>
+                <Button
+                  disabled={recorder.processing || playing || speechLoading}
+                  onClick={handleRecord}
+                >
                   {recorder.recording ? (
                     <PauseIcon data-icon="inline-start" />
                   ) : recorder.result ? (
@@ -619,14 +641,14 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                 ) : null}
                 <Button
                   className="ml-auto"
-                  onClick={() => setStage("apply")}
+                  onClick={() => changeStage("apply")}
                   disabled={!recorder.result}
                 >
                   进入应用
                   <ArrowRightIcon data-icon="inline-end" />
                 </Button>
               </div>
-            </div>
+            </section>
           </TabsContent>
 
           <TabsContent value="apply" className="m-0 flex min-h-0 flex-col overflow-hidden">
