@@ -4,6 +4,7 @@ import {
   BookOpenCheckIcon,
   CalendarSyncIcon,
   DatabaseIcon,
+  GithubIcon,
   LightbulbIcon,
   MessageCircleMoreIcon,
   PhoneCallIcon,
@@ -293,6 +294,15 @@ export default function HomePage() {
           <AudioLinesIcon className="size-3.5 text-primary" aria-hidden="true" />
           对话 · 跟读 · 复习
         </span>
+        <Link
+          href="https://github.com/chaos-design/moss"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 rounded-md outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <GithubIcon className="size-3.5 text-primary" aria-hidden="true" />
+          GitHub
+        </Link>
       </footer>
     </main>
   )
