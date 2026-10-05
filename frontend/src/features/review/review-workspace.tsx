@@ -35,13 +35,15 @@ const ratings = [
 }>
 
 export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?: string }) {
-  const { hydrated, state, rateReview, syncStatus } = useLearningMemory()
+  const { hydrated, state, rateReview, recordRecallAttempt, syncStatus } = useLearningMemory()
   const { speak } = useLocalTts()
   const [lockedQueueIds, setLockedQueueIds] = useState<string[] | null>(null)
   const [index, setIndex] = useState(0)
   const [reviewedIds, setReviewedIds] = useState<string[]>([])
   const [revealed, setRevealed] = useState(false)
   const [completed, setCompleted] = useState(false)
+  // 线索呈现的时间戳让回想尝试有真实时长，而不是一个恒为 0 的占位。
+  const [cueShownAt, setCueShownAt] = useState<number | null>(null)
   const [memoryReady, setMemoryReady] = useState(
     () => hydrated && syncStatus !== "connecting" && syncStatus !== "syncing",
   )
@@ -61,11 +63,28 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     : null
   const initialSyncSettled = hydrated && syncStatus !== "connecting" && syncStatus !== "syncing"
 
+  // 切换到任何一条记忆都重新开始计时，让下次尝试的时长只覆盖当前这条。
+  useEffect(() => {
+    setCueShownAt(performance.now())
+  }, [index, lockedQueueIds])
+
   useEffect(() => {
     if (initialSyncSettled) {
       setMemoryReady(true)
     }
   }, [initialSyncSettled])
+
+  function handleReveal() {
+    if (!item) {
+      return
+    }
+    // 揭示答案本身就是一次可观测的回想尝试，与随后给出的自评分开记录。
+    recordRecallAttempt({
+      itemId: item.id,
+      elapsedMs: cueShownAt === null ? 0 : performance.now() - cueShownAt,
+    })
+    setRevealed(true)
+  }
 
   function handleRating(rating: (typeof ratings)[number]) {
     if (!item) {
@@ -260,14 +279,7 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
               ))}
             </div>
           ) : (
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={() => {
-                setLockedQueueIds(queue.map((candidate) => candidate.id))
-                setRevealed(true)
-              }}
-            >
+            <Button className="w-full" size="lg" onClick={handleReveal}>
               显示答案
             </Button>
           )}

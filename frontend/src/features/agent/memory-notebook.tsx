@@ -243,7 +243,8 @@ export function MemoryNotebook() {
 
       <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
         <BookOpenCheckIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-        Moss 不会只记录“学过”。对话、复习和跟读结果会持续改变每条记忆的强度与下一步安排。
+        这里只记录真实发生的练习：对话回合、跟读录音、复习评分、表达学习和回想尝试。
+        点击条目只是前往练习，不会改变任何记忆。
       </div>
     </>
   )

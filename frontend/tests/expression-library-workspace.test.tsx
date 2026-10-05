@@ -4,7 +4,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ExpressionLibraryWorkspace } from "@/features/expressions/expression-library-workspace"
 import { builtInExpressionItems } from "@/lib/expression-library"
-import { createEmptyLearningMemory, createExpressionMemoryItemId, type LearningMemoryState } from "@/lib/memory"
+import {
+  createEmptyLearningMemory,
+  createExpressionMemoryItemId,
+  type LearningMemoryState,
+} from "@/lib/memory"
 
 const fetchMock = vi.fn()
 let intersectionCallback: IntersectionObserverCallback = () => {}

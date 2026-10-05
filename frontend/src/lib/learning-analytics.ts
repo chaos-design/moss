@@ -26,6 +26,10 @@ export type LearningAnalyticsSummary = {
   activeMemoryCount: number
   conversationAccuracy: number | null
   eventCount: number
+  /** 被实际想起过的次数，与"得出结论"的 review 事件分开统计。 */
+  recallAttempts: number
+  /** 揭示答案后没有给出自评的尝试数，代表尚未确认的记忆。 */
+  unresolvedAttempts: number
   recallRate: number | null
 }
 
@@ -162,9 +166,13 @@ export function createLearningAnalytics(
   const events = getLearningAnalyticsEvents(state, period, now)
   const conversationEvents = events.filter((event) => event.type === "conversation")
   const reviewEvents = events.filter((event) => event.type === "review")
+  // 回想尝试记录"被想起过"，自评记录"得出结论"。两者分开才能区分
+  // 练过但没结论（reveal 后未评分）与真正完成的一次回忆。
+  const recallEvents = events.filter((event) => event.type === "recall")
   const failureCounts = new Map<string, number>()
   for (const event of events) {
-    if (!event.successful) {
+    // 回想尝试没有成败结论，把它算作失误会把"练过"误读成"没记住"。
+    if (event.type !== "recall" && !event.successful) {
       failureCounts.set(event.itemId, (failureCounts.get(event.itemId) ?? 0) + 1)
     }
   }
@@ -191,6 +199,9 @@ export function createLearningAnalytics(
         conversationEvents.length,
       ),
       eventCount: events.length,
+      recallAttempts: recallEvents.length,
+      // 揭示答案后没有给出结论的尝试，说明这条记忆还没被真正确认。
+      unresolvedAttempts: recallEvents.filter((event) => event.recall?.rated === false).length,
       recallRate: percentage(
         reviewEvents.filter((event) => event.successful).length,
         reviewEvents.length,

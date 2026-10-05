@@ -102,6 +102,8 @@ describe("learning analytics", () => {
       activeMemoryCount: 1,
       conversationAccuracy: 100,
       eventCount: 2,
+      recallAttempts: 0,
+      unresolvedAttempts: 0,
       recallRate: 0,
     })
     expect(analytics.weakPoints).toEqual([
@@ -137,7 +139,14 @@ describe("learning analytics", () => {
   it("counts every learning activity type, including expression study", () => {
     const state = createAnalyticsState()
     state.events.push(
-      createEvent("today-expression", "expression", "expression-library-item-1", "work", true, 0),
+      createEvent(
+        "today-expression",
+        "expression",
+        "expression-library-item-1",
+        "work",
+        true,
+        0,
+      ),
     )
 
     const analytics = createLearningAnalytics(state, "7d", now)
@@ -151,6 +160,31 @@ describe("learning analytics", () => {
     // 表达学习不是回忆尝试，也不计入对话准确度。
     expect(analytics.summary.recallRate).toBe(0)
     expect(analytics.summary.conversationAccuracy).toBe(100)
+  })
+
+  it("separates a real recall attempt from the self-rated outcome", () => {
+    const state = createAnalyticsState()
+    state.events.push(
+      {
+        ...createEvent("today-recall", "recall", "polite-request", "coffee", false, 0),
+        recall: { elapsedMs: 8_400, rated: false },
+      },
+      {
+        ...createEvent("today-recall-rated", "recall", "in-stock", "shopping", false, 0),
+        recall: { elapsedMs: 2_100, rated: true },
+      },
+    )
+
+    const analytics = createLearningAnalytics(state, "7d", now)
+    const today = analytics.activity.at(-1)
+
+    expect(today?.recall).toBe(2)
+    expect(analytics.summary.recallAttempts).toBe(2)
+    expect(analytics.summary.unresolvedAttempts).toBe(1)
+    // 回想尝试没有成败结论，不进入找回成功率，也不算作失误。
+    expect(analytics.summary.recallRate).toBe(0)
+    expect(analytics.weakPoints.some((point) => point.item.id === "polite-request")).toBe(true)
+    expect(analytics.weakPoints.some((point) => point.item.id === "in-stock")).toBe(false)
   })
 
   it("distinguishes missing samples from a zero-percent result", () => {

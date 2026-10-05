@@ -6,16 +6,30 @@ import {
   createLearningPlan,
   getDueMemoryItems,
   getReviewQueue,
+  type LearningMemoryState,
+  learningActivityTypes,
   normalizeMemoryExpression,
   parseLearningMemory,
   recordConversationMemory,
   recordExpressionStudy,
   recordLearningActivity,
+  recordRecallAttempt,
   recordReviewMemory,
   recordShadowingMemory,
 } from "@/lib/memory"
 
 const now = new Date("2026-08-24T08:00:00.000Z")
+
+function clampScore(value: number) {
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
+function rateMemory(
+  state: LearningMemoryState,
+  input: { itemId: string; rating: "again" | "hard" | "good" | "easy" },
+) {
+  return recordLearningActivity(state, { type: "review", input })
+}
 
 describe("learning memory", () => {
   it("repairs placeholder words that were persisted without a separating space", () => {
@@ -365,6 +379,107 @@ describe("learning memory", () => {
       strength: 53,
     })
     expect(twice.events).toHaveLength(2)
+  })
+
+  it("records a recall attempt without granting the strength a self-rating would", () => {
+    const state = createDefaultLearningMemory(now)
+    const before = state.items.find((item) => item.id === "polite-request")
+
+    const afterAttempt = recordRecallAttempt(state, {
+      itemId: "polite-request",
+      elapsedMs: 8_400,
+    })
+    const afterRating = rateMemory(
+      recordRecallAttempt(afterAttempt, { itemId: "polite-request", elapsedMs: 8_400 }),
+      { itemId: "polite-request", rating: "easy" },
+    )
+
+    const attempted = afterAttempt.items.find((item) => item.id === "polite-request")
+    expect(attempted?.strength).toBe(before?.strength)
+    expect(attempted?.encounters).toBe(before?.encounters)
+    expect(attempted?.intervalDays).toBe(before?.intervalDays)
+    // 观察到的尝试进入事件流，但没有成败结论。
+    expect(afterAttempt.events[0]).toMatchObject({
+      type: "recall",
+      itemId: "polite-request",
+      successful: false,
+      recall: { elapsedMs: 8_400, rated: false },
+    })
+
+    // 自评才决定强度与间隔；回想尝试本身不足以证明想起了目标表达。
+    const rated = afterRating.items.find((item) => item.id === "polite-request")
+    expect(rated?.strength).toBe(clampScore((before?.strength ?? 0) + 20))
+    expect(rated?.intervalDays).toBeGreaterThan(before?.intervalDays ?? 0)
+    expect(afterRating.events.filter((event) => event.type === "recall")).toHaveLength(2)
+    expect(afterRating.events.filter((event) => event.type === "review")).toHaveLength(1)
+  })
+
+  it("ignores a recall attempt for an unknown memory item", () => {
+    const state = createDefaultLearningMemory(now)
+
+    expect(recordRecallAttempt(state, { itemId: "missing", elapsedMs: 1_000 })).toBe(state)
+  })
+
+  it("routes every activity type through the unified writer", () => {
+    const state = createDefaultLearningMemory(now)
+
+    // 判别联合里的每个活动都必须能经由统一入口写入对应事件类型。
+    const written = [
+      recordLearningActivity(state, {
+        type: "recall",
+        input: { itemId: "polite-request", elapsedMs: 3_000 },
+      }),
+      recordLearningActivity(state, {
+        type: "conversation",
+        input: {
+          sceneId: "coffee",
+          sceneTitle: "咖啡店点单",
+          userInput: "Could I get a latte, please?",
+          targetExpression: "Could I get ..., please?",
+          targetLabel: "礼貌提出请求",
+          corrected: "Could I get a latte, please?",
+          explanation: "表达自然。",
+          accurate: true,
+        },
+      }),
+      recordLearningActivity(state, {
+        type: "review",
+        input: { itemId: "clarify-trade-off", rating: "good" },
+      }),
+      recordLearningActivity(state, {
+        type: "shadowing",
+        input: {
+          itemId: "shadowing-polite-request",
+          sceneId: "coffee",
+          sceneTitle: "咖啡店点单",
+          label: "please 发音",
+          sentence: "Could I get a latte, please?",
+          focusWord: "please",
+          overallScore: 82,
+          clarityScore: 84,
+          fluencyScore: 79,
+          rhythmScore: 83,
+          durationSeconds: 4.2,
+        },
+      }),
+      recordLearningActivity(state, {
+        type: "expression",
+        input: {
+          itemId: "expression-library-item-1",
+          sceneCategory: "work",
+          sceneTitle: "职场协作",
+          label: "circle back",
+          phrase: "circle back",
+          explanation: "circle 表示绕回，back 表示稍后再谈。",
+          example: "Let's circle back on this after lunch.",
+          libraryKind: "phrasal-verb",
+        },
+      }),
+    ].map((next) => next.events[0]?.type)
+
+    expect(written).toEqual(["recall", "conversation", "review", "shadowing", "expression"])
+    // 单一词表覆盖所有活动，新增类型不会漏掉任何消费方。
+    expect(new Set(written)).toEqual(new Set(learningActivityTypes))
   })
 
   it("ignores blank expressions instead of creating an empty memory item", () => {

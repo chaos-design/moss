@@ -25,8 +25,10 @@ import {
   type PracticeMemoryWrite,
   parseLearningMemory,
   parseLearningMemorySnapshot,
+  type RecallAttemptMemoryInput,
   recordConversationMemory,
   recordExpressionStudy,
+  recordRecallAttempt,
   recordReviewMemory,
   recordShadowingMemory,
   type ShadowingAttemptMemoryInput,
@@ -51,6 +53,7 @@ type LearningMemoryContextValue = {
   rateReview: (itemId: string, rating: RecallRating) => void
   recordShadowingAttempt: (input: ShadowingAttemptMemoryInput) => void
   recordExpressionStudy: (input: ExpressionStudyMemoryInput) => void
+  recordRecallAttempt: (input: RecallAttemptMemoryInput) => void
   updateProfile: (profile: Partial<LearnerProfile>) => void
   resetMemory: () => void
   syncNow: () => void
@@ -546,6 +549,13 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
     [saveVectorMemory],
   )
 
+  const recordRecallAttemptInMemory = useCallback((input: RecallAttemptMemoryInput) => {
+    // 回想尝试只进本机快照：它没有可语义检索的内容，也不该污染向量记忆。
+    const nextState = recordRecallAttempt(stateRef.current, input)
+    stateRef.current = nextState
+    setState(nextState)
+  }, [])
+
   const recordExpressionStudyAttempt = useCallback(
     (input: ExpressionStudyMemoryInput) => {
       const nextState = recordExpressionStudy(stateRef.current, input)
@@ -602,6 +612,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       rateReview,
       recordShadowingAttempt,
       recordExpressionStudy: recordExpressionStudyAttempt,
+      recordRecallAttempt: recordRecallAttemptInMemory,
       updateProfile,
       resetMemory,
       syncNow,
@@ -616,6 +627,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       rateReview,
       recordShadowingAttempt,
       recordExpressionStudyAttempt,
+      recordRecallAttemptInMemory,
       updateProfile,
       resetMemory,
       syncNow,
