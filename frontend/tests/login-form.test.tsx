@@ -88,4 +88,11 @@ describe("login form", () => {
       "请先完成邮箱验证后再登录",
     )
   })
+
+  it("links the consent sentence to the published legal documents", () => {
+    render(<LoginForm nextPath="/workspace" />)
+    expect(screen.getByText(/继续即表示你同意/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "服务条款" }).getAttribute("href")).toBe("/terms")
+    expect(screen.getByRole("link", { name: "隐私政策" }).getAttribute("href")).toBe("/privacy")
+  })
 })

@@ -1,9 +1,17 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import { useTtsConfig } from "@/features/speech/use-tts-config"
 import { TtsClientPlayer, type TtsSpeakOptions } from "@/lib/tts-client"
-import type { TtsConfig, TtsEngine, TtsVoiceOption } from "@/lib/tts-config"
+import type { TtsConfig, TtsEngine } from "@/lib/tts-config"
+
+// Local engines need an engine id, OpenAI-compatible endpoints only need a voice name. The API
+// transport ignores the engine, so callers pass the saved engine for a stable player identity.
+export type SpeechVoiceTarget = {
+  engine: TtsEngine
+  voice?: string
+}
 
 export type LocalTtsPlaybackState = "idle" | "loading" | "playing"
 
@@ -69,8 +77,11 @@ export function splitSpeechText(text: string, maxLength = 90) {
 
 export function useLocalTts() {
   const { config } = useTtsConfig()
+  const { resolved: speechConfig } = useSpeechConfig()
   const configRef = useRef<TtsConfig>(config)
   configRef.current = config
+  const endpointRef = useRef(speechConfig.tts)
+  endpointRef.current = speechConfig.tts
 
   const playerRef = useRef<TtsClientPlayer | null>(null)
   const playerKeyRef = useRef("")
@@ -81,20 +92,22 @@ export function useLocalTts() {
   const [playbackState, setPlaybackState] = useState<LocalTtsPlaybackState>("idle")
 
   const getPlayer = useCallback((engine: TtsEngine, voice: string) => {
-    const key = `${engine}:${voice}`
+    const endpoint = endpointRef.current
+    const key = `${endpoint.transport}:${endpoint.endpoint}:${engine}:${voice}`
     if (!playerRef.current || playerKeyRef.current !== key) {
       playerRef.current?.stop()
-      playerRef.current = new TtsClientPlayer(engine, voice)
+      playerRef.current = new TtsClientPlayer(engine, voice, endpoint)
       playerKeyRef.current = key
     }
     return playerRef.current
   }, [])
 
   const getPreviewPlayer = useCallback((engine: TtsEngine, voice: string) => {
-    const key = `${engine}:${voice}`
+    const endpoint = endpointRef.current
+    const key = `${endpoint.transport}:${endpoint.endpoint}:${engine}:${voice}`
     if (!previewPlayerRef.current || previewPlayerKeyRef.current !== key) {
       previewPlayerRef.current?.stop()
-      previewPlayerRef.current = new TtsClientPlayer(engine, voice)
+      previewPlayerRef.current = new TtsClientPlayer(engine, voice, endpoint)
       previewPlayerKeyRef.current = key
     }
     return previewPlayerRef.current
@@ -184,12 +197,12 @@ export function useLocalTts() {
   )
 
   const speakWithVoice = useCallback(
-    (text: string, voiceOption: TtsVoiceOption, options: TtsSpeakOptions = {}) =>
+    (text: string, target: SpeechVoiceTarget, options: TtsSpeakOptions = {}) =>
       run(
         text,
         {
-          engine: voiceOption.engine,
-          voice: voiceOption.voice ?? configRef.current.voice,
+          engine: target.engine,
+          voice: target.voice || configRef.current.voice,
         },
         options,
       ),
@@ -199,12 +212,12 @@ export function useLocalTts() {
   // Preview playback has its own players and state. Auditioning a voice must not stop a
   // conversation reply or make unrelated playback controls enter a loading state.
   const previewVoice = useCallback(
-    async (option: TtsVoiceOption, text: string, options: TtsSpeakOptions = {}) => {
+    async (target: SpeechVoiceTarget, text: string, options: TtsSpeakOptions = {}) => {
       const requestId = previewRequestIdRef.current + 1
       previewRequestIdRef.current = requestId
       previewPlayerRef.current?.stop()
-      const voice = option.voice ?? configRef.current.voice
-      await getPreviewPlayer(option.engine, voice).speak(text, {
+      const voice = target.voice || configRef.current.voice
+      await getPreviewPlayer(target.engine, voice).speak(text, {
         ...options,
         voice: voice || undefined,
       })

@@ -9,11 +9,21 @@ import { PageHeading } from "@/components/page-heading"
 import { SidebarLearningProgress } from "@/components/workspace-shell"
 import { createDefaultLearningMemory } from "@/lib/memory"
 
+const linkStatus = vi.hoisted(() => ({ pending: false }))
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/workspace/settings",
 }))
 
-afterEach(cleanup)
+vi.mock("next/link", async () => {
+  const actual = await vi.importActual<typeof import("next/link")>("next/link")
+  return { ...actual, useLinkStatus: () => ({ pending: linkStatus.pending }) }
+})
+
+afterEach(() => {
+  cleanup()
+  linkStatus.pending = false
+})
 
 describe("workspace navigation", () => {
   it("renders shared page headers without a border", () => {
@@ -41,6 +51,21 @@ describe("workspace navigation", () => {
     expect(screen.getByRole("link", { name: "地道表达" }).getAttribute("href")).toBe(
       "/workspace/expressions",
     )
+  })
+
+  it("marks the clicked destination as pending through the link status hook", () => {
+    linkStatus.pending = false
+    const view = render(<AppNavigation />)
+    const settingsLink = screen.getByRole("link", { name: "偏好设置" })
+
+    expect(settingsLink.querySelector(".animate-spin")).toBeNull()
+    expect(settingsLink.textContent).not.toContain("正在打开页面")
+
+    linkStatus.pending = true
+    view.rerender(<AppNavigation />)
+
+    expect(settingsLink.querySelector(".animate-spin")).toBeTruthy()
+    expect(settingsLink.textContent).toContain("正在打开页面")
   })
 
   it("summarizes learning progress as average memory strength", () => {

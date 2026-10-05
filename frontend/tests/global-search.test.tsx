@@ -85,6 +85,19 @@ describe("global search", () => {
     expect(screen.queryByRole("dialog")).toBeNull()
   })
 
+  it("keeps the catalog index out of the idle workspace and builds it on open", async () => {
+    render(<GlobalSearchDialog />)
+
+    // Closed dialog: no result list is built, so the scene catalog stays an unused module.
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(screen.queryByRole("listbox", { name: "搜索结果" })).toBeNull()
+
+    fireEvent.click(screen.getAllByRole("button", { name: "打开全局搜索" })[0] as HTMLElement)
+
+    expect(await screen.findByRole("option", { name: /偏好设置/ })).toBeTruthy()
+    expect(screen.queryByRole("status")).toBeNull()
+  })
+
   it("filters complete results with horizontal category tabs", async () => {
     render(<GlobalSearchDialog />)
 

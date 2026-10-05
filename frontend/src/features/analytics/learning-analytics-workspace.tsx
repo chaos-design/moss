@@ -1,6 +1,7 @@
 "use client"
 
 import { CalendarDaysIcon, ChartSplineIcon } from "lucide-react"
+import dynamic from "next/dynamic"
 import { useEffect, useMemo, useState } from "react"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { PageHeading } from "@/components/page-heading"
@@ -12,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { LearningActivityChart } from "@/features/analytics/learning-activity-chart"
 import {
   LearningNextAction,
   LearningScoreSummary,
@@ -24,6 +24,25 @@ import {
   type LearningAnalyticsPeriod,
   learningAnalyticsPeriods,
 } from "@/lib/learning-analytics"
+
+// Recharts is the heaviest dependency in the app and its data only exists after learning memory
+// hydrates, so the chart resolves after the analytics shell instead of blocking it.
+const LearningActivityChart = dynamic(
+  () =>
+    import("@/features/analytics/learning-activity-chart").then(
+      (module) => module.LearningActivityChart,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="h-[280px] min-h-[280px] w-full animate-pulse rounded-md bg-muted"
+        role="status"
+        aria-label="正在加载趋势图"
+      />
+    ),
+  },
+)
 
 const periodDescriptions: Record<Exclude<LearningAnalyticsPeriod, "stage">, string> = {
   "7d": "最近 7 个自然日",

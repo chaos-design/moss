@@ -24,6 +24,7 @@ import {
 import type { ConversationInputMode } from "@/lib/conversation-history"
 import type { ConversationScene } from "@/lib/conversation-scenes"
 import type { ConversationMemoryContextItem, ConversationTurnMemoryInput } from "@/lib/memory"
+import { describeUserError } from "@/lib/user-error"
 
 export type { ConversationMessage } from "@/features/conversation/conversation-machine"
 export type { ConversationVoiceOption } from "@/features/conversation/use-voice-call-runtime"
@@ -112,13 +113,18 @@ export function useVoiceConversation({
   }, [])
 
   const {
+    apiVoice,
     asrEngineOptions,
+    asrTransport,
     callActiveRef,
     endCall,
     endCallWithoutPersisting,
     interruptAssistant,
     mutedRef,
     previewVoice,
+    selectApiVoice,
+    selectAsrTransport,
+    selectTtsTransport,
     selectedAsrEngine,
     selectedVoice,
     selectAsrEngine,
@@ -132,6 +138,7 @@ export function useVoiceConversation({
     startRecognition,
     toggleMute,
     toggleSpeaker,
+    ttsTransport,
     voiceOptions,
   } = useVoiceCallRuntime({
     callActive,
@@ -189,6 +196,7 @@ export function useVoiceConversation({
           scene,
           memoryContext,
           messages: requestMessages,
+          promptSupplement: prefs.promptSupplement,
           signal: abortController.signal,
           tutorMode: prefs.tutorMode,
         })
@@ -247,7 +255,7 @@ export function useVoiceConversation({
         ) {
           return
         }
-        const errorMessage = error instanceof Error ? error.message : "对话服务暂时不可用"
+        const errorMessage = describeUserError(error, "对话服务暂时不可用，请稍后重试。")
         const errorTurn: ConversationMessage = {
           id: createMessageId("assistant"),
           role: "assistant",
@@ -276,6 +284,7 @@ export function useVoiceConversation({
       onTurnComplete,
       persistSession,
       prefs.consecutiveQuestionDelayMs,
+      prefs.promptSupplement,
       prefs.tutorMode,
       scene,
       speak,
@@ -307,6 +316,50 @@ export function useVoiceConversation({
     dispatch({ type: "message-committed", messages: retryMessages })
     void submitMessage(latestUserMessage.content, latestUserMessage.inputMode ?? "text", true)
   }, [messagesRef, submitMessage])
+
+  /**
+   * Removes one learner turn together with the partner reply it produced.
+   *
+   * Speech recognition mis-hears, and a learner needs to drop the bad transcript and re-send it.
+   * Deleting only the learner turn would leave the transcript showing a partner answer to a
+   * question that is no longer visible, so the pair is removed as a unit and the remaining turns
+   * keep their order. When that empties the session, the session is dropped rather than stored:
+   * `persistSession` deliberately refuses to keep a transcript without a learner turn.
+   */
+  const deleteMessage = useCallback(
+    (messageId: string) => {
+      const current = messagesRef.current
+      const index = current.findIndex((message) => message.id === messageId)
+      if (index === -1) {
+        return
+      }
+      if (callActiveRef.current) {
+        interruptAssistant()
+      }
+      const removeCount =
+        current[index].role === "user" && current[index + 1]?.role === "assistant" ? 2 : 1
+      const nextMessages = [...current.slice(0, index), ...current.slice(index + removeCount)]
+      messagesRef.current = nextMessages
+      dispatch({ type: "message-committed", messages: nextMessages })
+
+      if (nextMessages.some((message) => message.role === "user")) {
+        persistSession(nextMessages)
+      } else if (deleteSession(currentSessionId)) {
+        resetSession(false)
+      }
+      toast.success("已删除该条消息")
+    },
+    [
+      callActiveRef,
+      currentSessionId,
+      deleteSession,
+      dispatch,
+      interruptAssistant,
+      messagesRef,
+      persistSession,
+      resetSession,
+    ],
+  )
 
   const startNewConversation = useCallback(() => {
     if (callActiveRef.current) {
@@ -374,11 +427,14 @@ export function useVoiceConversation({
   )
 
   return {
+    apiVoice,
+    asrTransport,
     callActive,
     callSeconds,
     callStatus,
     currentSessionId,
     deleteConversation,
+    deleteMessage,
     draft,
     endCall,
     history,
@@ -395,7 +451,10 @@ export function useVoiceConversation({
     setDraft,
     selectedVoice,
     selectedAsrEngine,
+    selectApiVoice,
     selectAsrEngine,
+    selectAsrTransport,
+    selectTtsTransport,
     selectVoice,
     speakerEnabled,
     speechPlaybackState,
@@ -406,6 +465,7 @@ export function useVoiceConversation({
     startNewConversation,
     toggleMute,
     toggleSpeaker,
+    ttsTransport,
     voiceOptions,
     asrEngineOptions,
   }

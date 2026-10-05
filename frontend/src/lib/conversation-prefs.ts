@@ -12,25 +12,39 @@ export type SendShortcut = "enter" | "shift-enter"
 export type TutorMode = "natural" | "coach" | "english"
 
 export type ConversationPrefs = {
-  version: 3
+  version: 4
   transcriptLayout: TranscriptLayout
   sendShortcut: SendShortcut
   tutorMode: TutorMode
   sessionResumeMinutes: number
   consecutiveQuestionDelayMs: number
   voiceSentenceDelayMs: number
+  /**
+   * Learner-authored additions to the conversation system prompt.
+   *
+   * The base prompt in `src/lib/memory/prompts` stays immutable: it owns the JSON output contract
+   * that `parseConversationReply` depends on, so a learner who deleted or rewrote that block would
+   * break reply parsing for themselves. This field is appended after the base prompt instead, which
+   * lets a learner steer tone, focus, and correction strictness without being able to corrupt the
+   * wire format. It is a local preference and never enters learning memory.
+   */
+  promptSupplement: string
 }
 
 export const conversationPrefsStorageKey = "moss:conversation-prefs:v1"
 
+/** Bounds the supplement so a pasted document cannot dominate the system prompt or the request. */
+export const promptSupplementMaxLength = 2_000
+
 export const defaultConversationPrefs: ConversationPrefs = {
-  version: 3,
+  version: 4,
   transcriptLayout: "stacked",
   sendShortcut: "enter",
   tutorMode: "coach",
   sessionResumeMinutes: 30,
   consecutiveQuestionDelayMs: 500,
   voiceSentenceDelayMs: 1_800,
+  promptSupplement: "",
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {
@@ -47,6 +61,14 @@ function isSendShortcut(value: unknown): value is SendShortcut {
   return value === "enter" || value === "shift-enter"
 }
 
+function normalizePromptSupplement(value: unknown): string {
+  if (typeof value !== "string") {
+    return defaultConversationPrefs.promptSupplement
+  }
+  // Collapse the line endings a paste can carry so the appended block stays stable, then bound it.
+  return value.replace(/\r\n?/g, "\n").trim().slice(0, promptSupplementMaxLength)
+}
+
 export function isTutorMode(value: unknown): value is TutorMode {
   return value === "natural" || value === "coach" || value === "english"
 }
@@ -59,7 +81,7 @@ export function parseConversationPrefs(value: string | null): ConversationPrefs 
   try {
     const parsed = JSON.parse(value) as Partial<ConversationPrefs>
     return {
-      version: 3,
+      version: 4,
       transcriptLayout: isTranscriptLayout(parsed.transcriptLayout)
         ? parsed.transcriptLayout
         : defaultConversationPrefs.transcriptLayout,
@@ -87,6 +109,7 @@ export function parseConversationPrefs(value: string | null): ConversationPrefs 
         800,
         5_000,
       ),
+      promptSupplement: normalizePromptSupplement(parsed.promptSupplement),
     }
   } catch {
     return defaultConversationPrefs

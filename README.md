@@ -41,6 +41,7 @@ frontend/          Next.js 应用、功能模块、共享组件和前端测试
 backend/services/  ASR、TTS 网关与可选模型 sidecar
 backend/supabase/  PostgreSQL、RLS、RPC 和 Realtime SQL
 backend/tests/     Python 服务测试
+asgi.py            ASR 的 Vercel 构建入口，非服务实现
 docs/              架构、契约、设计、部署和测试文档
 plans/             planned、in-progress、blocked、archived 工程任务
 ```
@@ -85,6 +86,19 @@ pnpm tts:start
 ```
 
 详细安装、硬件与协议说明见 [后端运行手册](backend/README.md)。
+
+### 不启动本机语音服务
+
+语音不是运行前提。在“偏好设置 → 语音服务接入”中，ASR 与 TTS 可以各自选择：
+
+| 接入方式 | 依赖 | 说明 |
+| --- | --- | --- |
+| 本机服务 | `pnpm asr:start` / `pnpm tts:gateway` | 默认；连接失败时当次会话自动回退浏览器语音 |
+| HTTP API | 任意 OpenAI 兼容 `/audio/transcriptions`、`/audio/speech` | 由本站 `/api/speech/*` 转发，默认地址可用 `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_TTS_API_URL` 提供 |
+| 浏览器引擎 | 浏览器 `SpeechRecognition` / `speechSynthesis` | 零服务即可语音对话与播报 |
+
+接入配置与密钥只保存在浏览器 `moss:speech-config:v1`，不进入学习记忆、日志或云端账户。
+契约见 [API 文档](docs/api.md#语音服务接入方式)。
 
 ## 云端配置
 

@@ -17,9 +17,11 @@ type FunAsrServerEvent = {
   is_final_sentence?: boolean
 }
 
-type StreamingAsrOptions = {
+export type StreamingAsrOptions = {
   context?: string
   engine?: AsrEngine
+  // Optional browser-configured override for the loopback streaming service.
+  endpoint?: string
   onEngineFallback?: (engine: AsrEngine) => void
   onError: (error: Error) => void
   onPartial: (text: string) => void
@@ -209,6 +211,7 @@ function supportsStreamingAsr() {
 export function useStreamingAsr({
   context = "",
   engine = defaultAsrEngine,
+  endpoint,
   onEngineFallback,
   onError,
   onPartial,
@@ -291,34 +294,37 @@ export function useStreamingAsr({
     socket?.close()
   }, [])
 
-  const prepareEngine = useCallback(async (targetEngine: AsrEngine) => {
-    if (!supportsStreamingAsr()) {
-      throw new Error("当前浏览器不支持实时语音识别")
-    }
-    setLoadingProgress(0)
-    if (targetEngine === "funasr") {
-      return
-    }
-    const serviceUrl = new URL(getAsrServiceUrl())
-    serviceUrl.protocol = serviceUrl.protocol === "wss:" ? "https:" : "http:"
-    serviceUrl.pathname = "/health"
-    serviceUrl.search = ""
-    try {
-      const response = await fetch(serviceUrl, { cache: "no-store" })
-      const result = (await response.json()) as { ready?: boolean }
-      if (!response.ok || result.ready !== true) {
-        throw new Error("ASR 服务尚未就绪")
+  const prepareEngine = useCallback(
+    async (targetEngine: AsrEngine) => {
+      if (!supportsStreamingAsr()) {
+        throw new Error("当前浏览器不支持实时语音识别")
       }
-      setLoadingProgress(100)
-    } catch (error) {
-      setLoadingProgress(null)
-      throw new Error(
-        error instanceof Error && error.message === "ASR 服务尚未就绪"
-          ? error.message
-          : getAsrConnectionError(targetEngine).message,
-      )
-    }
-  }, [])
+      setLoadingProgress(0)
+      if (targetEngine === "funasr") {
+        return
+      }
+      const serviceUrl = new URL(getAsrServiceUrl(endpoint || undefined))
+      serviceUrl.protocol = serviceUrl.protocol === "wss:" ? "https:" : "http:"
+      serviceUrl.pathname = "/health"
+      serviceUrl.search = ""
+      try {
+        const response = await fetch(serviceUrl, { cache: "no-store" })
+        const result = (await response.json()) as { ready?: boolean }
+        if (!response.ok || result.ready !== true) {
+          throw new Error("ASR 服务尚未就绪")
+        }
+        setLoadingProgress(100)
+      } catch (error) {
+        setLoadingProgress(null)
+        throw new Error(
+          error instanceof Error && error.message === "ASR 服务尚未就绪"
+            ? error.message
+            : getAsrConnectionError(targetEngine).message,
+        )
+      }
+    },
+    [endpoint],
+  )
 
   const prepare = useCallback(() => prepareEngine(engine), [engine, prepareEngine])
 
@@ -340,7 +346,9 @@ export function useStreamingAsr({
       closeSocket()
       connectPromiseRef.current = new Promise<WebSocket>((resolve, reject) => {
         const funAsr = targetEngine === "funasr"
-        const socket = new WebSocket(funAsr ? getFunAsrServiceUrl() : getAsrServiceUrl())
+        const socket = new WebSocket(
+          funAsr ? getFunAsrServiceUrl() : getAsrServiceUrl(endpoint || undefined),
+        )
         socket.binaryType = "arraybuffer"
         socketRef.current = socket
         let started = false
@@ -469,7 +477,7 @@ export function useStreamingAsr({
       })
       return connectPromiseRef.current
     },
-    [closeSocket],
+    [closeSocket, endpoint],
   )
 
   const pause = useCallback(() => {

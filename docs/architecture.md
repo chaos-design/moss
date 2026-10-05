@@ -83,8 +83,10 @@ flowchart TB
     MemoryFacade --> Database
     MemoryFacade --> Vector
     Routes -->|推理| AI[AI Provider]
+    Routes -->|语音转发| VoiceAPI[OpenAI 兼容语音接口]
     Speech -->|WebSocket| ASR
     Speech -->|HTTP| Gateway
+    Speech -->|浏览器引擎| WebSpeech[系统 SpeechRecognition / speechSynthesis]
 ```
 
 | 容器 | 负责 | 不负责 |
@@ -95,6 +97,7 @@ flowchart TB
 | API Route Handlers | 校验、认证、限流、错误映射、用例编排 | UI 状态、直接拼 SQL |
 | Memory Server Facade | RAG 召回、Prompt 组装、长期记忆写入 | HTTP 响应 |
 | Supabase | 身份、RLS 数据、向量检索、跨设备事件 | 浏览器模型密钥 |
+| Speech Gateway Facade | 校验语音端点、构造上游请求、归一化错误 | 学习状态、音频保存 |
 | ASR | PCM 分段和中英识别 | 对话推理、音频保存 |
 | TTS Gateway | 统一合成协议、缓存、引擎路由 | 学习状态 |
 
@@ -122,6 +125,14 @@ flowchart LR
 4. Route Handler 通过门面调用记忆能力，不直接访问 embedding 或向量表。
 5. 跨路由基础设施放在 `frontend/src/lib/server/`，并保持无 React 依赖。
 6. Python sidecar 通过协议隔离，前端不依赖具体模型 SDK。
+7. 浏览器永远不直接请求第三方语音服务：`/api/speech/*` 负责端点校验、限流与转发，浏览器只
+   持有同源路径。语音接入配置属于设备级偏好，不进入学习记忆、日志或 Supabase。
+8. 任何进入界面的错误文案都必须先经过 `frontend/src/lib/user-error.ts`。Route Handler 的
+   `error.message` 经过服务端审校，可直接信任；浏览器 `fetch` 失败、非 JSON 响应体、
+   Supabase SDK 与媒体元素错误都是技术输出，必须归一化后才能进入 toast、对话记录或本机存储。
+   归一化规则见 [`api.md`](api.md#客户端错误文案)。
+9. `app/error.tsx` 与 `app/global-error.tsx` 是渲染期最后一道边界。`global-error.tsx` 替换根布局，
+   因此不得依赖应用外壳：只用内联样式，不导入共享组件或主题变量。
 
 ### 4.1 对话前端边界
 
@@ -191,21 +202,32 @@ flowchart LR
     DSP --> Router{ASR 接入}
     Router --> MossASR[Moss ASR WebSocket]
     Router --> FunASR[FunASR 2-pass WebSocket]
+    Router --> SpeechAPI[POST /api/speech/asr]
+    Router --> WebSpeech[浏览器 SpeechRecognition]
     MossASR --> Final[中英 final 文本]
     FunASR --> Final
+    WebSpeech --> Final
+    SpeechAPI --> Final
     Final --> Conversation[对话用例]
     Conversation --> Reply[英文回复]
     Reply --> Player[TtsClientPlayer]
     Player --> Gateway[TTS Gateway]
+    Player --> SpeechTTS[POST /api/speech/tts]
     Gateway --> Engine{引擎路由}
     Engine --> Kokoro
     Engine --> Audio8
     Engine --> CosyVoice
+    SpeechTTS --> External[OpenAI 兼容语音接口]
     Gateway -. 不可达 .-> BrowserVoice[系统 speechSynthesis]
+    SpeechTTS -. 不可达 .-> BrowserVoice
 ```
 
 语音模式拥有麦克风；文字与语音输入互斥。用户再次开口会取消旧推理和播报。结束通话、
 权限拒绝或组件卸载时必须释放所有媒体轨道。
+
+接入方式由 `moss:speech-config:v1` 决定，`use-asr-session` 是唯一入口：本机流式服务仍是默认，
+连接失败时在当前会话内回退到浏览器引擎；`api` 接入由同源 `/api/speech/*` 代理转发，浏览器
+不直接持有第三方调用路径。
 
 ## 6. 数据所有权
 
@@ -221,6 +243,7 @@ flowchart LR
 | 对话交互偏好 | `moss:conversation-prefs:v1` | 不同步；仅导师模式枚举随推理请求发送 | 导师模式、布局、快捷键、续接与合并/判句时限 |
 | 模型配置集合与当前启用项 | `moss:model-config:v1` | 仅当前启用配置以加密信封进入同源推理 API | 禁止写入数据库和日志 |
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
+| 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase |
 | 跟读评分 | 学习记忆事件 | Supabase 快照与 `shadowing_attempts` | 保存声学分数，不保存录音 |
 | 长期向量记忆 | Supabase `learning_memory_documents` | 对话、复习、跟读经服务端写入；旧快照由管理员 CLI 幂等回填；RPC 召回 | RLS 用户隔离 |
 | 账户删除审计 | Supabase `account_deletion_audits` | 仅 server-only 管理员客户端写入 | 只保留 HMAC 用户指纹和聚合计数，不保留邮箱或学习内容 |
@@ -237,6 +260,9 @@ flowchart LR
   服务端只在当前请求内解密。
 - 推理 URL 只允许公网 HTTPS，开发环境额外允许 loopback；生产环境的浏览器自带模型主机
   受显式白名单约束，且 Provider 请求不跟随重定向。
+- `/api/speech/asr` 与 `/api/speech/tts` 沿用同一端点策略，生产环境额外受
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单约束；浏览器传入的语音密钥只在当次转发中使用，
+  不落盘、不记录、不返回客户端。上游请求 30 秒超时且不跟随重定向。
 - 认证 API 通过 Supabase `check_rate_limit` 按 `auth.uid()` 和固定 bucket 执行跨实例原子
   限流；额度与窗口由数据库决定，底层表不授予应用用户权限。RPC 不可用时，公共服务端
   模型请求拒绝继续；演示模式与携带加密 BYOK 配置的推理请求使用容量有界的进程内限流。
@@ -251,8 +277,8 @@ flowchart LR
 | 快照同步失败 | 保留本地写入，展示离线或同步错误状态 |
 | embedding/RPC 失败 | 使用客户端候选记忆继续对话 |
 | AI provider 失败 | 返回稳定错误码，不保存失败回合为长期记忆 |
-| ASR 不可用或授权拒绝 | 保持文字模式 |
-| TTS 网关不可达 | 回退浏览器 `speechSynthesis` |
+| ASR 不可用或授权拒绝 | 会话内自动回退浏览器语音识别；浏览器不支持时保持文字模式 |
+| TTS 网关或 API 不可达 | 回退浏览器 `speechSynthesis` |
 | 可选 TTS sidecar 缺失 | 其他已安装引擎继续工作 |
 
 ## 9. 部署拓扑

@@ -76,9 +76,14 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { AccountDataControls } from "@/features/settings/account-data-controls"
+import { SpeechServiceCard } from "@/features/settings/speech-service-card"
 import { useLocalTts } from "@/features/speech/use-local-tts"
 import { useTtsConfig } from "@/features/speech/use-tts-config"
-import type { SendShortcut, TranscriptLayout } from "@/lib/conversation-prefs"
+import {
+  promptSupplementMaxLength,
+  type SendShortcut,
+  type TranscriptLayout,
+} from "@/lib/conversation-prefs"
 import {
   defaultModelConfig,
   defaultModelConfigCollection,
@@ -99,6 +104,7 @@ import {
   resetModelConfigPublicKey,
 } from "@/lib/model-config-envelope"
 import { getSelectedVoiceValue, ttsVoiceOptions } from "@/lib/tts-config"
+import { describeUserError, isUserFacingCopy, toUserFacingError } from "@/lib/user-error"
 import { cn } from "@/lib/utils"
 
 const providerItems = [
@@ -183,7 +189,13 @@ async function validateModelConnection(config: LocalModelConfig) {
     const result = (await response.json().catch(() => null)) as {
       error?: { message?: string }
     } | null
-    throw new Error(result?.error?.message || `HTTP ${response.status}`)
+    throw toUserFacingError(
+      isUserFacingCopy(result?.error?.message)
+        ? result?.error?.message
+        : { status: response.status },
+      "模型配置保存失败，请稍后重试。",
+      { status: response.status },
+    )
   }
 }
 
@@ -202,6 +214,8 @@ export function SettingsForm() {
   const [config, setConfig] = useState<LocalModelConfig>(defaultModelConfig)
   const [showApiKey, setShowApiKey] = useState(false)
   const [learningGoal, setLearningGoal] = useState(state.profile.goal)
+  // Edited as a draft so a half-typed instruction never reaches the next inference request.
+  const [promptSupplementDraft, setPromptSupplementDraft] = useState(prefs.promptSupplement)
   const [dailyMinutes, setDailyMinutes] = useState(state.profile.dailyMinutes)
   const [preferredContext, setPreferredContext] = useState(state.profile.preferredContext)
   const [autoRecall, setAutoRecall] = useState(state.profile.autoRecall)
@@ -381,11 +395,7 @@ export function SettingsForm() {
       toast.success("连接验证成功")
     } catch (error) {
       setValidationStatus("error")
-      toast.error(
-        error instanceof Error
-          ? `连接验证失败：${error.message}`
-          : "连接验证失败，请检查地址和密钥",
-      )
+      toast.error(`连接验证失败：${describeUserError(error, "请检查地址和密钥后重试。")}`)
     }
   }
 
@@ -411,11 +421,26 @@ export function SettingsForm() {
         [savedConfig.id]: "error",
       }))
       toast.error(
-        error instanceof Error
-          ? `${savedConfig.name} 验证失败：${error.message}`
-          : `${savedConfig.name} 验证失败`,
+        `${savedConfig.name} 验证失败：${describeUserError(error, "请检查地址和密钥后重试。")}`,
       )
     }
+  }
+
+  // `parseConversationPrefs` already trims and caps, so persisting the raw draft is safe: the
+  // stored value and this component's state converge on the next render.
+  function savePromptSupplement() {
+    const next = promptSupplementDraft.slice(0, promptSupplementMaxLength)
+    if (next === prefs.promptSupplement) {
+      return
+    }
+    setPrefs((current) => ({ ...current, promptSupplement: next }))
+    toast.success("补充指令已保存")
+  }
+
+  function clearPromptSupplement() {
+    setPromptSupplementDraft("")
+    setPrefs((current) => ({ ...current, promptSupplement: "" }))
+    toast.success("已清空补充指令")
   }
 
   function handleLearningPreferenceSave() {
@@ -439,7 +464,7 @@ export function SettingsForm() {
         "Welcome back. Let's continue this conversation together.",
       )
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "音色试听失败")
+      toast.error(describeUserError(error, "音色试听失败，请检查当前音色引擎。"))
     } finally {
       setPreviewingVoice(false)
     }
@@ -960,11 +985,66 @@ export function SettingsForm() {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="对话体验" description="控制转写布局、输入方式和会话判句策略。">
+      <SettingsSection
+        title="对话体验"
+        description="控制转写布局、输入方式、会话判句策略和对话 Prompt。"
+      >
         <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
           <Card
             className={cn(
-              "order-1 rounded-lg lg:col-start-1 lg:row-start-1",
+              "order-1 rounded-lg lg:col-span-2 lg:col-start-1 lg:row-start-1",
+              settingsCardHeightClass,
+            )}
+          >
+            <CardHeader className="shrink-0">
+              <CardTitle className="flex items-center gap-2 font-serif text-lg">
+                <MessagesSquareIcon className="size-4 text-primary" aria-hidden="true" />
+                对话 Prompt
+              </CardTitle>
+              <CardDescription>
+                在系统 Prompt 之后追加你自己的要求，用于调整语气、纠错严格程度或练习重点。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="min-h-0 overflow-y-auto overscroll-contain">
+              <Field>
+                <FieldLabel htmlFor="prompt-supplement">补充指令</FieldLabel>
+                <Textarea
+                  id="prompt-supplement"
+                  value={promptSupplementDraft}
+                  onChange={(event) => setPromptSupplementDraft(event.target.value)}
+                  onBlur={savePromptSupplement}
+                  rows={6}
+                  maxLength={promptSupplementMaxLength}
+                  placeholder="例如：每轮都纠正我的语法错误，并说明错在哪里。优先使用生活场景高频表达。"
+                />
+                <FieldDescription>
+                  仅保存在本机，不进入学习记忆。基础 Prompt
+                  与输出格式由系统维护，语法纠错默认已开启。
+                </FieldDescription>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" size="sm" onClick={savePromptSupplement}>
+                    保存补充指令
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={clearPromptSupplement}
+                    disabled={!promptSupplementDraft.trim() && !prefs.promptSupplement}
+                  >
+                    清空
+                  </Button>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {promptSupplementDraft.length} / {promptSupplementMaxLength}
+                  </span>
+                </div>
+              </Field>
+            </CardContent>
+          </Card>
+
+          <Card
+            className={cn(
+              "order-2 rounded-lg lg:col-start-1 lg:row-start-2",
               settingsCardHeightClass,
             )}
           >
@@ -1020,7 +1100,7 @@ export function SettingsForm() {
 
           <Card
             className={cn(
-              "order-3 rounded-lg lg:col-start-1 lg:row-start-2",
+              "order-3 rounded-lg lg:col-start-1 lg:row-start-3",
               settingsCardHeightClass,
             )}
           >
@@ -1221,6 +1301,13 @@ export function SettingsForm() {
             </CardContent>
           </Card>
         </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="语音服务"
+        description="配置语音识别与语音合成的接入方式；本机服务未启动时仍可继续练习。"
+      >
+        <SpeechServiceCard />
       </SettingsSection>
 
       <SettingsSection title="账户与数据" description="管理云端账户数据和永久删除操作。">

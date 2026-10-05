@@ -667,6 +667,37 @@ export function getShadowingDialogues(): ShadowingDialogue[] {
   return getAvailableConversationScenes("all").map(createShadowingDialogue)
 }
 
+/** 跟读一轮里学习者与另一角色之间的应答关系。 */
+export type ShadowingTurn = {
+  /** 紧邻本句之前的对方台词，作为跟读前的提示 */
+  cue: ShadowingDialogueLine | null
+  /** 本句之后对方的回应 */
+  reply: ShadowingDialogueLine | null
+  /** 本角色在本句之后的下一句 */
+  next: ShadowingDialogueLine | null
+}
+
+/**
+ * 影子跟读要形成真实对话，必须按脚本顺序推进，而不是只在角色台词之间跳转。
+ * 缺失的引用返回 `null`，让工作区据此停止自动接话而不是回绕到已练过的句子。
+ */
+export function getShadowingTurn(
+  dialogue: ShadowingDialogue,
+  line: ShadowingDialogueLine,
+): ShadowingTurn {
+  const index = dialogue.lines.findIndex((candidate) => candidate.id === line.id)
+  if (index < 0) {
+    return { cue: null, next: null, reply: null }
+  }
+  const previous = dialogue.lines[index - 1]
+  const following = dialogue.lines[index + 1]
+  return {
+    cue: previous && previous.speaker !== line.speaker ? previous : null,
+    reply: following && following.speaker !== line.speaker ? following : null,
+    next: dialogue.lines.slice(index + 1).find((item) => item.speaker === line.speaker) ?? null,
+  }
+}
+
 function expandMemoryAnswer(answer: string) {
   return answer
     .replace(/\s*(?:\.{3}|…)\s*/g, " something ")

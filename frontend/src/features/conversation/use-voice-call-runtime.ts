@@ -7,15 +7,29 @@ import type {
   ConversationRuntimeEvent,
 } from "@/features/conversation/conversation-machine"
 import { useAsrConfig } from "@/features/speech/use-asr-config"
-import { useLocalTts } from "@/features/speech/use-local-tts"
-import { useStreamingAsr } from "@/features/speech/use-streaming-asr"
+import { useAsrSession } from "@/features/speech/use-asr-session"
+import { type SpeechVoiceTarget, useLocalTts } from "@/features/speech/use-local-tts"
+import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import { useTtsConfig } from "@/features/speech/use-tts-config"
 import { asrEngineOptions } from "@/lib/asr-config"
 import { isLikelyPlaybackEcho, normalizeSpeechTranscript } from "@/lib/call-runtime"
 import type { ConversationInputMode } from "@/lib/conversation-history"
 import type { ConversationScene } from "@/lib/conversation-scenes"
 import { isSupportedSpeechTranscript } from "@/lib/language-detection"
-import { getSelectedVoiceValue, ttsVoiceOptions } from "@/lib/tts-config"
+import {
+  apiTtsVoiceOptions,
+  getSelectedApiVoiceValue,
+  parseApiVoiceValue,
+  type SpeechEndpoint,
+  type SpeechTransport,
+  type SpeechVoiceOption,
+} from "@/lib/speech-config"
+import {
+  getSelectedVoiceValue,
+  type TtsConfig,
+  type TtsEngine,
+  ttsVoiceOptions,
+} from "@/lib/tts-config"
 
 export type ConversationVoiceOption = {
   value: string
@@ -26,6 +40,13 @@ export type ConversationVoiceOption = {
 }
 
 const voiceOptions: ConversationVoiceOption[] = ttsVoiceOptions
+const apiVoiceOptions: SpeechVoiceOption[] = apiTtsVoiceOptions
+
+export const speechTransportItems: { label: string; value: SpeechTransport }[] = [
+  { label: "本机服务", value: "local" },
+  { label: "线上 API", value: "api" },
+  { label: "浏览器引擎", value: "browser" },
+]
 export const voiceIdleReminderDelayMs = 60_000
 export const voiceIdleReminderLimit = 3
 const voiceIdlePrompts = [
@@ -65,6 +86,48 @@ function combineVoiceSegments(segments: string[]) {
   )
 }
 
+// Voice lists belong to the active synthesis transport: the local registry for the loopback
+// services, provider voice names for OpenAI-compatible endpoints, and none for system speech.
+export function getVoiceOptionsForTransport(
+  transport: SpeechTransport,
+): ConversationVoiceOption[] {
+  if (transport === "api") {
+    return apiVoiceOptions
+  }
+  if (transport === "browser") {
+    return []
+  }
+  return voiceOptions
+}
+
+export function getSelectedVoiceForTransport(
+  transport: SpeechTransport,
+  ttsConfig: TtsConfig,
+  apiEndpoint: SpeechEndpoint,
+) {
+  if (transport === "api") {
+    return getSelectedApiVoiceValue(apiEndpoint)
+  }
+  return getSelectedVoiceValue(ttsConfig)
+}
+
+function resolveVoiceTarget(
+  optionValue: string,
+  transport: SpeechTransport,
+  engine: TtsEngine,
+): SpeechVoiceTarget | null {
+  if (transport === "api") {
+    const voice = apiVoiceOptions.find((item) => item.value === optionValue)
+    return voice ? { engine, voice: parseApiVoiceValue(voice.voice) } : null
+  }
+  if (transport === "browser") {
+    // System speech picks its own voice by language; only the engine identity matters.
+    return { engine, voice: "" }
+  }
+  const voice = ttsVoiceOptions.find((item) => item.value === optionValue)
+  return voice ? { engine: voice.engine, voice: voice.voice ?? "" } : null
+}
+
 export function useVoiceCallRuntime({
   callActive,
   callSecondsRef,
@@ -99,6 +162,8 @@ export function useVoiceCallRuntime({
   } = useLocalTts()
   const { config: ttsConfig, selectVoice } = useTtsConfig()
   const { engine: asrEngine, selectEngine: selectAsrEngine } = useAsrConfig()
+  const { resolved: speechConfig, setEndpoint: setSpeechEndpoint } = useSpeechConfig()
+  const ttsTransport = speechConfig.tts.transport
   const callActiveRef = useRef(false)
   const mutedRef = useRef(false)
   const speakerEnabledRef = useRef(true)
@@ -170,8 +235,8 @@ export function useVoiceCallRuntime({
     prepare: prepareStreamingAsr,
     start: startStreamingRecognition,
     stop: stopStreamingAsr,
-  } = useStreamingAsr({
-    engine: asrEngine,
+    transport: asrTransport,
+  } = useAsrSession({
     context: [
       `Scenario: ${scene.title}.`,
       `Goal: ${scene.objective}`,
@@ -183,6 +248,9 @@ export function useVoiceCallRuntime({
         asrEngineOptions.find((option) => option.value === fallbackEngine)?.label ??
         fallbackEngine
       toast.info(`外部 FunASR 不可用，已自动切换到 ${label}`)
+    },
+    onTransportFallback: () => {
+      toast.info("本机语音识别服务不可用，已切换到浏览器语音识别")
     },
     onError: (error) => {
       listeningRef.current = false
@@ -350,7 +418,9 @@ export function useVoiceCallRuntime({
 
   const previewVoice = useCallback(
     (optionValue: string) => {
-      const option = ttsVoiceOptions.find((item) => item.value === optionValue)
+      // One preview entry point for both worlds: local voices carry an engine, an API voice is only
+      // a name and reuses the saved engine so the player identity stays stable.
+      const option = resolveVoiceTarget(optionValue, ttsTransport, ttsConfig.engine)
       if (!option) {
         return
       }
@@ -372,7 +442,7 @@ export function useVoiceCallRuntime({
           }
         })
     },
-    [dispatch, playVoicePreview],
+    [dispatch, playVoicePreview, ttsConfig.engine, ttsTransport],
   )
 
   const startCall = useCallback(async () => {
@@ -611,17 +681,25 @@ export function useVoiceCallRuntime({
   )
 
   return {
+    apiVoice: speechConfig.tts.voice ?? "",
     asrEngineOptions,
+    asrTransport,
     callActiveRef,
     endCall,
     endCallWithoutPersisting,
     interruptAssistant,
     mutedRef,
     previewVoice,
-    selectedAsrEngine: asrEngine,
-    selectedVoice: getSelectedVoiceValue(ttsConfig),
+    selectApiVoice: (voice: string) =>
+      setSpeechEndpoint("tts", (current) => ({ ...current, voice })),
     selectAsrEngine,
+    selectAsrTransport: (transport: SpeechTransport) =>
+      setSpeechEndpoint("asr", (current) => ({ ...current, transport })),
+    selectTtsTransport: (transport: SpeechTransport) =>
+      setSpeechEndpoint("tts", (current) => ({ ...current, transport })),
     selectVoice,
+    selectedAsrEngine: asrEngine,
+    selectedVoice: getSelectedVoiceForTransport(ttsTransport, ttsConfig, speechConfig.tts),
     speakerEnabledRef,
     speak,
     speakingRef,
@@ -632,6 +710,7 @@ export function useVoiceCallRuntime({
     startRecognition,
     toggleMute,
     toggleSpeaker,
-    voiceOptions,
+    ttsTransport,
+    voiceOptions: getVoiceOptionsForTransport(ttsTransport),
   }
 }

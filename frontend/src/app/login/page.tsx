@@ -106,9 +106,28 @@ export default async function LoginPage({
         <div className="my-auto w-full max-w-md self-center py-10">
           <LoginForm initialError={initialError} nextPath={nextPath} />
         </div>
-        <p className="text-center font-mono text-[10px] text-muted-foreground">
-          PRIVATE LEARNING DATA · SUPABASE AUTH
-        </p>
+        <div className="flex flex-col items-center gap-3">
+          <nav
+            aria-label="法律文档"
+            className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground"
+          >
+            <Link
+              href="/terms"
+              className="rounded-sm underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              服务条款
+            </Link>
+            <Link
+              href="/privacy"
+              className="rounded-sm underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              隐私政策
+            </Link>
+          </nav>
+          <p className="text-center font-mono text-[10px] text-muted-foreground">
+            PRIVATE LEARNING DATA · SUPABASE AUTH
+          </p>
+        </div>
       </section>
     </main>
   )

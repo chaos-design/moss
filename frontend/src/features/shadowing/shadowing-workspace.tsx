@@ -17,7 +17,7 @@ import {
   Volume2Icon,
 } from "lucide-react"
 import Link from "next/link"
-import { useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { Badge } from "@/components/ui/badge"
@@ -38,15 +38,18 @@ import {
   useShadowingRecorder,
 } from "@/features/shadowing/use-shadowing-recorder"
 import { useLocalTts } from "@/features/speech/use-local-tts"
+import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import { createLearningPlan, createMemoryTargetHref } from "@/lib/memory"
 import { estimateShadowingDuration, type ShadowingAssessment } from "@/lib/shadowing-assessment"
 import {
   createMemoryShadowingDialogue,
   getShadowingDialogues,
+  getShadowingTurn,
   type ShadowingDialogue,
   type ShadowingDialogueLine,
   type ShadowingSpeaker,
 } from "@/lib/shadowing-dialogues"
+import { apiTtsVoiceOptions, getSelectedApiVoiceValue } from "@/lib/speech-config"
 import { getShadowingVoicePair } from "@/lib/tts-config"
 import { cn } from "@/lib/utils"
 
@@ -90,9 +93,12 @@ function getScriptKindLabel(dialogue: ShadowingDialogue) {
 export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemId?: string }) {
   const { recordShadowingAttempt, state } = useLearningMemory()
   const { config: ttsConfig, playbackState, speakWithVoice, stop: stopSpeech } = useLocalTts()
+  const { resolved: speechConfig } = useSpeechConfig()
+  const ttsTransport = speechConfig.tts.transport
   const [stage, setStage] = useState("listen")
   const [speed, setSpeed] = useState("1")
   const [showTranslation, setShowTranslation] = useState(false)
+  const [autoTurn, setAutoTurn] = useState(true)
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null)
   const [selectedRole, setSelectedRole] = useState<ShadowingSpeaker>("learner")
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
@@ -100,6 +106,8 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   const [playingTakeId, setPlayingTakeId] = useState<string | null>(null)
   const [takeHistory, setTakeHistory] = useState<ShadowingTake[]>([])
   const playbackRunRef = useRef(0)
+  // 对方提示按台词去重：自动接话播过的上一句不重复播放，手动导航则重新提示。
+  const cuedLineIdsRef = useRef(new Set<string>())
   const takeIdRef = useRef(0)
   const plan = createLearningPlan(state)
   const requestedMemory = state.items.find((item) => item.id === initialMemoryItemId)
@@ -119,6 +127,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   const roleLines = dialogue.lines.filter((line) => line.speaker === selectedRole)
   const activeLine =
     roleLines.find((line) => line.id === selectedLineId) ?? roleLines[0] ?? dialogue.lines[0]
+  const turn = getShadowingTurn(dialogue, activeLine)
   const activeLineTakes = takeHistory.filter(
     (take) => take.dialogueId === dialogue.id && take.lineId === activeLine.id,
   )
@@ -149,12 +158,32 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
         ...recording.assessment,
       })
       toast.success("跟读评分已保存")
+      void advanceTurn(activeLine)
     },
   })
   const voicePair = getShadowingVoicePair(ttsConfig)
+  // Shadowing speaks both roles. The API transport keeps that split with provider voice names:
+  // the learner uses the configured voice and the partner the next preset.
+  const apiVoice = speechConfig.tts.voice ?? ""
+  const apiVoicePair = useMemo(() => {
+    const selected = getSelectedApiVoiceValue(speechConfig.tts)
+    const index = Math.max(
+      0,
+      apiTtsVoiceOptions.findIndex((option) => option.value === selected),
+    )
+    const learner = apiTtsVoiceOptions[index] ?? apiTtsVoiceOptions[0]
+    const partner = apiTtsVoiceOptions[(index + 1) % apiTtsVoiceOptions.length] ?? learner
+    return {
+      learner: { engine: ttsConfig.engine, voice: learner.voice },
+      partner: { engine: ttsConfig.engine, voice: partner.voice },
+    }
+  }, [apiVoice, ttsConfig.engine])
+  const activeVoicePair = ttsTransport === "api" ? apiVoicePair : voicePair
   const playing = playbackState === "playing"
   const speechLoading = playbackState === "loading"
   const roleLabel = selectedRole === "learner" ? "学习者" : dialogue.partnerRole
+  const otherRoleName = selectedRole === "learner" ? dialogue.partnerName : "学习者"
+  const partnerSpeaking = playingLineId !== null && playingLineId !== activeLine.id
 
   function stopPlayback() {
     playbackRunRef.current += 1
@@ -164,6 +193,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
 
   function resetPractice() {
     recorder.reset()
+    cuedLineIdsRef.current.clear()
     stopPlayback()
     setStage("listen")
   }
@@ -183,8 +213,18 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     selectDialogue(availableDialogues[nextIndex].id)
   }
 
+  function changeStage(next: string) {
+    stopPlayback()
+    if (next === "shadow") {
+      // 手动进入跟读阶段时重新提示，避免沿用上一个场景已播过的提示。
+      cuedLineIdsRef.current.clear()
+    }
+    setStage(next)
+  }
+
   function selectLine(line: ShadowingDialogueLine) {
     recorder.reset()
+    cuedLineIdsRef.current.clear()
     stopPlayback()
     setSelectedRole(line.speaker)
     setSelectedLineId(line.id)
@@ -192,22 +232,19 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
 
   function swapRole() {
     recorder.reset()
+    cuedLineIdsRef.current.clear()
     stopPlayback()
     setSelectedRole((current) => (current === "learner" ? "partner" : "learner"))
     setSelectedLineId(null)
   }
 
-  async function playLine(line: ShadowingDialogueLine) {
-    if (playbackState !== "idle") {
-      stopPlayback()
-      return
-    }
-
+  // 播单句台词。不做“播放中即停止”的切换，切换语义只留在玩家点击的按钮上。
+  async function speakLine(line: ShadowingDialogueLine) {
     const runId = playbackRunRef.current + 1
     playbackRunRef.current = runId
     setPlayingLineId(line.id)
     try {
-      await speakWithVoice(line.text, voicePair[line.speaker], {
+      await speakWithVoice(line.text, activeVoicePair[line.speaker], {
         speed: Number(speed),
       })
     } catch (error) {
@@ -217,6 +254,56 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
         setPlayingLineId(null)
       }
     }
+  }
+
+  // 跟读前的提示：让学习者先听到对方上一句，再开始录自己的台词。
+  function cuePartnerTurn(line: ShadowingDialogueLine) {
+    if (!autoTurn) {
+      return
+    }
+    const cue = getShadowingTurn(dialogue, line).cue
+    if (!cue || cuedLineIdsRef.current.has(cue.id)) {
+      return
+    }
+    cuedLineIdsRef.current.add(cue.id)
+    void speakLine(cue)
+  }
+
+  // 完成一轮跟读：对方按脚本接话，跟读目标推进到本角色的下一句。
+  async function advanceTurn(line: ShadowingDialogueLine) {
+    if (!autoTurn) {
+      return
+    }
+    const plan = getShadowingTurn(dialogue, line)
+    if (!plan.next) {
+      return
+    }
+    recorder.reset()
+    if (plan.reply) {
+      // 这次接话就是下一句的提示，先登记，避免随后重复播放同一句。
+      cuedLineIdsRef.current.add(plan.reply.id)
+    }
+    setSelectedLineId(plan.next.id)
+    if (plan.reply) {
+      await speakLine(plan.reply)
+    }
+  }
+
+  // 目标句变化时补上对方的提示，构成“提示 -> 跟读 -> 接话”的循环。
+  useEffect(() => {
+    if (stage === "shadow") {
+      cuePartnerTurn(activeLine)
+    }
+    // biome-ignore lint/correctness/useExhaustiveDependencies: 只在目标句或阶段变化时补提示
+  }, [activeLine.id, stage])
+
+  async function playLine(line: ShadowingDialogueLine) {
+    if (playbackState !== "idle") {
+      stopPlayback()
+      return
+    }
+
+    await speakLine(line)
   }
 
   async function playDialogue() {
@@ -233,7 +320,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
           break
         }
         setPlayingLineId(line.id)
-        await speakWithVoice(line.text, voicePair[line.speaker], {
+        await speakWithVoice(line.text, activeVoicePair[line.speaker], {
           speed: Number(speed),
         })
       }

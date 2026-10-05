@@ -141,6 +141,44 @@ describe("POST /api/conversation authentication", () => {
     expect(await response.json()).toMatchObject({ error: { code: "invalid_request" } })
   })
 
+  it("rejects an oversized prompt supplement", async () => {
+    getSupabaseServerClient.mockResolvedValue(null)
+    const response = await POST(
+      new Request("https://moss.local/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: "coffee",
+          language: "auto",
+          messages: [{ role: "user", content: "A latte, please." }],
+          promptSupplement: "x".repeat(4_001),
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "invalid_request" } })
+  })
+
+  it("rejects a non-string prompt supplement", async () => {
+    getSupabaseServerClient.mockResolvedValue(null)
+    const response = await POST(
+      new Request("https://moss.local/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: "coffee",
+          language: "auto",
+          messages: [{ role: "user", content: "A latte, please." }],
+          promptSupplement: { hijack: true },
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "invalid_request" } })
+  })
+
   it("asks the client to refresh an expired encryption key", async () => {
     getSupabaseServerClient.mockResolvedValue(null)
     const response = await POST(

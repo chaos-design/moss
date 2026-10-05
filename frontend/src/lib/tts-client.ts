@@ -1,4 +1,6 @@
+import { resolveSpeechEndpoint, type SpeechEndpoint } from "@/lib/speech-config"
 import type { TtsEngine } from "@/lib/tts-config"
+import { describeHttpStatus, describeUserError, isUserFacingCopy } from "@/lib/user-error"
 
 export type TtsSpeakOptions = {
   speed?: number
@@ -31,14 +33,15 @@ export function getTtsServiceUrl(configuredUrl = process.env.NEXT_PUBLIC_TTS_SER
 }
 
 async function getErrorDetails(response: Response) {
+  const fallback = describeHttpStatus(response.status, "语音合成服务暂时不可用，请稍后重试。")
   try {
     const result = (await response.json()) as { error?: string; message?: string }
     return {
       code: result.error,
-      message: result.message || `TTS 服务返回 HTTP ${response.status}`,
+      message: isUserFacingCopy(result.message) ? result.message : fallback,
     }
   } catch {
-    return { message: `TTS 服务返回 HTTP ${response.status}` }
+    return { message: fallback }
   }
 }
 
@@ -49,6 +52,7 @@ function isUnavailableCode(code?: string) {
 export class TtsClientPlayer {
   private readonly engine: TtsEngine
   private readonly defaultVoice?: string
+  private readonly endpoint: SpeechEndpoint
   private audio: HTMLAudioElement | null = null
   private browserUtterance: SpeechSynthesisUtterance | null = null
   private objectUrl: string | null = null
@@ -57,21 +61,37 @@ export class TtsClientPlayer {
   private requestId = 0
   private useBrowserSpeech = false
 
-  constructor(engine: TtsEngine, defaultVoice?: string) {
+  constructor(engine: TtsEngine, defaultVoice?: string, endpoint?: SpeechEndpoint) {
     this.engine = engine
     this.defaultVoice = defaultVoice
+    this.endpoint = resolveSpeechEndpoint(
+      endpoint ?? { transport: "local", endpoint: "", apiKey: "", model: "" },
+      "tts",
+    )
   }
 
   prepare() {
     if (this.preparePromise) {
       return this.preparePromise
     }
-    this.preparePromise = fetch(`${getTtsServiceUrl()}/v1/tts/prepare`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ engine: this.engine }),
-      cache: "no-store",
-    })
+    if (this.endpoint.transport === "browser") {
+      this.enableBrowserSpeech()
+      this.preparePromise = Promise.resolve()
+      return this.preparePromise
+    }
+    if (this.endpoint.transport === "api") {
+      this.preparePromise = Promise.resolve()
+      return this.preparePromise
+    }
+    this.preparePromise = fetch(
+      `${getTtsServiceUrl(this.endpoint.endpoint || undefined)}/v1/tts/prepare`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engine: this.engine }),
+        cache: "no-store",
+      },
+    )
       .then(async (response) => {
         if (!response.ok) {
           const error = await getErrorDetails(response)
@@ -114,7 +134,7 @@ export class TtsClientPlayer {
 
   preload(text: string, options: TtsSpeakOptions = {}) {
     const request = this.createAudioRequest(text, options)
-    if (!request || this.useBrowserSpeech) {
+    if (!request || this.useBrowserSpeech || this.endpoint.transport === "browser") {
       return Promise.resolve()
     }
     return getAudio(request.cacheKey, request.payload).then(
@@ -137,6 +157,9 @@ export class TtsClientPlayer {
 
     this.stop()
     const requestId = this.requestId
+    if (this.endpoint.transport === "browser") {
+      this.enableBrowserSpeech()
+    }
     if (this.useBrowserSpeech) {
       return this.speakWithBrowser(request.payload.text, request.payload.speed, options)
     }
@@ -196,7 +219,7 @@ export class TtsClientPlayer {
         cleanup()
         reject(
           new TtsClientError(
-            error instanceof Error ? error.message : "浏览器阻止了 TTS 音频播放",
+            describeUserError(error, "浏览器阻止了 TTS 音频播放，请先与页面交互后重试。"),
           ),
         )
       })
@@ -268,9 +291,10 @@ export class TtsClientPlayer {
     const speed = options.speed ?? 1
     const seed = options.seed ?? 2024
     return {
-      cacheKey: `${this.engine}:${voice ?? ""}:${speed}:${seed}:${normalized}`,
+      cacheKey: `${this.endpoint.transport}:${this.endpoint.endpoint}:${this.endpoint.model}:${this.engine}:${voice ?? ""}:${speed}:${seed}:${normalized}`,
       payload: {
         engine: this.engine,
+        endpoint: this.endpoint,
         seed,
         speed,
         text: normalized,
@@ -304,6 +328,7 @@ type AudioRequest = {
   speed: number
   text: string
   voice?: string
+  endpoint: SpeechEndpoint
 }
 
 async function getAudio(cacheKey: string, request: AudioRequest) {
@@ -325,36 +350,77 @@ async function getAudio(cacheKey: string, request: AudioRequest) {
   return audioBlob
 }
 
-async function requestAudio(cacheKey: string, request: AudioRequest) {
-  const audioPromise = fetch(`${getTtsServiceUrl()}/v1/tts/synthesize`, {
+// The API transport never reaches the provider from the browser: `/api/speech/tts` applies the
+// endpoint policy, forwards the request, and returns the audio unchanged.
+async function requestApiAudio(request: AudioRequest) {
+  return fetch("/api/speech/tts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      engine: request.engine,
-      text: request.text,
+      endpoint: {
+        apiKey: request.endpoint.apiKey,
+        endpoint: request.endpoint.endpoint,
+        model: request.endpoint.model,
+      },
+      format: "mp3",
       speed: request.speed,
-      seed: request.seed,
-      ...(request.voice ? { voice: request.voice } : {}),
+      text: request.text,
+      voice: request.voice || "alloy",
     }),
   })
     .catch(() => {
-      throw new TtsClientError("无法连接 TTS 服务", true)
+      throw new TtsClientError("无法连接语音合成接口", true)
     })
     .then(async (response) => {
       if (!response.ok) {
         const error = await getErrorDetails(response)
-        throw new TtsClientError(error.message, isUnavailableCode(error.code))
+        throw new TtsClientError(error.message, isUnavailableStatus(response.status))
       }
       const contentType = response.headers.get("content-type") || ""
-      if (!contentType.startsWith("audio/wav")) {
-        throw new TtsClientError("TTS 服务返回了无效音频")
+      if (!contentType.startsWith("audio/")) {
+        throw new TtsClientError("语音合成接口返回了无效音频")
       }
       return response.blob()
     })
-    .finally(() => {
-      audioRequestCache.delete(cacheKey)
-    })
+}
+
+async function requestAudio(cacheKey: string, request: AudioRequest) {
+  const audioPromise = (
+    request.endpoint.transport === "api"
+      ? requestApiAudio(request)
+      : fetch(`${getTtsServiceUrl(request.endpoint.endpoint || undefined)}/v1/tts/synthesize`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            engine: request.engine,
+            text: request.text,
+            speed: request.speed,
+            seed: request.seed,
+            ...(request.voice ? { voice: request.voice } : {}),
+          }),
+        })
+          .catch(() => {
+            throw new TtsClientError("无法连接 TTS 服务", true)
+          })
+          .then(async (response) => {
+            if (!response.ok) {
+              const error = await getErrorDetails(response)
+              throw new TtsClientError(error.message, isUnavailableCode(error.code))
+            }
+            const contentType = response.headers.get("content-type") || ""
+            if (!contentType.startsWith("audio/")) {
+              throw new TtsClientError("TTS 服务返回了无效音频")
+            }
+            return response.blob()
+          })
+  ).finally(() => {
+    audioRequestCache.delete(cacheKey)
+  })
 
   audioRequestCache.set(cacheKey, audioPromise)
   return audioPromise
+}
+
+function isUnavailableStatus(status: number) {
+  return status === 502 || status === 503 || status === 504
 }

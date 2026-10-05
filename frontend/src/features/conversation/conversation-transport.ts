@@ -15,6 +15,13 @@ import {
   createModelConfigEnvelope,
   resetModelConfigPublicKey,
 } from "@/lib/model-config-envelope"
+import {
+  describeHttpStatus,
+  isAbortError,
+  isUserFacingCopy,
+  toUserFacingError,
+  UserFacingError,
+} from "@/lib/user-error"
 import type { ConversationMessage } from "./conversation-machine"
 
 type ConversationResponse = {
@@ -24,7 +31,7 @@ type ConversationResponse = {
   }
   error?: {
     code?: string
-    message: string
+    message?: string
   }
 }
 
@@ -32,8 +39,14 @@ type ConversationTransportInput = {
   scene: ConversationScene
   memoryContext: ConversationMemoryContextItem[]
   messages: ConversationMessage[]
+  promptSupplement?: string
   signal: AbortSignal
   tutorMode: TutorMode
+}
+
+type TranslationResponse = {
+  data?: { translation?: string }
+  error?: { code?: string; message?: string }
 }
 
 function readModelInferenceConfig() {
@@ -44,13 +57,61 @@ function readModelInferenceConfig() {
   return getModelInferenceConfig(parseLocalModelConfig(stored))
 }
 
-type TranslationResponse = {
-  data?: { translation?: string }
-  error?: { code?: string; message?: string }
+/**
+ * Runs one request plus parse attempt. Transport failures and non-JSON bodies become
+ * `UserFacingError` here, because both would otherwise reach the transcript as a raw
+ * `TypeError: Failed to fetch` or `SyntaxError`. Aborts stay aborts so callers keep their
+ * interrupt semantics. HTTP status interpretation is left to the caller so the
+ * `model_config_key_expired` retry can still inspect the envelope.
+ */
+async function requestEnvelope<T>(
+  send: () => Promise<Response>,
+  fallback: string,
+  signal?: AbortSignal,
+): Promise<{ response: Response; result: T }> {
+  let response: Response
+  try {
+    response = await send()
+  } catch (error) {
+    if (isAbortError(error) || signal?.aborted) {
+      throw error
+    }
+    throw toUserFacingError(error, fallback)
+  }
+
+  let result: T | null = null
+  try {
+    result = (await response.json()) as T
+  } catch {
+    result = null
+  }
+  if (result === null) {
+    throw new UserFacingError(describeHttpStatus(response.status, fallback), {
+      status: response.status,
+    })
+  }
+
+  return { response, result }
+}
+
+const modelConfigExpiredCode = "model_config_key_expired"
+
+/** Curated server copy wins; upstream or malformed copy falls back to the caller's own message. */
+function envelopeError(
+  result: { error?: { code?: string; message?: string } },
+  fallback: string,
+  status: number,
+) {
+  const message = result.error?.message
+  if (isUserFacingCopy(message)) {
+    return new UserFacingError(message, { status, code: result.error?.code ?? null })
+  }
+  return new UserFacingError(describeHttpStatus(status, fallback), { status })
 }
 
 export async function requestConversationTranslation(text: string) {
   const modelConfig = readModelInferenceConfig()
+  const fallback = "翻译服务暂时不可用，请稍后重试。"
   const createRequestBody = async () => ({
     text,
     ...(modelConfig
@@ -64,21 +125,18 @@ export async function requestConversationTranslation(text: string) {
       body: JSON.stringify(await createRequestBody()),
     })
 
-  let response = await sendRequest()
-  let result = (await response.json()) as TranslationResponse
-  if (
-    response.status === 409 &&
-    result.error?.code === "model_config_key_expired" &&
-    modelConfig
-  ) {
+  const { response, result } = await requestEnvelope<TranslationResponse>(sendRequest, fallback)
+  const expired = response.status === 409 && result.error?.code === modelConfigExpiredCode
+  let envelope = result
+  if (expired && modelConfig) {
     resetModelConfigPublicKey()
-    response = await sendRequest()
-    result = (await response.json()) as TranslationResponse
+    envelope = (await requestEnvelope<TranslationResponse>(sendRequest, fallback)).result
   }
-  if (!response.ok || !result.data?.translation) {
-    throw new Error(result.error?.message || "翻译服务暂时不可用")
+
+  if (!envelope.data?.translation) {
+    throw envelopeError(envelope, fallback, expired ? 200 : response.status)
   }
-  return result.data.translation
+  return envelope.data.translation
 }
 
 export function createConversationRequestMessages(messages: ConversationMessage[]) {
@@ -91,15 +149,19 @@ export async function requestConversationReply({
   scene,
   memoryContext,
   messages,
+  promptSupplement,
   signal,
   tutorMode,
 }: ConversationTransportInput) {
   const modelConfig = readModelInferenceConfig()
+  const fallback = "对话服务暂时不可用，请稍后重试。"
   const requestMessages = createConversationRequestMessages(messages)
   const createRequestBody = async () => ({
     sceneId: scene.id,
     language: "auto" as const,
     tutorMode,
+    // Only sent when non-empty, so the default request shape is unchanged.
+    ...(promptSupplement ? { promptSupplement } : {}),
     memory: {
       shortTerm: {
         sceneId: scene.id,
@@ -125,24 +187,27 @@ export async function requestConversationReply({
       signal,
     })
 
-  let response = await sendRequest()
-  let result = (await response.json()) as ConversationResponse
-  if (
-    response.status === 409 &&
-    result.error?.code === "model_config_key_expired" &&
-    modelConfig
-  ) {
+  const { response, result } = await requestEnvelope<ConversationResponse>(
+    sendRequest,
+    fallback,
+    signal,
+  )
+  const expired = response.status === 409 && result.error?.code === modelConfigExpiredCode
+  if (expired && modelConfig) {
     resetModelConfigPublicKey()
-    response = await sendRequest()
-    result = (await response.json()) as ConversationResponse
+    const retried = await requestEnvelope<ConversationResponse>(sendRequest, fallback, signal)
+    if (!retried.result.data) {
+      throw envelopeError(retried.result, fallback, retried.response.status)
+    }
+    return retried.result.data
   }
-  if (!response.ok || !result.data) {
-    throw new Error(result.error?.message || "对话服务暂时不可用")
+  if (!result.data) {
+    throw envelopeError(result, fallback, response.status)
   }
 
   return result.data
 }
 
 export function isConversationAbort(error: unknown, signal: AbortSignal) {
-  return signal.aborted || (error instanceof DOMException && error.name === "AbortError")
+  return signal.aborted || isAbortError(error)
 }

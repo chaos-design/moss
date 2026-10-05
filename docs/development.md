@@ -249,8 +249,26 @@ pnpm tts:start
 - 只有浏览器确实需要的值使用 `NEXT_PUBLIC_*`。
 - `AI_API_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、删除审计密钥和模型私钥永不公开。
 - `NEXT_PUBLIC_TTS_SERVICE_URL` 只接受 loopback。
+- `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_TTS_API_URL` 只能提供公开地址与模型名；语音接口
+  密钥只保存在浏览器 `moss:speech-config:v1`，随请求进入同源 `/api/speech/*`。
 - 公网 ASR 必须使用 WSS、精确 Origin 白名单和 `MOSS_ASR_API_KEY`。
 - 生产环境必须显式关闭 demo 模式并配置稳定的模型信封私钥。
+
+### 不启动本机语音服务
+
+只想验证对话、记忆或设置界面时，不必先运行 `pnpm asr:start`、`pnpm tts:setup`。语音能力有三种
+接入方式，在“偏好设置 → 语音服务接入”中按 ASR 与 TTS 分别选择，配置保存在
+`moss:speech-config:v1`：
+
+| 接入方式 | 依赖 | 适用场景 |
+| --- | --- | --- |
+| 本机服务 | `pnpm asr:start` / `pnpm tts:gateway` | 本地离线开发与音质调优 |
+| HTTP API | 任意 OpenAI 兼容 `/audio/transcriptions`、`/audio/speech` | 云端语音、团队共享网关 |
+| 浏览器引擎 | 浏览器 `SpeechRecognition` / `speechSynthesis` | 零服务冒烟、演示环境 |
+
+`local` 接入失败不会中断练习：ASR 会在当次会话内回退到浏览器引擎并提示一次，TTS 回退到系统
+语音。排查本机服务时先运行 `pnpm asr:test` 与 `pnpm tts:test`，再用设置中的“测试合成接口”
+确认 `/api/speech/tts` 是否能取回音频。
 
 ## 10. 测试与质量门
 

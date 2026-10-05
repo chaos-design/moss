@@ -11,6 +11,7 @@ import {
 import type { ConversationMessage } from "@/features/conversation/conversation-machine"
 import {
   ConversationSettingsPopover,
+  ConversationWorkspace,
   ExpressionValidationFeedback,
   scrollLatestTranscriptTurn,
   TranscriptTurn,
@@ -19,6 +20,10 @@ import {
 import { asrEngineOptions } from "@/lib/asr-config"
 import type { StoredConversationMessage } from "@/lib/conversation-history"
 import { getConversationScene } from "@/lib/conversation-scenes"
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
+}))
 
 afterEach(cleanup)
 beforeEach(() => {
@@ -64,7 +69,13 @@ describe("conversation feedback UI", () => {
     const onTutorModeSelect = vi.fn()
     render(
       <ConversationSettingsPopover
+        apiVoice=""
         asrOptions={asrEngineOptions}
+        asrTransport="local"
+        ttsTransport="local"
+        onApiVoiceChange={vi.fn()}
+        onAsrTransportSelect={vi.fn()}
+        onTtsTransportSelect={vi.fn()}
         disabled={false}
         onAsrSelect={vi.fn()}
         onTutorModeSelect={onTutorModeSelect}
@@ -127,7 +138,18 @@ describe("conversation feedback UI", () => {
 
     let retryButton = screen.getByRole("button", { name: "重试" })
     expect(retryButton.closest("[data-error-message]")).toBeNull()
-    expect(retryButton.closest("[data-error-actions]")?.className).toContain("justify-start")
+    // A one-line failure must hug its copy, not stretch the whole grid track.
+    const errorActionClasses = retryButton
+      .closest("[data-error-actions]")
+      ?.className.split(/\s+/)
+    expect(errorActionClasses).toContain("items-center")
+    expect(errorActionClasses).not.toContain("w-full")
+    const errorRegionClasses = retryButton
+      .closest("[data-error-actions]")
+      ?.parentElement?.className.split(/\s+/)
+    expect(errorRegionClasses).toContain("w-fit")
+    expect(errorRegionClasses).toContain("max-w-full")
+    expect(errorRegionClasses).not.toContain("w-full")
 
     view.rerender(
       <TranscriptTurn
@@ -143,6 +165,123 @@ describe("conversation feedback UI", () => {
     expect(retryButton.closest("[data-error-actions]")?.className).toContain("justify-end")
     fireEvent.click(retryButton)
     expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it("deletes a recognized learner turn without a bordered button", () => {
+    const onDelete = vi.fn()
+    render(
+      <TranscriptTurn
+        layout="split"
+        message={{
+          id: "user-voice",
+          role: "user",
+          content: "I wants to book a table",
+          translation: "",
+          note: "",
+          timestamp: "00:12",
+          inputMode: "voice",
+        }}
+        onDelete={onDelete}
+        onRetry={vi.fn()}
+        onSpeak={vi.fn()}
+        partnerName="Mia"
+      />,
+    )
+
+    // A bordered action is what this change removes. `ghost` contributes no border or background
+    // of its own, and `outline` would contribute `border-border`, so assert on those tokens
+    // rather than on the variant name — `cva` resolves the variant into utility classes.
+    const classes = screen
+      .getByRole("button", { name: "删除这条识别消息" })
+      .className.split(/\s+/)
+    expect(classes).not.toContain("border-border")
+    expect(classes).not.toContain("bg-background")
+    expect(classes).toContain("hover:bg-muted")
+
+    fireEvent.click(screen.getByRole("button", { name: "删除这条识别消息" }))
+    expect(onDelete).toHaveBeenCalledWith("user-voice")
+  })
+
+  it("offers no delete action on a partner reply", () => {
+    render(
+      <TranscriptTurn
+        layout="split"
+        message={{
+          id: "assistant-ok",
+          role: "assistant",
+          content: "Certainly, for when?",
+          translation: "",
+          note: "",
+          timestamp: "00:13",
+        }}
+        onDelete={vi.fn()}
+        onRetry={vi.fn()}
+        onSpeak={vi.fn()}
+        partnerName="Mia"
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: "删除这条识别消息" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "删除这条错误消息" })).toBeNull()
+  })
+
+  it("renders an error-turn delete action as a borderless button", () => {
+    const onDelete = vi.fn()
+    render(
+      <TranscriptTurn
+        layout="split"
+        message={{
+          id: "assistant-error",
+          role: "assistant",
+          content: "AI 服务暂时不可用。",
+          translation: "",
+          note: "",
+          timestamp: "00:04",
+          transient: true,
+          variant: "error",
+        }}
+        onDelete={onDelete}
+        onRetry={vi.fn()}
+        onSpeak={vi.fn()}
+        partnerName="Mia"
+      />,
+    )
+
+    for (const name of ["重试", "删除这条错误消息"]) {
+      const classes = screen.getByRole("button", { name }).className.split(/\s+/)
+      expect(classes).not.toContain("border-border")
+      expect(classes).not.toContain("bg-background")
+      expect(classes).toContain("hover:bg-muted")
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "删除这条错误消息" }))
+    expect(onDelete).toHaveBeenCalledWith("assistant-error")
+  })
+
+  it("keeps the composer readable as an enabled field", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", { name: "输入对话内容" })
+    expect((textarea as HTMLTextAreaElement).disabled).toBe(false)
+
+    // The composer InputGroup is the textbox's parent element. Every primitive dimming rule is
+    // opted out: the send button being disabled with an empty draft is a fact about that one
+    // control, not about the field.
+    const composer = textarea.closest("[data-slot='input-group']")
+    expect(composer).not.toBeNull()
+    const composerClasses = composer?.className.split(/\s+/) ?? []
+    expect(composerClasses).toContain("bg-transparent")
+    expect(composerClasses).toContain("dark:bg-transparent")
+    expect(composerClasses).toContain("has-disabled:opacity-100")
+    expect(composerClasses).toContain("has-disabled:bg-transparent")
+    expect(composerClasses).toContain("dark:has-disabled:bg-transparent")
+    expect(composerClasses).not.toContain("has-disabled:opacity-50")
+    expect(composerClasses).not.toContain("has-disabled:bg-input/50")
   })
 
   it("labels an English-only recall hint as learning support", () => {
@@ -170,7 +309,13 @@ describe("conversation feedback UI", () => {
   it("keeps the settings popover available while locking live voice controls", () => {
     render(
       <ConversationSettingsPopover
+        apiVoice=""
         asrOptions={asrEngineOptions}
+        asrTransport="local"
+        ttsTransport="local"
+        onApiVoiceChange={vi.fn()}
+        onAsrTransportSelect={vi.fn()}
+        onTtsTransportSelect={vi.fn()}
         disabled
         onAsrSelect={vi.fn()}
         onTutorModeSelect={vi.fn()}
@@ -208,7 +353,13 @@ describe("conversation feedback UI", () => {
   it("keeps ASR option details on one aligned row", () => {
     render(
       <ConversationSettingsPopover
+        apiVoice=""
         asrOptions={asrEngineOptions}
+        asrTransport="local"
+        ttsTransport="local"
+        onApiVoiceChange={vi.fn()}
+        onAsrTransportSelect={vi.fn()}
+        onTtsTransportSelect={vi.fn()}
         disabled={false}
         onAsrSelect={vi.fn()}
         onTutorModeSelect={vi.fn()}
@@ -236,6 +387,120 @@ describe("conversation feedback UI", () => {
     const optionDescription = screen.getByText("中英混合与场景词汇")
     expect(optionDescription.parentElement?.className).toContain("items-center")
     expect(optionDescription.className).toContain("truncate")
+  })
+
+  it("switches recognition and synthesis between local service and online API", () => {
+    const onAsrTransportSelect = vi.fn()
+    const onTtsTransportSelect = vi.fn()
+    const onApiVoiceChange = vi.fn()
+    render(
+      <ConversationSettingsPopover
+        apiVoice="alloy"
+        asrOptions={asrEngineOptions}
+        asrTransport="local"
+        ttsTransport="local"
+        onApiVoiceChange={onApiVoiceChange}
+        onAsrTransportSelect={onAsrTransportSelect}
+        onTtsTransportSelect={onTtsTransportSelect}
+        disabled={false}
+        onAsrSelect={vi.fn()}
+        onTutorModeSelect={vi.fn()}
+        onVoicePreview={vi.fn()}
+        onVoiceSelect={vi.fn()}
+        previewingVoice={null}
+        selectedAsrEngine="sensevoice"
+        selectedTutorMode="coach"
+        selectedVoice="test-voice"
+        voiceOptions={[
+          {
+            value: "test-voice",
+            label: "Test voice",
+            name: "Test voice",
+            language: "English",
+            quality: "Local",
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "打开对话设置" }))
+
+    const asrTransport = screen.getByRole("combobox", { name: "选择识别来源" })
+    expect(asrTransport.textContent).toContain("本机服务")
+    expect(screen.getByRole("combobox", { name: "选择语音识别引擎" })).toBeTruthy()
+
+    fireEvent.click(asrTransport)
+    const asrOption = screen.getByRole("option", { name: "线上 API" })
+    fireEvent.pointerDown(asrOption, { pointerType: "mouse" })
+    fireEvent.click(asrOption)
+    expect(onAsrTransportSelect).toHaveBeenCalledWith("api")
+
+    const ttsTransport = screen.getByRole("combobox", { name: "选择播报来源" })
+    fireEvent.click(ttsTransport)
+    const ttsOption = screen.getByRole("option", { name: "线上 API" })
+    fireEvent.pointerDown(ttsOption, { pointerType: "mouse" })
+    fireEvent.click(ttsOption)
+    expect(onTtsTransportSelect).toHaveBeenCalledWith("api")
+  })
+
+  it("shows the provider voice field only when synthesis runs on the API transport", () => {
+    const props = {
+      apiVoice: "alloy",
+      asrOptions: asrEngineOptions,
+      asrTransport: "api" as const,
+      disabled: false,
+      onApiVoiceChange: vi.fn(),
+      onAsrSelect: vi.fn(),
+      onAsrTransportSelect: vi.fn(),
+      onTtsTransportSelect: vi.fn(),
+      onTutorModeSelect: vi.fn(),
+      onVoicePreview: vi.fn(),
+      onVoiceSelect: vi.fn(),
+      previewingVoice: null,
+      selectedAsrEngine: "sensevoice" as const,
+      selectedTutorMode: "coach" as const,
+      selectedVoice: "api:alloy",
+      voiceOptions: [],
+    }
+
+    const view = render(<ConversationSettingsPopover {...props} ttsTransport="local" />)
+    fireEvent.click(screen.getByRole("button", { name: "打开对话设置" }))
+    expect(screen.queryByLabelText("接口音色名称")).toBeNull()
+
+    view.rerender(<ConversationSettingsPopover {...props} ttsTransport="api" />)
+    expect((screen.getByLabelText("接口音色名称") as HTMLInputElement).value).toBe("alloy")
+    expect(screen.getByRole("button", { name: "选择语音引擎与音色" })).toBeTruthy()
+  })
+
+  it("replaces engine and voice pickers with transport-specific notes", () => {
+    render(
+      <ConversationSettingsPopover
+        apiVoice=""
+        asrOptions={asrEngineOptions}
+        asrTransport="browser"
+        ttsTransport="browser"
+        onApiVoiceChange={vi.fn()}
+        onAsrTransportSelect={vi.fn()}
+        onTtsTransportSelect={vi.fn()}
+        disabled={false}
+        onAsrSelect={vi.fn()}
+        onTutorModeSelect={vi.fn()}
+        onVoicePreview={vi.fn()}
+        onVoiceSelect={vi.fn()}
+        previewingVoice={null}
+        selectedAsrEngine="sensevoice"
+        selectedTutorMode="coach"
+        selectedVoice="test-voice"
+        voiceOptions={[]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "打开对话设置" }))
+
+    expect(screen.getByText("使用浏览器语音识别，无需本机服务。")).toBeTruthy()
+    expect(screen.getByText("系统语音会按语言自动选择音色。")).toBeTruthy()
+    expect(screen.queryByRole("combobox", { name: "选择语音识别引擎" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "选择语音引擎与音色" })).toBeNull()
   })
 
   it("renders the full voice activity effect and recording reticle", () => {

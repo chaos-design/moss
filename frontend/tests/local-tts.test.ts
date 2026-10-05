@@ -268,4 +268,95 @@ describe("TTS service client", () => {
     await expect(player.speak("Fallback from CosyVoice.")).resolves.toBeUndefined()
     expect(browserSpeak).toHaveBeenCalledOnce()
   })
+
+  it("routes a configured HTTP API transport through the app speech endpoint", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(new Uint8Array([73, 68, 51]), {
+        status: 200,
+        headers: { "Content-Type": "audio/mpeg" },
+      }),
+    )
+    const player = new TtsClientPlayer("kokoro", "af_bella", {
+      transport: "api",
+      endpoint: "https://speech.example.com/v1",
+      apiKey: "sk-test",
+      model: "tts-1",
+    })
+
+    await player.prepare()
+    await player.speak("Speak through the API.", { speed: 0.9 })
+
+    // Preparation never contacts the local gateway for the API transport.
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/speech/tts",
+      expect.objectContaining({
+        body: JSON.stringify({
+          endpoint: {
+            apiKey: "sk-test",
+            endpoint: "https://speech.example.com/v1",
+            model: "tts-1",
+          },
+          format: "mp3",
+          speed: 0.9,
+          text: "Speak through the API.",
+          voice: "af_bella",
+        }),
+      }),
+    )
+    expect(browserSpeak).not.toHaveBeenCalled()
+  })
+
+  it("falls back to browser speech when a configured API transport is unreachable", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "无法连接语音合成接口" } }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+    const player = new TtsClientPlayer("kokoro", "af_bella", {
+      transport: "api",
+      endpoint: "https://speech.example.com/v1",
+      apiKey: "",
+      model: "tts-1",
+    })
+
+    await expect(player.speak("No sidecar and no API.")).resolves.toBeUndefined()
+    expect(browserSpeak).toHaveBeenCalledOnce()
+  })
+
+  it("uses system speech directly when the browser transport is selected", async () => {
+    const player = new TtsClientPlayer("kokoro", "af_bella", {
+      transport: "browser",
+      endpoint: "",
+      apiKey: "",
+      model: "",
+    })
+
+    await player.prepare()
+    await player.speak("Just the browser.")
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(browserSpeak).toHaveBeenCalledOnce()
+  })
+
+  it("keeps audio caches separate per transport and endpoint", async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(new Uint8Array([82, 73, 70, 70]), {
+          status: 200,
+          headers: { "Content-Type": "audio/wav" },
+        }),
+    )
+
+    await new TtsClientPlayer("kokoro", "af_bella").speak("Same sentence.")
+    await new TtsClientPlayer("kokoro", "af_bella", {
+      transport: "api",
+      endpoint: "https://speech.example.com/v1",
+      apiKey: "",
+      model: "tts-1",
+    }).speak("Same sentence.")
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })

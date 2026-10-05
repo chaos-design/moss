@@ -1,10 +1,29 @@
 "use client"
 
-import Link from "next/link"
+import { LoaderCircleIcon } from "lucide-react"
+import Link, { useLinkStatus } from "next/link"
 import { usePathname } from "next/navigation"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { navigationSections } from "@/lib/demo-data"
+import { navigationSections } from "@/lib/navigation-sections"
 import { cn } from "@/lib/utils"
+
+// `useLinkStatus` only reports inside a <Link>, so the indicator is a child of the anchor.
+function NavigationPendingIndicator({ collapsed }: { collapsed: boolean }) {
+  const { pending } = useLinkStatus()
+  if (!pending || collapsed) {
+    return null
+  }
+
+  return (
+    <>
+      <LoaderCircleIcon
+        className="ml-auto size-3.5 shrink-0 animate-spin text-primary"
+        aria-hidden="true"
+      />
+      <span className="sr-only">正在打开页面</span>
+    </>
+  )
+}
 
 export function AppNavigation({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname()
@@ -50,6 +69,7 @@ export function AppNavigation({ collapsed = false }: { collapsed?: boolean }) {
                   {active && !collapsed ? (
                     <span className="ml-auto size-1.5 rounded-full bg-primary" />
                   ) : null}
+                  <NavigationPendingIndicator collapsed={collapsed} />
                 </Link>
               )
 

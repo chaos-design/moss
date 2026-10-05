@@ -1,8 +1,8 @@
 import type { LucideIcon } from "lucide-react"
 import { BookOpenCheckIcon, MessagesSquareIcon } from "lucide-react"
 import { getAvailableConversationScenes } from "@/lib/conversation-scenes"
-import { navigationSections } from "@/lib/demo-data"
 import type { LearningMemoryItem } from "@/lib/memory"
+import { navigationSections } from "@/lib/navigation-sections"
 
 export type GlobalSearchGroup = "学习记忆" | "学习场景" | "页面"
 

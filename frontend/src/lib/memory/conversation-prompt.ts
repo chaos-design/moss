@@ -19,6 +19,12 @@ export type ConversationPromptInput = {
   tutorMode?: TutorMode
   memory?: ConversationMemoryPayload | ConversationMemoryContextItem[]
   messages: ConversationPromptTurn[]
+  /**
+   * Learner-authored additions from conversation preferences. Appended after the immutable base
+   * prompt so the output contract above cannot be edited away, and capped again here because the
+   * value is attacker-controlled transport input rather than a trusted local preference.
+   */
+  promptSupplement?: string
 }
 
 const conversationPromptTemplate = loadPromptTemplate("conversation-system.md")
@@ -102,7 +108,7 @@ export function createConversationPrompt(
     ]),
   )
 
-  return renderPromptTemplate(conversationPromptTemplate, {
+  const rendered = renderPromptTemplate(conversationPromptTemplate, {
     sceneTitle: scene.title,
     sceneEnglishTitle: scene.englishTitle,
     partnerRole: scene.partnerRole,
@@ -122,4 +128,29 @@ export function createConversationPrompt(
     ),
     tutorModeInstruction: getTutorModeInstruction(tutorMode),
   })
+
+  return appendPromptSupplement(rendered, request.promptSupplement)
+}
+
+/** Transport-side cap. Matches `promptSupplementMaxLength` without importing browser-facing prefs. */
+const promptSupplementLimit = 2_000
+
+/**
+ * Appends the learner's own instructions to the rendered system prompt.
+ *
+ * Two properties matter here. First, the supplement is placed after the base prompt so it cannot
+ * remove the JSON output contract that reply parsing depends on. Second, `{{...}}` placeholders are
+ * neutralized: the base prompt is rendered before this point, so a placeholder surviving in
+ * learner text is never a variable, and leaving it intact would only invite the model to echo it.
+ */
+export function appendPromptSupplement(rendered: string, supplement?: string) {
+  const normalized = (supplement ?? "").replace(/\r\n?/g, "\n").trim()
+  if (!normalized) {
+    return rendered
+  }
+  const safeSupplement = normalized
+    .slice(0, promptSupplementLimit)
+    .replace(/\{\{/g, "{ {")
+    .replace(/\}\}/g, "} }")
+  return `${rendered}\n\n## Learner-Added Instructions\n\n${safeSupplement}`
 }

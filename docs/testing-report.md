@@ -20,7 +20,7 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 62 文件，384 测试通过 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 72 文件，444 测试通过 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
 | `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 14 测试通过 |
@@ -36,7 +36,8 @@ flowchart LR
 | 对话 | 状态机、transport、本地优先的跨设备会话同步与完成、双语意图、结构化反馈、打断、连续问题合并、迟到响应丢弃 |
 | 学习记忆 | 本地解析、迁移、间隔重复、冲突合并、Realtime 协调、RAG 降级、向量写入、召回评估指标 |
 | API 边界 | 输入长度、认证、按用户共享限流、匿名容量有界限流、provider 错误脱敏、推理 token 预算 |
-| 语音 | ASR 地址与引擎、PCM 编码、静默切段、TTS 缓存、取消和系统语音降级 |
+| 语音 | ASR 地址与引擎、PCM 编码、静默切段、TTS 缓存、取消和系统语音降级、三种接入方式、识别回退与代理端点策略 |
+| 错误文案 | `user-error` 归一化规则、状态码映射、中断与失败区分、网络与解析失败不落本机存储 |
 | UI | 公共首页、登录、对话反馈、语音会话、学习记忆 Provider、提醒、句子列表、账户数据控制 |
 
 核心学习算法覆盖率门槛为 statements、branches、functions、lines 均不低于 80%。覆盖率
@@ -56,6 +57,13 @@ flowchart LR
 
 2026-08-29 复核场景库：桌面会话和 `390 x 844` demo 视口均按学习记忆显示掌握数；锁定
 场景不生成链接，移动端 `scrollWidth` 为 390，无横向溢出。
+
+2026-10-04 对比验证对话输入区禁用表达：修复前发送按钮因草稿为空而 `disabled`，触发
+`InputGroup` 原语的 `has-disabled:opacity-50`，导致输入框与语音按钮整体降到 50% 不透明度
+并被染色，视觉上与不可点击一致；修复后仅发送按钮保留禁用表达。使用 Chrome DevTools
+Protocol 在 `390 x 844` 下量测，`clientWidth` 与 `scrollWidth` 均为 390，超宽元素为 0。
+`tailwind-merge` 已确认 `has-disabled:opacity-100` 会移除原语中的 `has-disabled:opacity-50`，
+覆盖不依赖 CSS 生成顺序。截图确认 390px 下顶栏、场景标题、统计条与输入区控件完整可见。
 
 2026-08-29 验证提醒与句子列表：桌面端使用当前学习记忆完整显示 8 条记录和 5 条到期
 提醒；`390 x 844` demo 视口验证空状态、类型筛选和提醒 Popover，页面
@@ -217,6 +225,48 @@ PUT/DELETE 校验和仓储冲突键。`pnpm check` 通过 382 项前端、15 项
 
 本次未执行真实 Provider、真实语音、远端数据库或跨浏览器验证。
 
+2026-10-04 修复 ASR 的 Vercel 构建失败。Vercel CLI 62.1.0 报
+`Found app.py, main.py but none define a top-level "app" FastAPI instance`；根因是
+`services/asr` 只暴露 `create_app()` 工厂，`main.py` 在 `main()` 内部才实例化，且
+`services/asr/app.py` 的包内相对导入在 Vercel 把 `app.py` 当顶层模块导入时会抛
+`ImportError`——后者已在本机复现。只加模块级 `app` 会把构建错误换成 `ImportError`。
+
+改为在仓库根新增 `asgi.py`（`app = create_app()`）、转发 `requirements.txt` 与
+`functions.asgi.py.excludeFiles`，ASR 服务代码零改动。
+
+本机实测：
+
+- `import asgi` 得到 FastAPI 实例，路由为 `/openapi.json`、`/health`、`/v1/asr/stream`。
+- 不进入 lifespan 时 `GET /health` 返回 503 与既有 `ready: false` 契约，未加载模型。
+- `pnpm asr:test` 通过 35 项；`backend.services.asr.main` 导入正常，本地与 Docker 路径
+  未受影响。
+- `biome check` 对新增的 `asgi.py`、`vercel.json`、`requirements.txt` 无报错；仓库既有
+  11 项 lint 错误全部位于本次未改动的脏工作区前端文件。
+- 根 `requirements.txt` 的 `-r` 间接解析生效。本机 pip dry-run 报
+  `No matching distribution found for torch>=2.5`，用原始
+  `backend/services/asr/requirements.txt` 得到完全相同的错误，属本机环境既有问题。
+
+未执行 `vercel build`：CLI 需要登录令牌与已关联项目，本次环境没有凭据，因此「构建通过」
+尚未取得证据，只验证了 Vercel 检测所依赖的入口契约。生产运行条件（内存、bundle、无 GPU、
+前端回环限制）不成立，见[部署指南](deployment.md#asr-的-vercel-构建入口)与 T-302。
+
+2026-10-05 完成对话输入区、删除消息与可编辑 Prompt。本机实测：
+
+- 对话错误气泡按内容宽度收缩，不再撑满 grid 轨道；`conversation-workspace.test.tsx` 24 项
+  通过，覆盖错误气泡宽度、重试与删除按钮无边框、识别消息可删除、输入区不因发送按钮禁用而
+  呈现禁用态。
+- `deleteMessage` 与其搭档回复一并移除，`voice-conversation.test.tsx` 新增 3 项通过；
+  该文件仍有 1 项既有失败（音色试听），`git stash` 基线确认先于本次改动存在。
+- Prompt 补充层：`prompt-supplement.test.ts` 8 项、`settings-form.test.tsx` 13 项、
+  `conversation-route.test.ts` 26 项通过。补充指令仅在显式保存后写入，未配置时请求体不含该
+  字段；服务端拒绝超长与非字符串值。
+- `pnpm lint` 报 1 项错误，位于本次未改动的 `shadowing-workspace.tsx` 与
+  `speech-config.test.ts`，`git stash` 基线确认与本次无关。`pnpm asr:test` 35 项与
+  `pnpm build` 均通过。
+
+未执行浏览器截图与真实 Provider 调用，因此 320px/390px 无溢出和纠错实际效果未取得证据。
+Prompt 基础契约的修改只经单元测试覆盖，未经真实模型验证。
+
 ## 真实服务证据
 
 本机验证覆盖：
@@ -227,6 +277,54 @@ PUT/DELETE 校验和仓储冲突键。`pnpm check` 通过 382 项前端、15 项
 - 浏览器对本机 TTS 的 health、CORS、prepare、synthesize 和音频播放。
 
 这些结果证明协议链路可运行，不代表所有目标硬件的质量、延迟或容量达标。
+
+## 2026-10-04 导航反馈与语音接入
+
+本轮同时处理“切换菜单卡顿且没有加载反馈”和“ASR/TTS 必须依赖本机服务”两件事。
+
+性能：新增 `app/workspace/loading.tsx` 路由级骨架，`AppNavigation` 用 `useLinkStatus` 在被点击
+项显示进行中指示；全局搜索索引改为打开时（或空闲时）动态加载，导航元数据从 `demo-data.ts`
+拆到 `navigation-sections.ts`，学习分析图表改为 `ssr: false` 动态加载。生产构建
+`.next/diagnostics/route-bundle-stats.json` 实测（未压缩首载 JS）：
+
+| 指标 | 修改前 | 修改后 |
+| --- | --- | --- |
+| 工作区共享外壳 | 1192 KB | 1105 KB |
+| `/workspace/scenes` | 1219 KB | 1157 KB |
+| `/workspace/review` | 1219 KB | 1139 KB |
+| `/workspace/sentences` | 1199 KB | 1112 KB |
+| `/workspace/analytics` | 1602 KB | 1183 KB |
+| `/workspace/conversation` | 1341 KB | 1351 KB |
+
+场景与习语目录（约 480 KB）不再属于任何路由的首载包，改为空闲时单独加载；全局搜索对话框关闭
+时不再构建结果索引。`/workspace/conversation` 与 `/workspace/shadowing` 增加约 10 KB（语音接入
+配置与浏览器识别适配器），属于功能成本。
+
+语音接入：新增 `moss:speech-config:v1`，ASR 与 TTS 各自支持本机服务、HTTP API 与浏览器引擎；
+新增 `/api/speech/asr` 与 `/api/speech/tts` 代理；`use-asr-session` 成为唯一识别入口，本机服务
+连接失败时在会话内回退到浏览器引擎。
+
+对话页设置浮层直接提供接入方式：`识别来源` 与 `播报来源` 各自选择本机服务、线上 API 或浏览器
+引擎；识别引擎选择器只在“本机服务”下出现，播报音色在“线上 API”下切换为接口音色名并保留自由
+输入。影子跟读沿用同一份配置，`api` 接入时学习者使用配置音色、对方角色使用下一个预设。
+
+自动化：`pnpm lint`、`pnpm typecheck`、`pnpm --dir frontend test`（73 文件 467 测试）与
+`pnpm build` 通过。新增测试覆盖语音配置解析与端点策略、两个 route 的校验/转发/降级/限流、
+浏览器 `SpeechRecognition` 事件与录音上传、本机识别到浏览器的回退、TTS 三种接入与音频缓存隔离、
+对话设置浮层的接入切换、设置页语音卡片与工作区骨架。
+
+`/api/speech/*` 用真实 Next.js 路由验证：非 HTTPS 端点、空文本与空音频返回 400，上游不可达返回
+502 与 `speech_endpoint_unreachable`。
+
+未通过项：`tests/shadowing-workspace.test.tsx > shows measured scores and saves the completed
+attempt` 断言“录音对比”区域包含“本次录音”，实际渲染为空状态（0 次）。该失败在本工作区并行进行
+的影子跟读改动中已存在：把我的影子跟读改动全部移除后失败依旧；把该功能的分支测试文件放到本工作区
+则 5 个用例全部通过。因此这是并行改动与其测试之间的不一致，不是本轮引入的回归，需由该改动的
+负责人收口。
+
+未执行：真实麦克风录音、真实第三方语音接口调用、目标设备音质与延迟、桌面与 390px 的视觉
+截图复验。`tests/shadowing-workspace.test.tsx` 与 `tests/conversation-workspace.test.tsx` 的
+重型用例单文件耗时 5–12 秒，并行负载下会触及 10 秒默认上限；放宽到 60 秒后仅剩上述一条断言失败。
 
 ## 外部验收
 

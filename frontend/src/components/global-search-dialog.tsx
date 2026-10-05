@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowRightIcon, CommandIcon, SearchIcon, XIcon } from "lucide-react"
+import { ArrowRightIcon, CommandIcon, LoaderCircleIcon, SearchIcon, XIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useDeferredValue, useEffect, useMemo, useState } from "react"
 import { useLearningMemory } from "@/components/learning-memory-provider"
@@ -20,12 +20,28 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  type GlobalSearchGroup,
-  type GlobalSearchResult,
-  searchWorkspace,
-} from "@/lib/global-search"
+import type { GlobalSearchGroup, GlobalSearchResult } from "@/lib/global-search"
 import { cn } from "@/lib/utils"
+
+type GlobalSearchIndex = typeof import("@/lib/global-search")
+
+// The search index pulls the whole scene and expression catalog. It stays out of the persistent
+// workspace bundle and loads on idle, then eagerly whenever the dialog opens.
+let searchIndexPromise: Promise<GlobalSearchIndex> | null = null
+
+function loadSearchIndex() {
+  searchIndexPromise ??= import("@/lib/global-search")
+  return searchIndexPromise
+}
+
+function scheduleIdleTask(callback: () => void) {
+  if (typeof window.requestIdleCallback === "function") {
+    const handle = window.requestIdleCallback(callback, { timeout: 2_000 })
+    return () => window.cancelIdleCallback(handle)
+  }
+  const handle = window.setTimeout(callback, 400)
+  return () => window.clearTimeout(handle)
+}
 
 const groupOrder = ["页面", "学习场景", "学习记忆"] as const
 const searchCategories = [
@@ -43,10 +59,13 @@ export function GlobalSearchDialog() {
   const [query, setQuery] = useState("")
   const [activeGroup, setActiveGroup] = useState<SearchCategory>("all")
   const [activeIndex, setActiveIndex] = useState(0)
+  const [searchIndex, setSearchIndex] = useState<GlobalSearchIndex | null>(null)
   const deferredQuery = useDeferredValue(query)
+  // Indexing the scene catalog on every memory write or keystroke blocks the main thread for no
+  // visible gain, so results only exist while the dialog is open and the index is resident.
   const results = useMemo(
-    () => searchWorkspace(state.items, deferredQuery),
-    [deferredQuery, state.items],
+    () => (open && searchIndex ? searchIndex.searchWorkspace(state.items, deferredQuery) : []),
+    [deferredQuery, open, searchIndex, state.items],
   )
   const orderedResults = useMemo(
     () => groupOrder.flatMap((group) => results.filter((result) => result.group === group)),
@@ -59,6 +78,29 @@ export function GlobalSearchDialog() {
         : orderedResults.filter((result) => result.group === activeGroup),
     [activeGroup, orderedResults],
   )
+  const indexPending = open && !searchIndex
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      void loadSearchIndex().then((index) => {
+        if (!cancelled) {
+          setSearchIndex(index)
+        }
+      })
+    }
+    if (open) {
+      load()
+      return () => {
+        cancelled = true
+      }
+    }
+    const cancelIdleTask = scheduleIdleTask(load)
+    return () => {
+      cancelled = true
+      cancelIdleTask()
+    }
+  }, [open])
 
   useEffect(() => {
     function handleShortcut(event: globalThis.KeyboardEvent) {
@@ -215,6 +257,7 @@ export function GlobalSearchDialog() {
 
             <TabsContent value={activeGroup} className="m-0 min-h-0 overflow-hidden">
               <SearchResults
+                pending={indexPending}
                 results={visibleResults}
                 activeIndex={activeIndex}
                 onActiveIndexChange={setActiveIndex}
@@ -233,15 +276,33 @@ function SearchResults({
   activeIndex,
   onActiveIndexChange,
   onOpenResult,
+  pending,
   results,
   showGroups,
 }: {
   activeIndex: number
   onActiveIndexChange: (index: number) => void
   onOpenResult: (result: GlobalSearchResult) => void
+  pending: boolean
   results: GlobalSearchResult[]
   showGroups: boolean
 }) {
+  if (pending) {
+    return (
+      <div
+        className="grid h-full min-h-36 place-items-center gap-2 px-6 text-center"
+        role="status"
+        aria-label="正在准备搜索索引"
+      >
+        <LoaderCircleIcon
+          className="size-4 animate-spin text-muted-foreground"
+          aria-hidden="true"
+        />
+        <p className="text-xs text-muted-foreground">正在准备搜索索引…</p>
+      </div>
+    )
+  }
+
   if (results.length === 0) {
     return (
       <div className="grid h-full min-h-36 place-items-center px-6 text-center">

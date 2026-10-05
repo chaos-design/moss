@@ -3,7 +3,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { LearningMemoryProvider } from "@/components/learning-memory-provider"
+import { setConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { SettingsForm } from "@/features/settings/settings-form"
+import {
+  conversationPrefsStorageKey,
+  parseConversationPrefs,
+  promptSupplementMaxLength,
+} from "@/lib/conversation-prefs"
 import { modelConfigStorageKey } from "@/lib/model-config"
 
 const mocks = vi.hoisted(() => ({
@@ -109,6 +115,48 @@ describe("settings model configs", () => {
     expect(screen.getByLabelText("AI 角色音色")).toBeTruthy()
     expect(screen.getByText(/影子跟读主角色沿用此音色/)).toBeTruthy()
     expect(screen.getByRole("heading", { name: "账户与数据" })).toBeTruthy()
+  })
+
+  it("exposes an editable prompt supplement that persists only on save", () => {
+    render(
+      <LearningMemoryProvider>
+        <SettingsForm />
+      </LearningMemoryProvider>,
+    )
+
+    const field = screen.getByLabelText("补充指令") as HTMLTextAreaElement
+    expect(field.value).toBe("")
+    expect(field.getAttribute("maxlength")).toBe(String(promptSupplementMaxLength))
+
+    // Typing alone must not reach the next inference request.
+    fireEvent.change(field, { target: { value: "每轮都纠正我的语法错误" } })
+    expect(
+      parseConversationPrefs(window.localStorage.getItem(conversationPrefsStorageKey))
+        .promptSupplement,
+    ).toBe("")
+
+    fireEvent.click(screen.getByRole("button", { name: "保存补充指令" }))
+    expect(
+      parseConversationPrefs(window.localStorage.getItem(conversationPrefsStorageKey))
+        .promptSupplement,
+    ).toBe("每轮都纠正我的语法错误")
+  })
+
+  it("clears a saved prompt supplement", () => {
+    setConversationPrefs((current) => ({ ...current, promptSupplement: "只说一句" }))
+    render(
+      <LearningMemoryProvider>
+        <SettingsForm />
+      </LearningMemoryProvider>,
+    )
+
+    expect((screen.getByLabelText("补充指令") as HTMLTextAreaElement).value).toBe("只说一句")
+    fireEvent.click(screen.getByRole("button", { name: "清空" }))
+
+    expect(
+      parseConversationPrefs(window.localStorage.getItem(conversationPrefsStorageKey))
+        .promptSupplement,
+    ).toBe("")
   })
 
   it("shows multiple configs, switches the active one, and adds without replacing", async () => {
@@ -256,10 +304,17 @@ describe("settings model configs", () => {
     const timingCard = screen
       .getByText("控制会话续接、多次提问合并和语音停顿判断。")
       .closest('[data-slot="card"]')
+    const promptCard = screen
+      .getByText("在系统 Prompt 之后追加你自己的要求，用于调整语气、纠错严格程度或练习重点。")
+      .closest('[data-slot="card"]')
 
+    // The prompt editor spans the full row above the layout grid, so the layout card moved to the
+    // second row while the right-hand timing column keeps its two-row span.
+    expect(promptCard?.className).toContain("lg:col-span-2")
     expect(layoutCard?.className).toContain("lg:col-start-1")
-    expect(layoutCard?.className).toContain("order-1")
-    expect(inputCard?.className).toContain("lg:row-start-2")
+    expect(layoutCard?.className).toContain("lg:row-start-2")
+    expect(layoutCard?.className).toContain("order-2")
+    expect(inputCard?.className).toContain("lg:row-start-3")
     expect(inputCard?.className).toContain("order-3")
     expect(timingCard?.className).toContain("lg:col-start-2")
     expect(timingCard?.className).toContain("lg:row-span-2")
@@ -308,7 +363,7 @@ describe("settings model configs", () => {
     const cards = Array.from(container.querySelectorAll('[data-slot="card"]'))
     const cardContents = Array.from(container.querySelectorAll('[data-slot="card-content"]'))
 
-    expect(cards).toHaveLength(7)
+    expect(cards).toHaveLength(9)
     expect(
       cards.every((card) => card.className.includes("max-h-[min(680px,calc(100svh-6rem))]")),
     ).toBe(true)

@@ -7,6 +7,8 @@ import { PHASE_DEVELOPMENT_SERVER } from "next/constants"
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = path.dirname(frontendRoot)
 const publicEnvironmentKeys = [
+  "NEXT_PUBLIC_ASR_API_MODEL",
+  "NEXT_PUBLIC_ASR_API_URL",
   "NEXT_PUBLIC_ASR_SERVICE_URL",
   "NEXT_PUBLIC_FUNASR_SERVICE_URL",
   "NEXT_PUBLIC_DEMO_MODE",
@@ -14,6 +16,8 @@ const publicEnvironmentKeys = [
   "NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_TTS_API_MODEL",
+  "NEXT_PUBLIC_TTS_API_URL",
   "NEXT_PUBLIC_TTS_SERVICE_URL",
 ] as const
 

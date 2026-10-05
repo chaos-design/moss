@@ -43,6 +43,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { getDueMemoryItems } from "@/lib/memory"
 import { isDemoMode } from "@/lib/runtime-mode"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
+import { describeUserError } from "@/lib/user-error"
 
 function getAccountLabel(user: Pick<User, "email" | "user_metadata">) {
   const metadata = user.user_metadata
@@ -115,7 +116,7 @@ export function WorkspaceHeader() {
       const { error } = await supabase.auth.signOut()
       if (error) {
         setSigningOut(false)
-        toast.error(error.message)
+        toast.error(describeUserError(error, "退出登录失败，请稍后重试。"))
         return
       }
     }

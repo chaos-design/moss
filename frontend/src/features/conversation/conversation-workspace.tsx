@@ -22,6 +22,7 @@ import {
   RotateCcwIcon,
   SendIcon,
   SettingsIcon,
+  Trash2Icon,
   Volume2Icon,
   VolumeXIcon,
   WavesIcon,
@@ -44,6 +45,7 @@ import { LevelBadge } from "@/components/level-badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   InputGroup,
   InputGroupAddon,
@@ -67,6 +69,7 @@ import {
 import { ConversationHistorySheet } from "@/features/conversation/conversation-history-sheet"
 import { requestConversationTranslation } from "@/features/conversation/conversation-transport"
 import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
+import { speechTransportItems } from "@/features/conversation/use-voice-call-runtime"
 import {
   type ConversationMessage,
   type ConversationVoiceOption,
@@ -99,6 +102,8 @@ import {
 } from "@/lib/conversation-prefs"
 import type { ConversationScene } from "@/lib/conversation-scenes"
 import { buildConversationMemoryContext, type ConversationTurnMemoryInput } from "@/lib/memory"
+import { describeSpeechTransport, type SpeechTransport } from "@/lib/speech-config"
+import { describeUserError } from "@/lib/user-error"
 import { cn } from "@/lib/utils"
 
 const tutorModes = [
@@ -305,6 +310,7 @@ export function ConversationWorkspace({
     callStatus,
     currentSessionId,
     deleteConversation,
+    deleteMessage,
     draft,
     endCall,
     history,
@@ -317,8 +323,14 @@ export function ConversationWorkspace({
     previewingVoice,
     previewVoice,
     retryLastReply,
+    apiVoice,
     asrEngineOptions,
+    asrTransport,
     selectedAsrEngine,
+    selectApiVoice,
+    selectAsrTransport,
+    selectTtsTransport,
+    ttsTransport,
     selectedVoice,
     selectAsrEngine,
     selectVoice,
@@ -474,8 +486,14 @@ export function ConversationWorkspace({
               sessions={history}
             />
             <ConversationSettingsPopover
+              apiVoice={apiVoice}
               disabled={callActive || pending || speechPlaybackState !== "idle"}
               asrOptions={asrEngineOptions}
+              asrTransport={asrTransport}
+              ttsTransport={ttsTransport}
+              onApiVoiceChange={selectApiVoice}
+              onAsrTransportSelect={selectAsrTransport}
+              onTtsTransportSelect={selectTtsTransport}
               onAsrSelect={selectAsrEngine}
               onVoicePreview={previewVoice}
               onVoiceSelect={selectVoice}
@@ -567,6 +585,7 @@ export function ConversationWorkspace({
                   key={message.id}
                   message={message}
                   partnerName={scene.partnerName}
+                  onDelete={deleteMessage}
                   onSpeak={speak}
                   onRetry={retryLastReply}
                   layout={prefs.transcriptLayout}
@@ -615,7 +634,15 @@ export function ConversationWorkspace({
               >
                 <InputGroup
                   className={cn(
-                    "rounded-lg border-0 transition-[min-height] duration-300 ease-out",
+                    // The send button is disabled while the draft is empty. That is a fact about
+                    // one control, not about the field, so the group opts out of every primitive
+                    // dimming rule: the tinted `has-disabled` fill in light mode, the unconditional
+                    // `dark:bg-input/30` wash, and the group opacity drop. The border and focus ring
+                    // stay, so the field still reads as editable and clickable.
+                    "rounded-lg border-0 bg-transparent dark:bg-transparent",
+                    "has-disabled:bg-transparent has-disabled:opacity-100",
+                    "dark:has-disabled:bg-transparent",
+                    "transition-[min-height] duration-300 ease-out",
                     composerExpanded ? "min-h-24" : "min-h-10",
                   )}
                 >
@@ -670,11 +697,7 @@ export function ConversationWorkspace({
                       }
                       onClick={startCall}
                     >
-                      {callStatus === "connecting" ? (
-                        <LoaderCircleIcon data-icon="inline-start" className="animate-spin" />
-                      ) : (
-                        <MicIcon data-icon="inline-start" />
-                      )}
+                      <MicIcon data-icon="inline-start" />
                       语音
                     </Button>
                     <InputGroupButton
@@ -705,9 +728,14 @@ export function ConversationWorkspace({
 }
 
 export function ConversationSettingsPopover({
+  apiVoice,
   asrOptions,
+  asrTransport,
   disabled,
+  onApiVoiceChange,
   onAsrSelect,
+  onAsrTransportSelect,
+  onTtsTransportSelect,
   onTutorModeSelect,
   onVoicePreview,
   onVoiceSelect,
@@ -715,11 +743,17 @@ export function ConversationSettingsPopover({
   selectedAsrEngine,
   selectedTutorMode,
   selectedVoice,
+  ttsTransport,
   voiceOptions,
 }: {
+  apiVoice: string
   asrOptions: AsrEngineOption[]
+  asrTransport: SpeechTransport
   disabled: boolean
+  onApiVoiceChange: (voice: string) => void
   onAsrSelect: (engine: AsrEngine) => void
+  onAsrTransportSelect: (transport: SpeechTransport) => void
+  onTtsTransportSelect: (transport: SpeechTransport) => void
   onTutorModeSelect: (mode: TutorMode) => void
   onVoicePreview: (value: string) => void
   onVoiceSelect: (value: string) => void
@@ -727,6 +761,7 @@ export function ConversationSettingsPopover({
   selectedAsrEngine: AsrEngine
   selectedTutorMode: TutorMode
   selectedVoice: string
+  ttsTransport: SpeechTransport
   voiceOptions: ConversationVoiceOption[]
 }) {
   return (
@@ -776,31 +811,124 @@ export function ConversationSettingsPopover({
               </SelectContent>
             </Select>
           </div>
+          <TransportSelect
+            disabled={disabled}
+            hint={
+              asrTransport === "api"
+                ? "整段上传识别，不提供实时字幕与说话打断。"
+                : asrTransport === "browser"
+                  ? "使用浏览器语音识别，无需本机服务。"
+                  : "使用本机 ASR 服务，未启动时自动回退浏览器语音。"
+            }
+            label="识别来源"
+            onSelect={onAsrTransportSelect}
+            value={asrTransport}
+          />
           <div className="grid gap-1.5 text-xs font-medium">
-            <span>语音音色</span>
-            <VoicePicker
-              className="w-full max-w-none justify-between"
-              disabled={disabled}
-              onPreview={onVoicePreview}
-              onSelect={onVoiceSelect}
-              options={voiceOptions}
-              previewingVoice={previewingVoice}
-              selectedVoice={selectedVoice}
-            />
+            <span>识别引擎</span>
+            {asrTransport === "local" ? (
+              <AsrPicker
+                className="w-full max-w-none"
+                disabled={disabled}
+                onSelect={onAsrSelect}
+                options={asrOptions}
+                selectedEngine={selectedAsrEngine}
+              />
+            ) : (
+              <p className="rounded-md bg-muted px-3 py-2 text-xs font-normal text-muted-foreground">
+                {describeSpeechTransport("asr", asrTransport)}不区分引擎。
+              </p>
+            )}
           </div>
+          <TransportSelect
+            disabled={disabled}
+            hint={
+              ttsTransport === "browser"
+                ? "使用浏览器系统语音，音色由系统决定。"
+                : "未启动或不可达时自动回退系统语音。"
+            }
+            label="播报来源"
+            onSelect={onTtsTransportSelect}
+            value={ttsTransport}
+          />
           <div className="grid gap-1.5 text-xs font-medium">
-            <span>语音识别</span>
-            <AsrPicker
-              className="w-full max-w-none"
-              disabled={disabled}
-              onSelect={onAsrSelect}
-              options={asrOptions}
-              selectedEngine={selectedAsrEngine}
-            />
+            <span>{ttsTransport === "api" ? "接口音色" : "语音音色"}</span>
+            {ttsTransport === "browser" ? (
+              <p className="rounded-md bg-muted px-3 py-2 text-xs font-normal text-muted-foreground">
+                系统语音会按语言自动选择音色。
+              </p>
+            ) : (
+              <div className="flex min-w-0 items-center gap-2">
+                <VoicePicker
+                  className="w-full max-w-none justify-between"
+                  disabled={disabled}
+                  onPreview={onVoicePreview}
+                  onSelect={onVoiceSelect}
+                  options={voiceOptions}
+                  previewingVoice={previewingVoice}
+                  selectedVoice={selectedVoice}
+                />
+                {ttsTransport === "api" ? (
+                  <Input
+                    aria-label="接口音色名称"
+                    className="h-8 w-28 shrink-0"
+                    disabled={disabled}
+                    onChange={(event) => onApiVoiceChange(event.target.value)}
+                    placeholder="alloy"
+                    title="自建网关可使用任意音色名称"
+                    value={apiVoice}
+                  />
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       </PopoverContent>
     </Popover>
+  )
+}
+
+function TransportSelect({
+  disabled,
+  hint,
+  label,
+  onSelect,
+  value,
+}: {
+  disabled: boolean
+  hint: string
+  label: string
+  onSelect: (transport: SpeechTransport) => void
+  value: SpeechTransport
+}) {
+  return (
+    <div className="grid gap-1.5 text-xs font-medium">
+      <span>{label}</span>
+      <Select
+        disabled={disabled}
+        items={speechTransportItems}
+        value={value}
+        onValueChange={(next) => {
+          if (next) {
+            onSelect(next as SpeechTransport)
+          }
+        }}
+      >
+        <SelectTrigger size="sm" className="w-full" aria-label={`选择${label}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          <SelectGroup>
+            {speechTransportItems.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      <span className="text-[11px] font-normal text-muted-foreground">{hint}</span>
+    </div>
   )
 }
 
@@ -965,12 +1093,14 @@ function SessionMetric({
 export const TranscriptTurn = memo(function TranscriptTurn({
   message,
   partnerName,
+  onDelete,
   onRetry,
   onSpeak,
   layout,
 }: {
   message: ConversationMessage
   partnerName: string
+  onDelete?: (messageId: string) => void
   onRetry: () => void
   onSpeak: (text: string, force?: boolean) => void
   layout: TranscriptLayout
@@ -1000,7 +1130,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
       setTranslation(translated)
       setTranslationVisible(true)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "翻译服务暂时不可用")
+      toast.error(describeUserError(error, "翻译服务暂时不可用，请稍后重试。"))
     } finally {
       setTranslating(false)
     }
@@ -1068,7 +1198,9 @@ export const TranscriptTurn = memo(function TranscriptTurn({
           ) : null}
         </div>
         {errorTurn ? (
-          <div className="mt-2 w-full">
+          // A transient failure is usually one short line, so the bubble hugs its copy instead of
+          // stretching the whole grid track. max-w-full keeps long copy wrapping at 320px.
+          <div className="mt-2 w-fit max-w-full">
             <div
               className="rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-destructive"
               data-error-message
@@ -1076,13 +1208,26 @@ export const TranscriptTurn = memo(function TranscriptTurn({
               <p className="text-sm leading-6">{message.content}</p>
             </div>
             <div
-              className={cn("mt-2 flex w-full", alignRight ? "justify-end" : "justify-start")}
+              className={cn("mt-1 flex items-center gap-1", alignRight && "justify-end")}
               data-error-actions
             >
-              <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+              <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
                 <RotateCcwIcon data-icon="inline-start" />
                 重试
               </Button>
+              {onDelete ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label="删除这条错误消息"
+                  onClick={() => onDelete(message.id)}
+                >
+                  <Trash2Icon data-icon="inline-start" />
+                  删除
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : assistant ? (
@@ -1099,6 +1244,24 @@ export const TranscriptTurn = memo(function TranscriptTurn({
             {message.content}
           </p>
         )}
+        {!errorTurn && !assistant && onDelete ? (
+          <div
+            className={cn("mt-1 flex items-center gap-1", alignRight && "justify-end")}
+            data-turn-actions
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              aria-label="删除这条识别消息"
+              onClick={() => onDelete(message.id)}
+            >
+              <Trash2Icon data-icon="inline-start" />
+              删除
+            </Button>
+          </div>
+        ) : null}
         {assistant && !errorTurn ? (
           <AssistantSupportPanel
             note={message.note}

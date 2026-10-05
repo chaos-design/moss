@@ -45,6 +45,7 @@ type ConversationRequest = {
   tutorMode?: TutorMode
   memory?: ConversationMemoryPayload | ConversationMemoryContextItem[]
   messages: ChatTurn[]
+  promptSupplement?: string
   modelConfigEnvelope?: ModelConfigEnvelope
 }
 
@@ -128,6 +129,13 @@ function isValidMemory(value: unknown) {
   )
 }
 
+function isValidPromptSupplement(value: unknown): value is string | undefined {
+  if (value === undefined) {
+    return true
+  }
+  return typeof value === "string" && value.length <= 4_000
+}
+
 function isValidRequest(value: unknown): value is ConversationRequest {
   if (!value || typeof value !== "object") {
     return false
@@ -140,6 +148,7 @@ function isValidRequest(value: unknown): value is ConversationRequest {
       candidate.language === "bilingual" ||
       candidate.language === "english") &&
     (candidate.tutorMode === undefined || isTutorMode(candidate.tutorMode)) &&
+    isValidPromptSupplement(candidate.promptSupplement) &&
     isValidMemory(candidate.memory) &&
     !("modelConfig" in candidate) &&
     isValidModelConfigEnvelope(candidate.modelConfigEnvelope) &&

@@ -105,6 +105,38 @@ sidecar 和 `localhost:5577` 的前端。浏览器不直接依赖任何 TTS SDK�
 前端 TTS 模型。服务能够连接但返回模型缺失、参数错误等响应时不会静默降级，以便及时发现
 安装或配置问题。
 
+## 不启动本机语音服务
+
+语音接入方式在“偏好设置 → 语音服务接入”中按 ASR 与 TTS 分别选择，配置保存在浏览器
+`moss:speech-config:v1`。因此本机服务不是运行前提：
+
+| 接入方式 | 是否需要本机服务 | 说明 |
+| --- | --- | --- |
+| 本机服务 | 是 | 默认值，连接 `5578`/`5580`；连接失败时当次会话自动回退到浏览器语音 |
+| HTTP API | 否 | 对接任意 OpenAI 兼容的 `/audio/transcriptions` 与 `/audio/speech` |
+| 浏览器引擎 | 否 | 直接使用 `SpeechRecognition` 与 `speechSynthesis` |
+
+对接远程语音接口时，只需在设置里填写根地址、模型与密钥，或用环境变量提供默认值：
+
+```bash
+# 只提供公开地址与模型名；密钥由浏览器本地配置提供，不进入构建产物
+NEXT_PUBLIC_ASR_API_URL=https://api.openai.com/v1
+NEXT_PUBLIC_ASR_API_MODEL=whisper-1
+NEXT_PUBLIC_TTS_API_URL=https://api.openai.com/v1
+NEXT_PUBLIC_TTS_API_MODEL=tts-1
+```
+
+生产环境必须把允许的语音主机名写入白名单，否则 `/api/speech/*` 会拒绝转发：
+
+```bash
+AI_ALLOWED_BROWSER_SPEECH_HOSTS=speech.example.com
+```
+
+`api.openai.com` 与 `api.anthropic.com` 默认在白名单内。该白名单与模型服务使用的
+`AI_ALLOWED_BROWSER_MODEL_HOSTS` 相互独立，两者都要配置才能同时支持远程推理与远程语音。
+浏览器语音引擎依赖操作系统与浏览器支持（Chrome、Edge、macOS Safari 可用，识别质量由浏览器
+实现决定）；不具备该能力的浏览器保持文字模式，并在对话中明确提示。
+
 CosyVoice 为独立可选层，不与 Kokoro 环境共享依赖。首次对比前运行：
 
 ```bash
@@ -332,10 +364,12 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 | `NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED` | 构建期内联 | 启用 Google 登录时必需 |
 | `NEXT_PUBLIC_DEMO_MODE` | 构建期内联 | 部署环境必须为 `false` 或不设置 |
 | `NEXT_PUBLIC_TTS_SERVICE_URL`、`NEXT_PUBLIC_ASR_SERVICE_URL`、`NEXT_PUBLIC_FUNASR_SERVICE_URL` | 构建期内联 | 保持默认 loopback 值 |
+| `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_ASR_API_MODEL`、`NEXT_PUBLIC_TTS_API_URL`、`NEXT_PUBLIC_TTS_API_MODEL` | 构建期内联 | 使用 HTTP API 语音接入时必需 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_MODEL` | 构建期内联 | 仅旧部署兼容 |
 | `SUPABASE_SERVICE_ROLE_KEY`、`ACCOUNT_DELETION_AUDIT_SECRET` | 运行时服务端 | 账户删除与导出必需 |
 | `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` | 运行时服务端 | 非演示模式必需 |
 | `AI_EMBEDDING_MODEL`、`AI_ALLOWED_BROWSER_MODEL_HOSTS` | 运行时服务端 | 可选 |
+| `AI_ALLOWED_BROWSER_SPEECH_HOSTS` | 运行时服务端 | 生产环境使用远程语音接口时必需 |
 | `MODEL_CONFIG_PRIVATE_KEY_BASE64` | 运行时服务端 | 生产多实例必需 |
 | `MOSS_TTS_*`、`MOSS_ASR_*`、`MOSS_KOKORO_*` | 不适用 | Vercel 上不要配置 |
 
@@ -357,15 +391,45 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 
 ### 语音服务在 Vercel 部署下的行为
 
-Vercel 部署后，语音功能不会自动可用：
+Vercel 部署后，本机语音服务一定不可用：
 
 - 文字对话、记忆、复习、跟读评分中的非录音部分正常。
-- ASR 与 TTS 只有在用户本机运行 `pnpm asr:start`、`pnpm tts:gateway` 时可用，
-  浏览器经 HTTPS 页面访问 `http://127.0.0.1:5578` 依赖浏览器的 loopback 豁免。
-- 连接失败时 TTS 回退到浏览器原生 `speechSynthesis`，ASR 保持文字模式。
+- `local` 接入只有在用户本机运行 `pnpm asr:start`、`pnpm tts:gateway` 时可用，浏览器经
+  HTTPS 页面访问 `http://127.0.0.1:5578` 依赖浏览器的 loopback 豁免。
+- 连接失败时 TTS 回退到浏览器原生 `speechSynthesis`；ASR 若浏览器支持
+  `SpeechRecognition`，当次会话自动回退到浏览器识别并提示一次，否则保持文字模式。
+- 云端语音能力应使用 `api` 接入：配置 OpenAI 兼容端点并把主机名写入
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS`，请求由本站 `/api/speech/*` 转发。
 
-因此 Vercel 部署不构成语音能力的生产方案。若需要集中的 ASR，必须先解除前端
-`validateLocalWebSocketUrl` 的回环限制，并同时补齐令牌认证、Origin 白名单和租户配额。
+若采用集中式自托管 ASR（自建 WebSocket 服务），前端仍按回环限制拒绝远程 `ws:` 地址，
+需要先扩展 `validateLocalWebSocketUrl` 的策略，并同时补齐令牌认证、Origin 白名单和租户配额。
+
+### ASR 的 Vercel 构建入口
+
+仓库根提供 ASR 的 ASGI 构建入口，使 `vercel build` 能解析出顶层 `app`：
+
+| 文件 | 作用 |
+| --- | --- |
+| `asgi.py` | Vercel 入口，`app = create_app()`；ASR 服务本身仍只用工厂函数 |
+| `requirements.txt` | `-r backend/services/asr/requirements.txt`，依赖只有一份真相 |
+| `vercel.json` | 按 `functions.asgi.py.excludeFiles` 排除前端、文档、虚拟环境与测试 |
+
+该项目的 Root Directory 必须是**仓库根**：入口以 `backend.services.asr` 包被导入，仓库根
+才是包可见的位置，Vercel 不会递归查找嵌套目录的 `app.py`。WebSocket 需要启用 Fluid
+compute（2025-04-23 之后创建的项目默认开启）。
+
+构建可以通过，**运行不成立**，属于已知不可行而非待修复缺陷：
+
+| 约束 | 本项目需要 | Vercel 上限 |
+| --- | --- | --- |
+| Qwen3-ASR CPU bfloat16 推理峰值内存 | ~4.5 GB（`engine.py` 实测注释） | Hobby 2 GB / Pro 4 GB |
+| `torch` 安装体积 | ~570 MB | Python bundle 标准 500 MB，需 large functions 公测 |
+| 加速器 | CUDA 或 MPS | 无 GPU，1–2 vCPU |
+| 浏览器可达性 | `use-streaming-asr.ts` 的 `validateLocalWebSocketUrl` 只接受回环主机 | 即使部署成功也无法连接 |
+
+SenseVoiceSmall 是唯一在算术上可能的引擎，但仍受无 GPU、冷启动重复加载与前端回环限制
+约束。生产 ASR 仍按[多服务部署边界](#多服务部署边界)落在自托管 GPU 节点或用户本机；
+可达性决策见 `plans/planned.md` 的 T-302。
 
 ### 多服务部署边界
 

@@ -52,7 +52,7 @@ describe("conversation prefs", () => {
         }),
       ),
     ).toMatchObject({
-      version: 3,
+      version: defaultConversationPrefs.version,
       transcriptLayout: "split",
       sendShortcut: "shift-enter",
       tutorMode: "coach",

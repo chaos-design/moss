@@ -7,6 +7,7 @@ import {
   EyeOffIcon,
   LoaderCircleIcon,
 } from "lucide-react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { type FormEvent, useState } from "react"
 import { toast } from "sonner"
@@ -256,7 +257,21 @@ export function LoginForm({
       </form>
 
       <p className="mt-6 text-xs leading-5 text-muted-foreground">
-        继续即表示你同意服务条款与隐私政策。本地演示模式需要由项目配置显式启用。
+        继续即表示你同意
+        <Link
+          href="/terms"
+          className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          服务条款
+        </Link>
+        与
+        <Link
+          href="/privacy"
+          className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          隐私政策
+        </Link>
+        。本地演示模式需要由项目配置显式启用。
       </p>
     </div>
   )

@@ -20,6 +20,8 @@
 | `DELETE /api/account` | Supabase session + 邮箱确认 | 5 次/小时/用户 | 删除账户并审计残留 |
 | `POST /api/memory-documents` | Supabase session | 60 次/分钟/用户 | 复习与跟读向量记忆 |
 | `POST /api/translation` | Supabase session 或加密自带配置 | 30 次/分钟/主体 | 单条翻译 |
+| `POST /api/speech/asr` | 无（请求自带端点配置） | 120 次/分钟/endpoint | 单段语音转写 |
+| `POST /api/speech/tts` | 无（请求自带端点配置） | 240 次/分钟/endpoint | 文本转音频 |
 | `WS /v1/asr/stream` | 可选部署 token | 连接数与消息大小限制 | PCM 与转写 |
 | FunASR 2-pass WebSocket | 由本地服务决定 | 由本地服务决定 | PCM 与转写 |
 | `POST /v1/tts/synthesize` | loopback + Origin | 文本长度与服务资源限制 | 文本与 WAV |
@@ -114,6 +116,92 @@ sidecar 接入，使用 `multilingual` 音色并通过 `pnpm audio8:setup` 安�
 请求去重，并使用 64 MB LRU 音频缓存；`X-TTS-Cache` 响应头为 `MISS`、`COALESCED` 或
 `HIT`。
 
+## 语音服务接入方式
+
+ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-config:v1` 决定。对话页设置浮层的
+“识别来源”与“播报来源”以及偏好设置的“语音服务接入”卡片编辑同一份配置。该配置不会写入学习
+记忆、日志或 Supabase。
+
+音色标识随接入方式解析：本机接入使用 `moss:tts-config:v2` 的引擎音色注册表（`kokoro:af_bella`
+等），API 接入使用 `tts.voice` 的接口音色名（`alloy`、`nova` 或自建网关的自定义名称），
+浏览器接入由系统按语言选择。
+
+| 接入方式 | ASR 实现 | TTS 实现 |
+| --- | --- | --- |
+| `local`（默认） | `ws://127.0.0.1:5580/v1/asr/stream` 流式 PCM | `http://127.0.0.1:5578/v1/tts/synthesize` |
+| `api` | `/api/speech/asr` → OpenAI 兼容 `/audio/transcriptions` | `/api/speech/tts` → OpenAI 兼容 `/audio/speech` |
+| `browser` | 浏览器 `SpeechRecognition` | 浏览器 `speechSynthesis` |
+
+`local` 接入地址可在设置中覆盖，留空时使用 `NEXT_PUBLIC_ASR_SERVICE_URL` 与
+`NEXT_PUBLIC_TTS_SERVICE_URL`。`local` 连接失败时，前端在当前会话内自动回退到浏览器引擎并提示
+一次，不改写用户已保存的接入方式。`api` 接入的默认根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与
+`NEXT_PUBLIC_TTS_API_URL`，模型来自 `NEXT_PUBLIC_ASR_API_MODEL` 与
+`NEXT_PUBLIC_TTS_API_MODEL`；`tts.voice` 留空时使用 `alloy`。
+
+`api` 识别按段上传：接口没有中间结果和语音起点信号，因此该接入方式不提供实时字幕，也不支持用
+说话打断 AI 播报，需要打断时使用文字输入。`browser` 识别由浏览器实现决定行为，静默一段时间后
+浏览器会结束一次会话，前端会自动重新开始监听。识别引擎选择器（SenseVoice、Qwen3-ASR、
+FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控件。
+
+## POST `/api/speech/asr`
+
+把一段录音转写为文本。浏览器永远不直接请求第三方语音服务：接口由 Next.js 校验端点、限流并转发，
+因此第三方 CORS 策略不影响可用性，密钥也不会进入页面脚本。
+
+```json
+{
+  "endpoint": {
+    "endpoint": "https://speech.example.com/v1",
+    "apiKey": "sk-...",
+    "model": "whisper-1"
+  },
+  "audioBase64": "AAECAwQ...",
+  "mimeType": "audio/webm",
+  "language": "zh"
+}
+```
+
+成功响应：
+
+```json
+{ "data": { "text": "Could I get a latte?" } }
+```
+
+约束与错误：
+
+- `endpoint` 必须通过与推理端点相同的策略：生产环境仅允许 HTTPS 公网主机，且主机名需在
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、`api.anthropic.com`）；
+  非生产环境额外允许回环地址。URL 不得携带用户名或密码。
+- 解码后的音频不超过 8 MB，请求体不超过 12 MB，`language` 可省略。
+- 上游使用 `multipart/form-data`：`file`、`model`、`response_format=json`、可选 `language`。
+- 上游 30 秒未响应视为不可用。错误码：`invalid_json`、`invalid_request`、
+  `invalid_speech_endpoint`、`invalid_audio`、`request_too_large`、`rate_limited`、
+  `speech_endpoint_unreachable`、`speech_upstream_error`、`speech_invalid_response`、`asr_failed`。
+- 服务端只返回规范化文案，不回传上游响应正文；密钥仅用于当次转发，不落盘、不记录。
+
+## POST `/api/speech/tts`
+
+合成一段语音并原样返回音频字节，响应 `Content-Type` 与上游一致，`Cache-Control: no-store`。
+
+```json
+{
+  "endpoint": {
+    "endpoint": "https://speech.example.com/v1",
+    "apiKey": "sk-...",
+    "model": "tts-1"
+  },
+  "text": "Could I get a coffee, please?",
+  "voice": "alloy",
+  "speed": 0.95,
+  "format": "mp3"
+}
+```
+
+- `text` 去除首尾空白后长度为 1–2000 字符，`voice` 必填且不超过 120 字符，`speed` 收敛到
+  `0.5`–`2`，`format` 取 `mp3`、`opus`、`aac`、`flac`、`wav`、`pcm` 之一，默认 `mp3`。
+- 端点策略、限流（240 次/分钟/endpoint）与错误码语义同 `/api/speech/asr`。
+- 上游返回非 `audio/*` 内容时记为 `speech_invalid_response`，浏览器据此回退到系统语音。
+
 ## POST `/api/conversation`
 
 生成下一轮场景对话。接口最多接收 24 条历史消息，每条消息最多 4000 字符，并只向模型转发最近 12 条。
@@ -175,6 +263,11 @@ sidecar 接入，使用 `multilingual` 音色并通过 `pnpm audio8:setup` 安�
 客户端将导师模式保存在设备级 `moss:conversation-prefs:v1` 中，请求只发送上述枚举，不发送
 其他本地偏好。服务端拒绝未知值；旧客户端未发送该字段时沿用温和纠错。
 
+`promptSupplement` 可选，最长 4000 字符，非字符串值与超长值一律以 `invalid_request` 拒绝。
+它承载学习者在设置中编写的补充指令，服务端再次截断到 2000 字符、把 `{{` 与 `}}` 中和为空格
+后追加到已渲染的基础 Prompt 末尾。基础 Prompt 与其中的 JSON 输出契约不可编辑，补充层只能
+追加，因此无法破坏回复解析。该字段不进入学习记忆、日志或向量记忆。
+
 `modelConfigEnvelope` 可选。服务端拒绝请求体中的明文 `modelConfig`；解密后的 `apiType`
 支持 `chat-completions`、`anthropic-messages` 与 `custom`。前两者会补全标准路径，
 `custom` 会把 `baseUrl` 直接作为最终请求地址并使用 OpenAI-compatible 消息体。`baseUrl`
@@ -195,6 +288,11 @@ sidecar 接入，使用 `multilingual` 音色并通过 `pnpm audio8:setup` 安�
 场景、短期记忆、召回结果和输入分析。API 路由只调用记忆门面，不直接访问 embedding 或
 向量表。Anthropic 请求将稳定规则前缀标记为 ephemeral cache，运行时上下文保持在未缓存
 尾部；OpenAI-compatible 服务使用相同的稳定前缀顺序以利用服务端自动 Prompt Cache。
+
+该文件是代码而非用户数据：它定义 `validation` 与 `issues` 的输出契约，回复解析依赖它，
+因此不暴露为可编辑字段。学习者通过 `promptSupplement` 追加要求，追加发生在渲染之后，
+顺序上永远晚于契约与运行时上下文。契约要求模型对学习者英语中的真实语法错误必须以
+`improve` 与 `kind: "grammar"` 记录，不因句子可理解而略过。
 
 模型必须先在 `reply` 中自然回应用户意图，且 `reply` 只包含英文。中文翻译、记忆提示、
 表达解释和学习建议分别放入 `translation`、`recall` 与 `validation`，客户端会把这些内容
@@ -258,6 +356,20 @@ final 文本也在服务端发送前移除 emoji。
 | `503` | `rate_limit_unavailable` | 共享限流存储不可用，服务端拒绝绕过保护 |
 | `503` | `service_not_configured` | Supabase 或 AI provider 未配置 |
 | `502` | `provider_unavailable` | 上游 AI 服务不可用；响应不包含上游错误详情 |
+
+### 客户端错误文案
+
+接口只返回经过审校的文案。浏览器端再经过 `frontend/src/lib/user-error.ts` 归一化后才允许进入
+toast、对话记录和本机存储，规则如下：
+
+- 文案含中文、不含技术标记（`HTTP <状态码>`、`[object Object]`、连续 20 个以上 ASCII 字符、
+  `undefined`）且不超过 120 字符时，视为可展示文案，原样保留。
+- 其余情况按失败形态归类：`fetch` 失败与连接错误归为网络失败，非 JSON 响应体归为解析失败，
+  `HTMLMediaElement.play()` 拒绝归为浏览器拦截播放，其余归为调用方给定的兜底文案。
+- 抛出的值若带数值 `status`，先按状态码映射；401/403/429/5xx 各自有独立文案。
+- 中断（`AbortError`）不参与归一化，按控制流原样抛出，调用方据此区分打断与失败。
+
+因此上游细节、栈信息与 HTTP 状态文本都不会出现在界面上；归一化后的文案才会被持久化。
 
 ## POST `/api/translation`
 

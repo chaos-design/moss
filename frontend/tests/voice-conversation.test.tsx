@@ -14,6 +14,7 @@ import {
 } from "@/lib/conversation-history"
 import { defaultConversationPrefs } from "@/lib/conversation-prefs"
 import { getConversationScene } from "@/lib/conversation-scenes"
+import { networkFailureMessage } from "@/lib/user-error"
 
 const localTts = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -536,8 +537,9 @@ describe("useVoiceConversation", () => {
     })
 
     expect(localTts.previewVoice).toHaveBeenCalledTimes(1)
-    const [option, sample] = localTts.previewVoice.mock.calls[0] ?? []
-    expect(option).toMatchObject({ value: "kokoro:af_bella", engine: "kokoro" })
+    const [target, sample] = localTts.previewVoice.mock.calls[0] ?? []
+    // The player identifies a voice by engine plus voice id; the selector value never reaches it.
+    expect(target).toMatchObject({ engine: "kokoro", voice: "af_bella" })
     // The audition uses a short fixed line, never the full scene opening.
     expect(typeof sample).toBe("string")
     expect((sample as string).length).toBeLessThanOrEqual(60)
@@ -1136,9 +1138,11 @@ describe("useVoiceConversation", () => {
     await waitFor(() => {
       expect(result.current.messages).toHaveLength(3)
     })
+    // The upstream detail is technical output: the transcript keeps an actionable message and
+    // never carries `AI provider returned 400`.
     expect(result.current.messages[2]).toMatchObject({
       role: "assistant",
-      content: "AI 服务暂时不可用：AI provider returned 400",
+      content: "服务暂时不可用，请稍后重试。",
       transient: true,
       variant: "error",
     })
@@ -1168,6 +1172,108 @@ describe("useVoiceConversation", () => {
       "A latte, please.",
       "Thanks. Would you like it hot or iced?",
     ])
+
+    unmount()
+  })
+
+  it("never stores a network or parse failure verbatim in the transcript", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    fetchMock.mockResolvedValueOnce(
+      new Response("<!DOCTYPE html><html><body>502 Bad Gateway</body></html>", { status: 502 }),
+    )
+    const scene = getConversationScene("coffee")
+
+    for (const expected of [networkFailureMessage, "服务暂时不可用，请稍后重试。"]) {
+      const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+      act(() => {
+        result.current.setDraft("A latte, please.")
+      })
+      act(() => {
+        result.current.sendDraft()
+      })
+
+      await waitFor(() => {
+        expect(result.current.messages).toHaveLength(3)
+      })
+      const errorTurn = result.current.messages[2]
+      expect(errorTurn).toMatchObject({ role: "assistant", transient: true, variant: "error" })
+      expect(errorTurn.content).toBe(expected)
+
+      unmount()
+      window.localStorage.clear()
+    }
+
+    const saved = JSON.parse(window.localStorage.getItem(conversationHistoryStorageKey) ?? "{}")
+    const persisted = JSON.stringify(saved)
+    expect(persisted).not.toContain("Failed to fetch")
+    expect(persisted).not.toContain("SyntaxError")
+    expect(persisted).not.toContain("502")
+  })
+
+  it("deletes a recognized message together with the reply it produced", async () => {
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    act(() => {
+      result.current.setDraft("I wants a latte")
+    })
+    act(() => {
+      result.current.sendDraft()
+    })
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(3))
+    const learnerTurn = result.current.messages[1]
+    expect(learnerTurn).toMatchObject({ role: "user", content: "I wants a latte" })
+
+    act(() => {
+      result.current.deleteMessage(learnerTurn.id)
+    })
+
+    // The partner answered the mis-recognized turn, so that answer goes with it. Leaving it would
+    // show a reply to a question the learner can no longer see.
+    expect(result.current.messages).toHaveLength(1)
+    expect(result.current.messages[0].role).toBe("assistant")
+
+    unmount()
+  })
+
+  it("omits the prompt supplement from the request when none is configured", async () => {
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    act(() => {
+      result.current.setDraft("A latte, please.")
+    })
+    act(() => {
+      result.current.sendDraft()
+    })
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body).not.toHaveProperty("promptSupplement")
+
+    unmount()
+  })
+
+  it("sends the configured prompt supplement with the request", async () => {
+    setConversationPrefs((current) => ({
+      ...current,
+      promptSupplement: "每轮都纠正我的语法错误。",
+    }))
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    act(() => {
+      result.current.setDraft("A latte, please.")
+    })
+    act(() => {
+      result.current.sendDraft()
+    })
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body.promptSupplement).toBe("每轮都纠正我的语法错误。")
 
     unmount()
   })
