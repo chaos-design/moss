@@ -1,10 +1,12 @@
 import { type SceneLevel, sceneItems } from "@/lib/demo-data"
 import { getCurrentLearningLevel } from "@/lib/learning-progress"
 import type {
+  LearningActivityType,
   LearningMemoryEvent,
   LearningMemoryItem,
   LearningMemoryState,
 } from "@/lib/memory/learning-memory"
+import { learningActivityTypes } from "@/lib/memory/learning-memory"
 
 export const learningAnalyticsPeriods = [
   { label: "最近 7 天", value: "7d" },
@@ -14,13 +16,11 @@ export const learningAnalyticsPeriods = [
 
 export type LearningAnalyticsPeriod = (typeof learningAnalyticsPeriods)[number]["value"]
 
+/** 每种学习活动在每日活跃度里各占一个计数键，直接由单一词表派生。 */
 export type LearningActivityPoint = {
   date: string
   label: string
-  conversation: number
-  shadowing: number
-  review: number
-}
+} & Record<LearningActivityType, number>
 
 export type LearningAnalyticsSummary = {
   activeMemoryCount: number
@@ -105,13 +105,11 @@ export function getLearningAnalyticsEvents(
 }
 
 function createActivityPoint(date: Date): LearningActivityPoint {
-  return {
-    date: getDayKey(date),
-    label: dayLabelFormatter.format(date),
-    conversation: 0,
-    shadowing: 0,
-    review: 0,
+  const counts = {} as Record<LearningActivityType, number>
+  for (const type of learningActivityTypes) {
+    counts[type] = 0
   }
+  return { date: getDayKey(date), label: dayLabelFormatter.format(date), ...counts }
 }
 
 function createActivityRange(start: Date, end: Date) {

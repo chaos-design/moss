@@ -17,7 +17,12 @@ import { useLearningMemory } from "@/components/learning-memory-provider"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
-import { createMemoryTargetHref, getDueMemoryItems, getLearningMemoryStats } from "@/lib/memory"
+import {
+  createMemoryTargetHref,
+  getDueMemoryItems,
+  getLearningMemoryStats,
+  learningActivityLabels,
+} from "@/lib/memory"
 import { cn } from "@/lib/utils"
 
 const kindLabels = {
@@ -32,12 +37,6 @@ const kindIcons = {
   grammar: SpellCheck2Icon,
   pronunciation: AudioLinesIcon,
   vocabulary: LanguagesIcon,
-}
-
-const eventLabels = {
-  conversation: "对话",
-  review: "复习",
-  shadowing: "跟读",
 }
 
 function formatMemoryDate(value: string) {
@@ -191,7 +190,7 @@ export function MemoryNotebook() {
                           <p className="mt-1 text-xs leading-5">
                             {formatMemoryDate(item.lastSeenAt)}
                             {latestEvent
-                              ? ` · ${eventLabels[latestEvent.type]}${
+                              ? ` · ${learningActivityLabels[latestEvent.type]}${
                                   latestEvent.successful ? "成功" : "需加强"
                                 }`
                               : ""}

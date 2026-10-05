@@ -1,9 +1,29 @@
-import { type RecallRating, scheduleReview } from "./spaced-repetition"
+import { type RecallRating, type ReviewState, scheduleReview } from "./spaced-repetition"
 
 const memoryVersion = 1
 const dayMs = 86_400_000
 
 export type LearningMemoryKind = "expression" | "grammar" | "pronunciation" | "vocabulary"
+
+/**
+ * 单一词表：一次学习活动既决定学习记忆事件类型，也决定云端长期记忆的 `source_type`。
+ * 新增学习面时只在这里增加一个值，分析、图表与云端契约都从它派生，避免并行枚举漂移。
+ */
+export const learningActivityTypes = [
+  "conversation",
+  "review",
+  "shadowing",
+  "expression",
+] as const
+
+export type LearningActivityType = (typeof learningActivityTypes)[number]
+
+export const learningActivityLabels: Record<LearningActivityType, string> = {
+  conversation: "AI 对话",
+  review: "智能复习",
+  shadowing: "影子跟读",
+  expression: "表达学习",
+}
 
 export type TransferTarget = {
   sceneId: string
@@ -43,7 +63,7 @@ export type SceneMemoryProgress = {
 
 export type LearningMemoryEvent = {
   id: string
-  type: "conversation" | "review" | "shadowing"
+  type: LearningActivityType
   itemId: string
   sceneId: string
   successful: boolean
@@ -117,6 +137,22 @@ export type ShadowingAttemptMemoryInput = {
   fluencyScore: number
   rhythmScore: number
   durationSeconds: number
+}
+
+/**
+ * 主动学习一条地道表达：把词库里的表达带入长期记忆。
+ * 词库条目使用 `sceneCategory` 而不是场景 ID，因此 `sceneId` 是词库分类值，
+ * 这些记忆只参与复习与记忆档案，不伪装成某个对话场景的练习成果。
+ */
+export type ExpressionStudyMemoryInput = {
+  itemId: string
+  sceneCategory: string
+  sceneTitle: string
+  label: string
+  phrase: string
+  explanation: string
+  example: string
+  libraryKind: string
 }
 
 export type LearningPlanStep = {
@@ -574,6 +610,172 @@ export function createLearningPlan(
   }
 }
 
+/**
+ * 一次学习活动的判别联合。事件类型、记忆类型与强度策略都由活动类型本身决定，
+ * 调用方不再各自硬编码 `kind`，因此新增学习面只会增加一个分支。
+ */
+export type LearningActivity =
+  | { type: "conversation"; input: ConversationTurnMemoryInput }
+  | { type: "review"; input: { itemId: string; rating: RecallRating } }
+  | { type: "shadowing"; input: ShadowingAttemptMemoryInput }
+  | { type: "expression"; input: ExpressionStudyMemoryInput }
+
+type MemoryOutcome = {
+  itemId: string
+  /** 找不到既有记忆时用该类型创建新条目。 */
+  create?: Omit<
+    LearningMemoryItem,
+    | "strength"
+    | "encounters"
+    | "successfulRecalls"
+    | "lapseCount"
+    | "intervalDays"
+    | "easeFactor"
+    | "repetitions"
+    | "lastSeenAt"
+    | "nextReviewAt"
+  >
+  /** 未命中既有记忆时不做任何条目变更（复习对未知条目保持原有行为）。 */
+  ignoreWhenMissing?: boolean
+  successful: boolean
+  strengthDelta: number
+  nextReviewAt: string
+  reviewSchedule?: Pick<ReviewState, "intervalDays" | "easeFactor" | "repetitions">
+}
+
+/**
+ * 所有学习面共用的条目更新与事件写入路径。强度、计数与时间戳只在此处变化一次，
+ * 保证跨设备合并使用的累积计数语义对所有活动类型一致。
+ */
+function applyMemoryOutcome(
+  state: LearningMemoryState,
+  outcome: MemoryOutcome,
+  event: Omit<LearningMemoryEvent, "id">,
+  now: Date,
+): LearningMemoryState {
+  const nowIso = now.toISOString()
+  const existingItem = state.items.find((item) => item.id === outcome.itemId)
+  if (!existingItem && (!outcome.create || outcome.ignoreWhenMissing)) {
+    return state
+  }
+
+  const baseItem: LearningMemoryItem = existingItem ?? {
+    ...(outcome.create as LearningMemoryItem),
+    strength: 45,
+    encounters: 0,
+    successfulRecalls: 0,
+    lapseCount: 0,
+    intervalDays: 1,
+    easeFactor: 2.3,
+    repetitions: 0,
+    lastSeenAt: nowIso,
+    nextReviewAt: nowIso,
+  }
+  const nextItem: LearningMemoryItem = {
+    ...baseItem,
+    ...(outcome.reviewSchedule ?? {}),
+    strength: clamp(baseItem.strength + outcome.strengthDelta),
+    encounters: baseItem.encounters + 1,
+    successfulRecalls: baseItem.successfulRecalls + (outcome.successful ? 1 : 0),
+    lapseCount: baseItem.lapseCount + (outcome.successful ? 0 : 1),
+    lastSeenAt: nowIso,
+    nextReviewAt: outcome.nextReviewAt,
+  }
+
+  return {
+    ...state,
+    items: existingItem
+      ? state.items.map((item) => (item.id === outcome.itemId ? nextItem : item))
+      : [nextItem, ...state.items],
+    events: appendEvent(state, event, now),
+    updatedAt: nowIso,
+  }
+}
+
+/** 复习事件会清理历史快照中遗留的 `dueAt` 字段，其余活动类型沿用同一路径。 */
+function stripLegacyDueAt(item: LearningMemoryItem) {
+  const legacy = { ...item } as LearningMemoryItem & { dueAt?: string }
+  delete legacy.dueAt
+  return legacy
+}
+
+/**
+ * 词库表达在长期记忆中的稳定身份。词库条目以 `clientId` 为主键，
+ * 因此重复学习同一条表达始终命中同一条记忆，跨设备合并后仍然幂等。
+ */
+export function createExpressionMemoryItemId(clientId: string) {
+  return `expression-library-${clientId}`
+}
+
+/**
+ * 主动学习一条词库表达。本机先写条目与事件，云端向量记忆由 provider 另行同步，
+ * 因此这里不依赖任何 Provider 或网络状态。
+ */
+export function recordExpressionStudy(
+  state: LearningMemoryState,
+  input: ExpressionStudyMemoryInput,
+  now = new Date(),
+): LearningMemoryState {
+  const phrase = normalizeMemoryExpression(input.phrase)
+  if (!phrase) {
+    return state
+  }
+
+  const nowIso = now.toISOString()
+  const kind: LearningMemoryKind =
+    input.libraryKind === "sentence-pattern" ? "grammar" : "expression"
+  return applyMemoryOutcome(
+    state,
+    {
+      itemId: input.itemId,
+      create: {
+        id: input.itemId,
+        kind,
+        label: input.label,
+        cue: `主动学习并记住“${input.phrase}”`,
+        answer: phrase,
+        explanation: input.explanation,
+        sourceSceneId: input.sceneCategory,
+        sourceSceneTitle: input.sceneTitle,
+        transferTargets: [],
+      },
+      successful: true,
+      strengthDelta: 4,
+      // 主动学习不等于成功找回，因此立刻排入近期复习，用真实评分决定后续间隔。
+      nextReviewAt: offsetIso(now, 10 * 60 * 1000),
+    },
+    {
+      type: "expression",
+      itemId: input.itemId,
+      sceneId: input.sceneCategory,
+      successful: true,
+      occurredAt: nowIso,
+    },
+    now,
+  )
+}
+
+/**
+ * 统一记忆写入入口。对话、复习、跟读与表达学习都在此汇合，
+ * 学习面只负责提供活动事实，不再各自实现条目合并与事件追加。
+ */
+export function recordLearningActivity(
+  state: LearningMemoryState,
+  activity: LearningActivity,
+  now = new Date(),
+): LearningMemoryState {
+  if (activity.type === "expression") {
+    return recordExpressionStudy(state, activity.input, now)
+  }
+  if (activity.type === "review") {
+    return recordReviewMemory(state, activity.input.itemId, activity.input.rating, now)
+  }
+  if (activity.type === "shadowing") {
+    return recordShadowingMemory(state, activity.input, now)
+  }
+  return recordConversationMemory(state, activity.input, now)
+}
+
 export function recordConversationMemory(
   state: LearningMemoryState,
   input: ConversationTurnMemoryInput,
@@ -612,40 +814,6 @@ export function recordConversationMemory(
     : usedTarget
   const successful = input.accurate && usedRememberedExpression
   const itemId = matchingItem?.id ?? `expression-${input.sceneId}-${state.items.length + 1}`
-  const baseItem: LearningMemoryItem = matchingItem ?? {
-    id: itemId,
-    kind: "expression",
-    label: input.targetLabel,
-    cue: `在${input.sceneTitle}中完成“${input.targetLabel}”`,
-    answer: targetExpression,
-    explanation: input.explanation,
-    sourceSceneId: input.sceneId,
-    sourceSceneTitle: input.sceneTitle,
-    transferTargets: [],
-    strength: 45,
-    encounters: 0,
-    successfulRecalls: 0,
-    lapseCount: 0,
-    intervalDays: 1,
-    easeFactor: 2.3,
-    repetitions: 0,
-    lastSeenAt: nowIso,
-    nextReviewAt: nowIso,
-  }
-
-  const nextItem: LearningMemoryItem = {
-    ...baseItem,
-    explanation: input.explanation || baseItem.explanation,
-    strength: clamp(baseItem.strength + (successful ? 9 : input.accurate ? 3 : -12)),
-    encounters: baseItem.encounters + 1,
-    successfulRecalls: baseItem.successfulRecalls + (successful ? 1 : 0),
-    lapseCount: baseItem.lapseCount + (input.accurate ? 0 : 1),
-    lastSeenAt: nowIso,
-    nextReviewAt: successful
-      ? offsetIso(now, Math.max(2, baseItem.intervalDays) * dayMs)
-      : offsetIso(now, input.accurate ? dayMs : 10 * 60 * 1000),
-  }
-
   const currentProgress = state.sceneProgress[input.sceneId]
   const practicedExpressions = Array.from(
     new Set([...(currentProgress?.practicedExpressions ?? []), targetExpression]),
@@ -659,28 +827,44 @@ export function recordConversationMemory(
     lastPracticedAt: nowIso,
   }
 
-  return {
+  const withProgress: LearningMemoryState = {
     ...state,
-    items: matchingItem
-      ? state.items.map((item) => (item.id === matchingItem.id ? nextItem : item))
-      : [nextItem, ...state.items],
     sceneProgress: {
       ...state.sceneProgress,
       [input.sceneId]: nextProgress,
     },
-    events: appendEvent(
-      state,
-      {
-        type: "conversation",
-        itemId,
-        sceneId: input.sceneId,
-        successful,
-        occurredAt: nowIso,
-      },
-      now,
-    ),
-    updatedAt: nowIso,
   }
+
+  return applyMemoryOutcome(
+    withProgress,
+    {
+      itemId,
+      create: {
+        id: itemId,
+        kind: "expression",
+        label: input.targetLabel,
+        cue: `在${input.sceneTitle}中完成“${input.targetLabel}”`,
+        answer: targetExpression,
+        explanation: input.explanation,
+        sourceSceneId: input.sceneId,
+        sourceSceneTitle: input.sceneTitle,
+        transferTargets: [],
+      },
+      successful,
+      strengthDelta: successful ? 9 : input.accurate ? 3 : -12,
+      nextReviewAt: successful
+        ? offsetIso(now, Math.max(2, matchingItem?.intervalDays ?? 1) * dayMs)
+        : offsetIso(now, input.accurate ? dayMs : 10 * 60 * 1000),
+    },
+    {
+      type: "conversation",
+      itemId,
+      sceneId: input.sceneId,
+      successful,
+      occurredAt: nowIso,
+    },
+    now,
+  )
 }
 
 export function recordReviewMemory(
@@ -710,39 +894,31 @@ export function recordReviewMemory(
     good: 12,
     easy: 20,
   }[rating]
-  const itemWithoutLegacyDueAt = {
-    ...item,
-  } as LearningMemoryItem & { dueAt?: string }
-  delete itemWithoutLegacyDueAt.dueAt
-  const nextItem: LearningMemoryItem = {
-    ...itemWithoutLegacyDueAt,
-    intervalDays: reviewState.intervalDays,
-    easeFactor: reviewState.easeFactor,
-    repetitions: reviewState.repetitions,
-    strength: clamp(item.strength + strengthDelta),
-    encounters: item.encounters + 1,
-    successfulRecalls: item.successfulRecalls + (successful ? 1 : 0),
-    lapseCount: item.lapseCount + (successful ? 0 : 1),
-    lastSeenAt: now.toISOString(),
-    nextReviewAt: reviewState.dueAt,
-  }
 
-  return {
-    ...state,
-    items: state.items.map((candidate) => (candidate.id === itemId ? nextItem : candidate)),
-    events: appendEvent(
-      state,
-      {
-        type: "review",
-        itemId,
-        sceneId: item.sourceSceneId,
-        successful,
-        occurredAt: now.toISOString(),
+  return applyMemoryOutcome(
+    { ...state, items: state.items.map(stripLegacyDueAt) },
+    {
+      itemId,
+      // 复习只重新校准既有记忆，不为未知条目编造学习记录。
+      ignoreWhenMissing: true,
+      successful,
+      strengthDelta,
+      nextReviewAt: reviewState.dueAt,
+      reviewSchedule: {
+        intervalDays: reviewState.intervalDays,
+        easeFactor: reviewState.easeFactor,
+        repetitions: reviewState.repetitions,
       },
-      now,
-    ),
-    updatedAt: now.toISOString(),
-  }
+    },
+    {
+      type: "review",
+      itemId,
+      sceneId: item.sourceSceneId,
+      successful,
+      occurredAt: now.toISOString(),
+    },
+    now,
+  )
 }
 
 export function recordShadowingMemory(
@@ -750,63 +926,43 @@ export function recordShadowingMemory(
   input: ShadowingAttemptMemoryInput,
   now = new Date(),
 ): LearningMemoryState {
-  const item = state.items.find((candidate) => candidate.id === input.itemId)
   const successful = input.overallScore >= 75
-  const baseItem: LearningMemoryItem = item ?? {
-    id: input.itemId,
-    kind: "pronunciation",
-    label: input.label,
-    cue: `跟读并稳定读出“${input.focusWord}”`,
-    answer: input.sentence,
-    explanation: "根据实际录音的清晰度、连贯度与节奏持续巩固。",
-    sourceSceneId: input.sceneId,
-    sourceSceneTitle: input.sceneTitle,
-    transferTargets: [],
-    strength: 45,
-    encounters: 0,
-    successfulRecalls: 0,
-    lapseCount: 0,
-    intervalDays: 1,
-    easeFactor: 2.3,
-    repetitions: 0,
-    lastSeenAt: now.toISOString(),
-    nextReviewAt: now.toISOString(),
-  }
-  const nextItem: LearningMemoryItem = {
-    ...baseItem,
-    strength: clamp(baseItem.strength + (successful ? 7 : -5)),
-    encounters: baseItem.encounters + 1,
-    successfulRecalls: baseItem.successfulRecalls + (successful ? 1 : 0),
-    lapseCount: baseItem.lapseCount + (successful ? 0 : 1),
-    lastSeenAt: now.toISOString(),
-    nextReviewAt: offsetIso(now, successful ? 3 * dayMs : dayMs),
-  }
 
-  return {
-    ...state,
-    items: item
-      ? state.items.map((candidate) => (candidate.id === input.itemId ? nextItem : candidate))
-      : [nextItem, ...state.items],
-    events: appendEvent(
-      state,
-      {
-        type: "shadowing",
-        itemId: input.itemId,
-        sceneId: input.sceneId,
-        successful,
-        occurredAt: now.toISOString(),
-        shadowing: {
-          overallScore: input.overallScore,
-          clarityScore: input.clarityScore,
-          fluencyScore: input.fluencyScore,
-          rhythmScore: input.rhythmScore,
-          durationSeconds: input.durationSeconds,
-        },
+  return applyMemoryOutcome(
+    state,
+    {
+      itemId: input.itemId,
+      create: {
+        id: input.itemId,
+        kind: "pronunciation",
+        label: input.label,
+        cue: `跟读并稳定读出“${input.focusWord}”`,
+        answer: input.sentence,
+        explanation: "根据实际录音的清晰度、连贯度与节奏持续巩固。",
+        sourceSceneId: input.sceneId,
+        sourceSceneTitle: input.sceneTitle,
+        transferTargets: [],
       },
-      now,
-    ),
-    updatedAt: now.toISOString(),
-  }
+      successful,
+      strengthDelta: successful ? 7 : -5,
+      nextReviewAt: offsetIso(now, successful ? 3 * dayMs : dayMs),
+    },
+    {
+      type: "shadowing",
+      itemId: input.itemId,
+      sceneId: input.sceneId,
+      successful,
+      occurredAt: now.toISOString(),
+      shadowing: {
+        overallScore: input.overallScore,
+        clarityScore: input.clarityScore,
+        fluencyScore: input.fluencyScore,
+        rhythmScore: input.rhythmScore,
+        durationSeconds: input.durationSeconds,
+      },
+    },
+    now,
+  )
 }
 
 export function updateLearnerProfile(

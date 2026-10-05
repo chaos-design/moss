@@ -117,4 +117,45 @@ describe("practice memory persistence", () => {
       { onConflict: "user_id,source_type,source_id" },
     )
   })
+
+  it("stores studied library expressions as retrievable expression memory", async () => {
+    stubEmbedding()
+    const { client, upsert } = createClient()
+
+    await persistPracticeMemory({
+      client: client as never,
+      provider,
+      userId: "user-1",
+      memory: {
+        sourceType: "expression",
+        sourceId: "expression-library-item-1",
+        sceneId: "work",
+        sceneTitle: "职场协作",
+        label: "circle back",
+        expression: "circle back",
+        explanation: "circle 表示绕回，back 表示稍后再谈。",
+        strength: 49,
+        libraryKind: "phrasal-verb",
+        example: "Let's circle back on this after lunch.",
+      },
+    })
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source_type: "expression",
+        source_id: "expression-library-item-1",
+        memory_kind: "expression_library",
+        metadata: expect.objectContaining({
+          libraryKind: "phrasal-verb",
+          example: "Let's circle back on this after lunch.",
+        }),
+      }),
+      { onConflict: "user_id,source_type,source_id" },
+    )
+    // 词库内容必须进入 embedding 文本，否则对话 RAG 无法召回。
+    const [document] = upsert.mock.calls[0]
+    expect(document.content).toContain("circle back")
+    expect(document.content).toContain("表达类型：phrasal-verb")
+    expect(document.content).toContain("Let's circle back on this after lunch.")
+  })
 })

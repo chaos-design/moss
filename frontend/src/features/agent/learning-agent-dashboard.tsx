@@ -28,6 +28,8 @@ import {
   createMemoryTargetHref,
   getLearningMemoryStats,
   type LearningPlanStep,
+  learningActivityLabels,
+  learningActivityTypes,
 } from "@/lib/memory"
 import { cn } from "@/lib/utils"
 
@@ -37,11 +39,7 @@ const stepIcons = {
   shadowing: AudioLinesIcon,
 } satisfies Record<LearningPlanStep["id"], typeof RotateCcwIcon>
 
-const eventLabels = {
-  conversation: "AI 对话",
-  review: "智能复习",
-  shadowing: "影子跟读",
-} as const
+const eventLabels = learningActivityLabels
 
 function getMemoryStatus(strength: number) {
   if (strength >= 75) {
@@ -74,7 +72,7 @@ export function LearningAgentDashboard() {
   }, [state.sceneProgress])
   const eventCounts = useMemo(
     () =>
-      (["conversation", "review", "shadowing"] as const).map((type) => ({
+      learningActivityTypes.map((type) => ({
         type,
         count: state.events.filter((event) => event.type === type).length,
       })),

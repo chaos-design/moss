@@ -9,6 +9,8 @@ import {
   normalizeMemoryExpression,
   parseLearningMemory,
   recordConversationMemory,
+  recordExpressionStudy,
+  recordLearningActivity,
   recordReviewMemory,
   recordShadowingMemory,
 } from "@/lib/memory"
@@ -275,5 +277,114 @@ describe("learning memory", () => {
       kind: "pronunciation",
       sourceSceneId: "restaurant",
     })
+  })
+
+  it("brings an expression-library item into memory and schedules it for real recall", () => {
+    const state = createEmptyLearningMemory(now)
+    const next = recordLearningActivity(
+      state,
+      {
+        type: "expression",
+        input: {
+          itemId: "expression-library-item-1",
+          sceneCategory: "work",
+          sceneTitle: "职场协作",
+          label: "circle back",
+          phrase: "circle back",
+          explanation: "circle 表示绕回，back 表示稍后再谈。",
+          example: "Let's circle back on this after lunch.",
+          libraryKind: "phrasal-verb",
+        },
+      },
+      now,
+    )
+
+    expect(next.items[0]).toMatchObject({
+      id: "expression-library-item-1",
+      kind: "expression",
+      answer: "circle back",
+      sourceSceneId: "work",
+      encounters: 1,
+      // 主动学习不是成功找回，因此起点低于对话中真正用出来的表达。
+      strength: 49,
+    })
+    // 词库条目使用词库分类，不写入场景进度，避免污染场景完成度与地图进度。
+    expect(next.sceneProgress).toEqual({})
+    expect(next.events[0]).toMatchObject({
+      type: "expression",
+      successful: true,
+      itemId: "expression-library-item-1",
+    })
+    // 立刻排入近期复习，后续间隔由真实评分决定。
+    expect(next.items[0]?.nextReviewAt).toBe("2026-08-24T08:10:00.000Z")
+    expect(getDueMemoryItems(next).map((item) => item.id)).toEqual([
+      "expression-library-item-1",
+    ])
+  })
+
+  it("classifies studied sentence patterns as grammar so the kind stays producible", () => {
+    const state = createEmptyLearningMemory(now)
+    const next = recordExpressionStudy(
+      state,
+      {
+        itemId: "expression-library-item-2",
+        sceneCategory: "work",
+        sceneTitle: "职场协作",
+        label: "Would you mind if",
+        phrase: "Would you mind if",
+        explanation: "用于提出礼貌请求的句型。",
+        example: "Would you mind if I sat here?",
+        libraryKind: "sentence-pattern",
+      },
+      now,
+    )
+
+    expect(next.items[0]?.kind).toBe("grammar")
+  })
+
+  it("increments the same memory item when an expression is studied repeatedly", () => {
+    const state = createEmptyLearningMemory(now)
+    const input = {
+      itemId: "expression-library-item-3",
+      sceneCategory: "social",
+      sceneTitle: "日常社交",
+      label: "keep an eye on",
+      phrase: "keep an eye on",
+      explanation: "eye 表示观察，keep 表示持续维持注意。",
+      example: "Could you keep an eye on my bag?",
+      libraryKind: "idiom",
+    } as const
+
+    const once = recordExpressionStudy(state, input, now)
+    const twice = recordExpressionStudy(once, input, now)
+
+    expect(twice.items).toHaveLength(1)
+    expect(twice.items[0]).toMatchObject({
+      id: "expression-library-item-3",
+      encounters: 2,
+      strength: 53,
+    })
+    expect(twice.events).toHaveLength(2)
+  })
+
+  it("ignores blank expressions instead of creating an empty memory item", () => {
+    const state = createEmptyLearningMemory(now)
+    const next = recordExpressionStudy(
+      state,
+      {
+        itemId: "expression-library-blank",
+        sceneCategory: "social",
+        sceneTitle: "日常社交",
+        label: "   ",
+        phrase: "   ",
+        explanation: "空白条目。",
+        example: "",
+        libraryKind: "idiom",
+      },
+      now,
+    )
+
+    expect(next.items).toEqual([])
+    expect(next.events).toEqual([])
   })
 })

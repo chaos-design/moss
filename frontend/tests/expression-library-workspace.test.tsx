@@ -3,6 +3,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ExpressionLibraryWorkspace } from "@/features/expressions/expression-library-workspace"
+import { builtInExpressionItems } from "@/lib/expression-library"
+import { createEmptyLearningMemory, createExpressionMemoryItemId, type LearningMemoryState } from "@/lib/memory"
 
 const fetchMock = vi.fn()
 let intersectionCallback: IntersectionObserverCallback = () => {}
@@ -36,6 +38,19 @@ vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowserClient: () => null,
 }))
 
+const memoryMocks = vi.hoisted(() => ({
+  recordExpressionStudy: vi.fn(),
+  state: null as LearningMemoryState | null,
+}))
+
+vi.mock("@/components/learning-memory-provider", () => ({
+  useLearningMemory: () => ({
+    hydrated: true,
+    recordExpressionStudy: memoryMocks.recordExpressionStudy,
+    state: memoryMocks.state,
+  }),
+}))
+
 vi.mock("@/features/expressions/expression-json-editor", () => ({
   ExpressionJsonEditor: ({
     disabled,
@@ -63,6 +78,8 @@ vi.mock("@/features/expressions/expression-json-editor", () => ({
 
 beforeEach(() => {
   window.localStorage.clear()
+  memoryMocks.state = createEmptyLearningMemory(new Date("2026-10-05T08:00:00.000Z"))
+  memoryMocks.recordExpressionStudy.mockReset()
   fetchMock.mockReset().mockImplementation((_input, init: RequestInit | undefined) => {
     const method = init?.method ?? "GET"
     const data =
@@ -254,5 +271,65 @@ describe("ExpressionLibraryWorkspace", () => {
       "/api/expressions?clientId=item-1",
       expect.objectContaining({ method: "DELETE" }),
     )
+  })
+
+  it("sends an expression into long-term memory without cloud expression writes", async () => {
+    render(<ExpressionLibraryWorkspace />)
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "rule of thumb" },
+    })
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "把 rule of thumb 加入长期记忆" }),
+    )
+
+    expect(memoryMocks.recordExpressionStudy).toHaveBeenCalledWith({
+      // 内置习语条目使用 `builtin-reviewed-<序号>` 作为稳定 clientId。
+      itemId: expect.stringMatching(/^expression-library-builtin-reviewed-\d+$/),
+      sceneCategory: "learning",
+      sceneTitle: "校园学习",
+      label: "rule of thumb",
+      phrase: "rule of thumb",
+      explanation: "拇指可用于快速估量尺寸，代表依靠经验做近似判断，而不是进行精密计算。",
+      example: "As a rule of thumb, leave ten percent of the budget for unexpected costs.",
+      libraryKind: "idiom",
+    })
+    // 加入长期记忆走学习记忆快照，不触发表达词库的导入或删除接口。
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("marks expressions that already exist in long-term memory", async () => {
+    const reviewedIndex =
+      builtInExpressionItems.findIndex((item) => item.phrase === "rule of thumb") + 1
+    const state = createEmptyLearningMemory(new Date("2026-10-05T08:00:00.000Z"))
+    state.items = [
+      {
+        id: createExpressionMemoryItemId(`builtin-reviewed-${reviewedIndex}`),
+        kind: "expression",
+        label: "rule of thumb",
+        cue: "主动学习并记住“rule of thumb”",
+        answer: "rule of thumb",
+        explanation: "以拇指表示的经验判断。",
+        sourceSceneId: "learning",
+        sourceSceneTitle: "校园学习",
+        transferTargets: [],
+        strength: 49,
+        encounters: 1,
+        successfulRecalls: 1,
+        lapseCount: 0,
+        intervalDays: 1,
+        easeFactor: 2.3,
+        repetitions: 0,
+        lastSeenAt: "2026-10-05T08:00:00.000Z",
+        nextReviewAt: "2026-10-05T08:10:00.000Z",
+      },
+    ]
+    memoryMocks.state = state
+    render(<ExpressionLibraryWorkspace />)
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "rule of thumb" },
+    })
+
+    expect(await screen.findByText("已在记忆中")).toBeTruthy()
   })
 })

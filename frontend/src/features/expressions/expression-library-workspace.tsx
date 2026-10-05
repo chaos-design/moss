@@ -2,6 +2,7 @@
 
 import type { User } from "@supabase/supabase-js"
 import {
+  BrainCircuitIcon,
   ChevronDownIcon,
   LoaderCircleIcon,
   PencilIcon,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react"
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import { useLearningMemory } from "@/components/learning-memory-provider"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,6 +74,7 @@ import {
   saveLocalExpressionItems,
   updateCloudExpressionItem,
 } from "@/lib/expression-library-client"
+import { createExpressionMemoryItemId } from "@/lib/memory"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 
 type SourceFilter = "all" | ExpressionSource
@@ -105,6 +108,7 @@ function matchesQuery(item: ExpressionLibraryItem, query: string) {
 }
 
 export function ExpressionLibraryWorkspace() {
+  const { recordExpressionStudy, state } = useLearningMemory()
   const [importedItems, setImportedItems] = useState<ExpressionLibraryItem[]>([])
   const [storageScope, setStorageScope] = useState("anonymous")
   const [cloudAvailable, setCloudAvailable] = useState(false)
@@ -118,6 +122,8 @@ export function ExpressionLibraryWorkspace() {
   const [deleting, setDeleting] = useState(false)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase())
+  // 已进入长期记忆的表达在这里显示状态，避免与下方学习记忆列表建立第二条真相同步链路。
+  const studiedIds = useMemo(() => new Set(state.items.map((item) => item.id)), [state.items])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -221,6 +227,20 @@ export function ExpressionLibraryWorkspace() {
     }
     setSource(value)
     setVisibleCount(initialVisibleCount)
+  }
+
+  function handleStudy(item: ExpressionLibraryItem) {
+    recordExpressionStudy({
+      itemId: createExpressionMemoryItemId(item.clientId),
+      sceneCategory: item.sceneCategory,
+      sceneTitle: expressionSceneCategoryLabels[item.sceneCategory],
+      label: item.phrase,
+      phrase: item.phrase,
+      explanation: item.why,
+      example: item.example,
+      libraryKind: item.kind,
+    })
+    toast.success(`已把“${item.phrase}”加入长期记忆`)
   }
 
   async function handleImport(result: ExpressionImportResult) {
@@ -421,7 +441,13 @@ export function ExpressionLibraryWorkspace() {
         </div>
       </section>
 
-      <ExpressionRows items={visibleItems} onDelete={setDeletingItem} onEdit={setEditingItem} />
+      <ExpressionRows
+        items={visibleItems}
+        studiedIds={studiedIds}
+        onDelete={setDeletingItem}
+        onEdit={setEditingItem}
+        onStudy={handleStudy}
+      />
 
       <div ref={loadMoreRef} className="grid min-h-8 place-items-center" aria-hidden="true">
         {hasMore ? <LoaderCircleIcon className="size-4 animate-spin text-primary" /> : null}
@@ -477,12 +503,16 @@ export function ExpressionLibraryWorkspace() {
 
 function ExpressionRows({
   items,
+  studiedIds,
   onDelete,
   onEdit,
+  onStudy,
 }: {
   items: readonly ExpressionLibraryItem[]
+  studiedIds: ReadonlySet<string>
   onDelete: (item: ExpressionLibraryItem) => void
   onEdit: (item: ExpressionLibraryItem) => void
+  onStudy: (item: ExpressionLibraryItem) => void
 }) {
   if (items.length === 0) {
     return (
@@ -495,24 +525,26 @@ function ExpressionRows({
 
   return (
     <section className="overflow-hidden rounded-lg border bg-card" aria-label="地道表达列表">
-      {items.map((item, index) => (
-        <article
-          key={item.id}
-          className="group grid min-w-0 gap-4 border-b px-4 py-5 last:border-b-0 [content-visibility:auto] [contain-intrinsic-size:auto_220px] md:px-5 lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1.8fr)]"
-        >
-          <div className="min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {String(index + 1).padStart(3, "0")}
-                </span>
-                <Badge variant="secondary">{expressionKindLabels[item.kind]}</Badge>
-                <Badge variant="outline">
-                  {expressionSceneCategoryLabels[item.sceneCategory]}
-                </Badge>
-                {item.source === "imported" ? <Badge>外部导入</Badge> : null}
-              </div>
-              {item.source === "imported" ? (
+      {items.map((item, index) => {
+        const studied = studiedIds.has(createExpressionMemoryItemId(item.clientId))
+        return (
+          <article
+            key={item.id}
+            className="group grid min-w-0 gap-4 border-b px-4 py-5 last:border-b-0 [content-visibility:auto] [contain-intrinsic-size:auto_220px] md:px-5 lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1.8fr)]"
+          >
+            <div className="min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {String(index + 1).padStart(3, "0")}
+                  </span>
+                  <Badge variant="secondary">{expressionKindLabels[item.kind]}</Badge>
+                  <Badge variant="outline">
+                    {expressionSceneCategoryLabels[item.sceneCategory]}
+                  </Badge>
+                  {item.source === "imported" ? <Badge>外部导入</Badge> : null}
+                  {studied ? <Badge>已在记忆中</Badge> : null}
+                </div>
                 <div className="flex shrink-0 gap-1">
                   <Tooltip>
                     <TooltipTrigger
@@ -521,55 +553,75 @@ function ExpressionRows({
                           type="button"
                           variant="ghost"
                           size="icon-sm"
-                          aria-label={`编辑 ${item.phrase}`}
-                          onClick={() => onEdit(item)}
+                          aria-label={`把 ${item.phrase} 加入长期记忆`}
+                          onClick={() => onStudy(item)}
                         />
                       }
                     >
-                      <PencilIcon />
+                      <BrainCircuitIcon />
                     </TooltipTrigger>
-                    <TooltipContent>编辑</TooltipContent>
+                    <TooltipContent>加入长期记忆</TooltipContent>
                   </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`删除 ${item.phrase}`}
-                          onClick={() => onDelete(item)}
-                        />
-                      }
-                    >
-                      <Trash2Icon />
-                    </TooltipTrigger>
-                    <TooltipContent>删除</TooltipContent>
-                  </Tooltip>
+                  {item.source === "imported" ? (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`编辑 ${item.phrase}`}
+                              onClick={() => onEdit(item)}
+                            />
+                          }
+                        >
+                          <PencilIcon />
+                        </TooltipTrigger>
+                        <TooltipContent>编辑</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`删除 ${item.phrase}`}
+                              onClick={() => onDelete(item)}
+                            />
+                          }
+                        >
+                          <Trash2Icon />
+                        </TooltipTrigger>
+                        <TooltipContent>删除</TooltipContent>
+                      </Tooltip>
+                    </>
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
+              <h2 className="mt-2 break-words font-serif text-lg font-semibold leading-7">
+                {item.phrase}
+              </h2>
+              <p className="mt-1 text-sm font-medium leading-6">{item.meaning}</p>
             </div>
-            <h2 className="mt-2 break-words font-serif text-lg font-semibold leading-7">
-              {item.phrase}
-            </h2>
-            <p className="mt-1 text-sm font-medium leading-6">{item.meaning}</p>
-          </div>
 
-          <div className="grid min-w-0 gap-3 text-sm leading-6 md:grid-cols-2">
-            <div>
-              <p className="text-xs font-medium text-foreground">为什么这样表达</p>
-              <p className="mt-1 text-muted-foreground">{item.why}</p>
+            <div className="grid min-w-0 gap-3 text-sm leading-6 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium text-foreground">为什么这样表达</p>
+                <p className="mt-1 text-muted-foreground">{item.why}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-foreground">来源</p>
+                <p className="mt-1 text-muted-foreground">{item.origin}</p>
+              </div>
+              <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-sm md:col-span-2">
+                {item.example}
+              </blockquote>
             </div>
-            <div>
-              <p className="text-xs font-medium text-foreground">来源</p>
-              <p className="mt-1 text-muted-foreground">{item.origin}</p>
-            </div>
-            <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-sm md:col-span-2">
-              {item.example}
-            </blockquote>
-          </div>
-        </article>
-      ))}
+          </article>
+        )
+      })}
     </section>
   )
 }

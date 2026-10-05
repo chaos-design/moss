@@ -15,6 +15,7 @@ import type { RecallRating } from "@/lib/memory"
 import {
   type ConversationTurnMemoryInput,
   createEmptyLearningMemory,
+  type ExpressionStudyMemoryInput,
   getLearningMemoryFingerprint,
   type LearnerProfile,
   type LearningMemorySnapshotRow,
@@ -25,6 +26,7 @@ import {
   parseLearningMemory,
   parseLearningMemorySnapshot,
   recordConversationMemory,
+  recordExpressionStudy,
   recordReviewMemory,
   recordShadowingMemory,
   type ShadowingAttemptMemoryInput,
@@ -48,6 +50,7 @@ type LearningMemoryContextValue = {
   recordConversationTurn: (input: ConversationTurnMemoryInput) => void
   rateReview: (itemId: string, rating: RecallRating) => void
   recordShadowingAttempt: (input: ShadowingAttemptMemoryInput) => void
+  recordExpressionStudy: (input: ExpressionStudyMemoryInput) => void
   updateProfile: (profile: Partial<LearnerProfile>) => void
   resetMemory: () => void
   syncNow: () => void
@@ -543,6 +546,31 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
     [saveVectorMemory],
   )
 
+  const recordExpressionStudyAttempt = useCallback(
+    (input: ExpressionStudyMemoryInput) => {
+      const nextState = recordExpressionStudy(stateRef.current, input)
+      const nextItem = nextState.items.find((item) => item.id === input.itemId)
+      stateRef.current = nextState
+      setState(nextState)
+      if (!nextItem) {
+        return
+      }
+      saveVectorMemory({
+        sourceType: "expression",
+        sourceId: nextItem.id,
+        sceneId: input.sceneCategory,
+        sceneTitle: input.sceneTitle,
+        label: nextItem.label,
+        expression: nextItem.answer,
+        explanation: nextItem.explanation || input.explanation,
+        strength: nextItem.strength,
+        libraryKind: input.libraryKind,
+        example: input.example,
+      })
+    },
+    [saveVectorMemory],
+  )
+
   const updateProfile = useCallback((profile: Partial<LearnerProfile>) => {
     const nextState = updateLearnerProfile(stateRef.current, profile)
     stateRef.current = nextState
@@ -573,6 +601,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordConversationTurn,
       rateReview,
       recordShadowingAttempt,
+      recordExpressionStudy: recordExpressionStudyAttempt,
       updateProfile,
       resetMemory,
       syncNow,
@@ -586,6 +615,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordConversationTurn,
       rateReview,
       recordShadowingAttempt,
+      recordExpressionStudyAttempt,
       updateProfile,
       resetMemory,
       syncNow,

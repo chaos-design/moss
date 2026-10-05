@@ -42,6 +42,28 @@ begin
 end;
 $$;
 
+-- 长期向量记忆新增表达学习来源。既有实例的约束名由内联 check 自动生成，
+-- 这里显式重命名以便两套 SQL 指向同一个约束，重复执行保持幂等。
+alter table public.learning_memory_documents
+  drop constraint if exists learning_memory_documents_source_type_check;
+alter table public.learning_memory_documents
+  add constraint learning_memory_documents_source_type_check
+  check (source_type in ('conversation', 'review', 'shadowing', 'expression'));
+
+alter table public.learning_memory_documents
+  drop constraint if exists learning_memory_documents_memory_kind_check;
+alter table public.learning_memory_documents
+  add constraint learning_memory_documents_memory_kind_check
+  check (
+    memory_kind in (
+      'successful_expression',
+      'correction',
+      'review',
+      'pronunciation',
+      'expression_library'
+    )
+  );
+
 create unique index if not exists conversations_user_client_id_idx
   on public.conversations (user_id, client_id);
 create index if not exists conversations_user_scene_recent_idx

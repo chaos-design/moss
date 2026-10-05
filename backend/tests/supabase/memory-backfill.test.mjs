@@ -52,6 +52,17 @@ test("backfill documents use stable keys and content fingerprints", () => {
     ).sourceType,
     "shadowing",
   )
+  // 词库学习条目必须回填为 `expression`，否则幂等键会与运行时写入的向量文档冲突。
+  const studied = createBackfillDocument(
+    createMemoryItem("expression-library-item-1", {
+      sourceSceneId: "work",
+      sourceSceneTitle: "职场协作",
+    }),
+    "2026-08-29T08:00:00.000Z",
+  )
+  assert.equal(studied.sourceType, "expression")
+  assert.equal(studied.memoryKind, "expression_library")
+  assert.equal(studied.sourceId, "expression-library-item-1")
 })
 
 test("snapshot processing resumes after the last completed item and skips unchanged rows", async () => {

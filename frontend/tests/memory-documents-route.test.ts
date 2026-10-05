@@ -121,6 +121,35 @@ describe("POST /api/memory-documents", () => {
     )
   })
 
+  it("accepts a studied library expression and rejects it without library fields", async () => {
+    mocks.getSupabaseServerClient.mockResolvedValue(createSupabase())
+
+    const expressionMemory = {
+      sourceType: "expression",
+      sourceId: "expression-library-item-1",
+      sceneId: "work",
+      sceneTitle: "职场协作",
+      label: "circle back",
+      expression: "circle back",
+      explanation: "circle 表示绕回，back 表示稍后再谈。",
+      strength: 49,
+      libraryKind: "phrasal-verb",
+      example: "Let's circle back on this after lunch.",
+    }
+    const accepted = await POST(createRequest(expressionMemory))
+    expect(accepted.status).toBe(200)
+    expect(mocks.persistPracticeMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ memory: expressionMemory }),
+    )
+
+    mocks.persistPracticeMemory.mockClear()
+    const rejected = await POST(
+      createRequest({ ...expressionMemory, libraryKind: "", example: "Let's circle back." }),
+    )
+    expect(rejected.status).toBe(400)
+    expect(mocks.persistPracticeMemory).not.toHaveBeenCalled()
+  })
+
   it("fails closed when the shared rate limiter is unavailable", async () => {
     mocks.getSupabaseServerClient.mockResolvedValue(
       createSupabase(

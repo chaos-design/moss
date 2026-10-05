@@ -16,7 +16,7 @@ import {
   learningLevelOrder,
   targetTurnsPerScene,
 } from "@/lib/learning-progress"
-import { getLearningMemoryStats } from "@/lib/memory"
+import { getLearningMemoryStats, learningActivityLabels } from "@/lib/memory"
 import { cn } from "@/lib/utils"
 
 const levelNames: Record<SceneLevel, string> = {
@@ -143,13 +143,7 @@ export function LearningMapWorkspace() {
               <div className="mt-4 flex flex-col gap-3">
                 {recentEvents.map((event) => (
                   <div key={event.id} className="border-l-2 border-primary pl-3 text-xs">
-                    <p className="font-medium">
-                      {event.type === "conversation"
-                        ? "完成对话"
-                        : event.type === "review"
-                          ? "完成复习"
-                          : "完成跟读"}
-                    </p>
+                    <p className="font-medium">完成{learningActivityLabels[event.type]}</p>
                     <p className="mt-1 text-muted-foreground">
                       {new Date(event.occurredAt).toLocaleString("zh-CN")}
                     </p>
