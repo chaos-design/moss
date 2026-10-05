@@ -8,6 +8,8 @@ const checkpointVersion = 1
 const embeddingDimensions = 1536
 const maximumEmbeddingInputLength = 6_000
 const validMemoryKinds = new Set(["expression", "grammar", "pronunciation", "vocabulary"])
+// 与 `createExpressionMemoryItemId` 保持同一前缀，回填才能识别词库来源。
+const expressionMemoryItemPrefix = "expression-library-"
 
 function normalizeBaseUrl(value) {
   return value.replace(/\/+$/, "")
@@ -50,9 +52,16 @@ export function createBackfillDocument(item, snapshotUpdatedAt) {
     `反馈：${item.explanation}`,
   ].join("\n")
   const strength = Math.min(100, Math.max(0, Math.round(item.strength)))
+  // 词库学习条目带有稳定前缀，回填时必须保留 `expression` 来源，
+  // 否则后续同名条目会与本轮写入的向量文档争用同一个幂等键。
+  const studiedExpression = item.id.startsWith(expressionMemoryItemPrefix)
   const pronunciation = item.kind === "pronunciation"
-  const memoryKind = pronunciation ? "pronunciation" : "review"
-  const sourceType = pronunciation ? "shadowing" : "review"
+  const memoryKind = studiedExpression
+    ? "expression_library"
+    : pronunciation
+      ? "pronunciation"
+      : "review"
+  const sourceType = studiedExpression ? "expression" : pronunciation ? "shadowing" : "review"
   const fingerprint = hashValue(
     JSON.stringify({
       content,

@@ -237,6 +237,7 @@ flowchart LR
 | 用户导入表达 | `moss:expression-library:v1:<userId>` | 本机先写，通过 `/api/expressions` 分批同步 `expression_library_items` | RLS 用户隔离；同一用户、场景和规范化表达幂等更新 |
 | 学习记忆快照 | `moss:learning-memory:v1:<userId>` | Supabase 快照与 Realtime | 本地优先，按身份隔离 |
 | 学习进度与问题分析 | 学习记忆中的 `sceneProgress`、`items` 和 `events` | 随学习记忆快照同步 | 事件按 ID 合并并完整保留；地图、场景库和分析页只派生真实记录，空数据展示空状态 |
+| 表达学习记忆 | 学习记忆中的 `items` 与 `expression` 事件 | 随学习记忆快照同步，并经 `/api/memory-documents` 写向量记忆 | `sceneId` 使用词库分类而非场景 ID，因此不写入 `sceneProgress`，不影响场景完成度 |
 | 学习提醒与句子列表 | 学习记忆中的 `items` | 不单独同步，按 `nextReviewAt`、类型和来源派生 | 展示完整本地记录；不创建通知或句子副本 |
 | 匿名学习记忆 | `moss:learning-memory:v1` | 不同步 | 登录迁移后删除匿名键 |
 | 对话历史 | `moss:conversation-history:v1` | 当前不上传 | 本地会话恢复 |
@@ -245,7 +246,7 @@ flowchart LR
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
 | 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase |
 | 跟读评分 | 学习记忆事件 | Supabase 快照与 `shadowing_attempts` | 保存声学分数，不保存录音 |
-| 长期向量记忆 | Supabase `learning_memory_documents` | 对话、复习、跟读经服务端写入；旧快照由管理员 CLI 幂等回填；RPC 召回 | RLS 用户隔离 |
+| 长期向量记忆 | Supabase `learning_memory_documents` | 对话、复习、跟读、表达学习经服务端写入；旧快照由管理员 CLI 幂等回填；RPC 召回 | RLS 用户隔离；`source_type` 与本地 `LearningActivityType` 同源 |
 | 账户删除审计 | Supabase `account_deletion_audits` | 仅 server-only 管理员客户端写入 | 只保留 HMAC 用户指纹和聚合计数，不保留邮箱或学习内容 |
 | API 限流计数 | Supabase `rate_limit_buckets` | 认证 API 通过 `check_rate_limit` 原子更新 | 不直接暴露或导出，账户删除时级联清理并检查残留 |
 | 原始麦克风音频 | 内存与临时 Object URL | ASR WebSocket 或当前页面回放 | 不持久化 |

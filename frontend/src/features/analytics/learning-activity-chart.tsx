@@ -10,21 +10,26 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { LearningActivityPoint } from "@/lib/learning-analytics"
+import {
+  type LearningActivityType,
+  learningActivityLabels,
+  learningActivityTypes,
+} from "@/lib/memory"
 
-const chartConfig = {
-  conversation: {
-    label: "AI 对话",
-    color: "var(--chart-1)",
-  },
-  shadowing: {
-    label: "影子跟读",
-    color: "var(--chart-2)",
-  },
-  review: {
-    label: "智能复习",
-    color: "var(--chart-3)",
-  },
-} satisfies ChartConfig
+// 每种学习活动各占一个固定图表色，新增活动类型只在此追加而不会打乱已有配色。
+const chartColors = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+] as const
+
+const chartConfig = Object.fromEntries(
+  learningActivityTypes.map((type, index) => [
+    type,
+    { label: learningActivityLabels[type], color: chartColors[index] ?? "var(--chart-1)" },
+  ]),
+) satisfies ChartConfig
 
 export function LearningActivityChart({
   activity,
@@ -60,27 +65,16 @@ export function LearningActivityChart({
         <YAxis allowDecimals={false} tickLine={false} axisLine={false} tickMargin={8} />
         <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
         <ChartLegend content={<ChartLegendContent />} />
-        <Line
-          type="monotone"
-          dataKey="conversation"
-          stroke="var(--color-conversation)"
-          strokeWidth={2}
-          dot={showDots ? { r: 3 } : false}
-        />
-        <Line
-          type="monotone"
-          dataKey="shadowing"
-          stroke="var(--color-shadowing)"
-          strokeWidth={2}
-          dot={showDots ? { r: 3 } : false}
-        />
-        <Line
-          type="monotone"
-          dataKey="review"
-          stroke="var(--color-review)"
-          strokeWidth={2}
-          dot={showDots ? { r: 3 } : false}
-        />
+        {learningActivityTypes.map((type) => (
+          <Line
+            key={type}
+            type="monotone"
+            dataKey={type satisfies LearningActivityType}
+            stroke={`var(--color-${type})`}
+            strokeWidth={2}
+            dot={showDots ? { r: 3 } : false}
+          />
+        ))}
       </LineChart>
     </ChartContainer>
   )

@@ -159,12 +159,21 @@ create table public.learning_memory_snapshots (
 create table public.learning_memory_documents (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  source_type text not null check (source_type in ('conversation', 'review', 'shadowing')),
+  -- 约束名与 update.sql 的增量迁移保持一致，两套 SQL 指向同一个对象。
+  source_type text not null constraint learning_memory_documents_source_type_check
+    check (source_type in ('conversation', 'review', 'shadowing', 'expression')),
   source_id text not null check (char_length(source_id) between 1 and 160),
   scene_id text not null check (char_length(scene_id) between 1 and 80),
-  memory_kind text not null check (
-    memory_kind in ('successful_expression', 'correction', 'review', 'pronunciation')
-  ),
+  memory_kind text not null constraint learning_memory_documents_memory_kind_check
+    check (
+      memory_kind in (
+        'successful_expression',
+        'correction',
+        'review',
+        'pronunciation',
+        'expression_library'
+      )
+    ),
   content text not null check (char_length(content) between 1 and 6000),
   metadata jsonb not null default '{}'::jsonb check (jsonb_typeof(metadata) = 'object'),
   strength smallint not null default 50 check (strength between 0 and 100),
