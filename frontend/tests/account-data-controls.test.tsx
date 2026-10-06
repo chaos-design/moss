@@ -22,6 +22,16 @@ vi.mock("sonner", () => ({
   },
 }))
 
+// The account gates live behind AuthProvider; these tests cover the signed-in export and deletion
+// flows, so the hook is stubbed onto the authenticated path.
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    accountLabel: "学习账户",
+    requireSignIn: () => true,
+  }),
+}))
+
 beforeEach(() => {
   mocks.refresh.mockReset()
   mocks.replace.mockReset()

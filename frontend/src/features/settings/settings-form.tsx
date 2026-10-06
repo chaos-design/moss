@@ -1156,7 +1156,7 @@ export function SettingsForm() {
 
           <Card
             className={cn(
-              "order-4 rounded-lg lg:col-start-1 lg:row-start-3",
+              "order-4 rounded-lg lg:col-start-2 lg:row-start-3",
               settingsCardHeightClass,
             )}
           >
@@ -1229,7 +1229,7 @@ export function SettingsForm() {
 
           <Card
             className={cn(
-              "order-2 rounded-lg lg:col-start-2 lg:row-span-2 lg:row-start-1",
+              "order-2 rounded-lg lg:col-start-2 lg:row-start-2",
               settingsCardHeightClass,
             )}
           >

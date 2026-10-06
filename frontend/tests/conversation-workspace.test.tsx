@@ -25,6 +25,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
 }))
 
+// TranscriptTurn consults the shared auth status before requesting a translation; these tests cover
+// the transcript itself, so the hook is stubbed onto the signed-in path.
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    accountLabel: "学习账户",
+    requireSignIn: () => true,
+  }),
+}))
+
 afterEach(cleanup)
 beforeEach(() => {
   Object.defineProperties(HTMLElement.prototype, {

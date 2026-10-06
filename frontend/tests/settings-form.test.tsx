@@ -32,6 +32,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
 }))
 
+// AccountDataControls reads the shared auth status; these tests cover the settings form itself on
+// the signed-in path, so the hook is stubbed instead of standing up Supabase.
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    accountLabel: "学习账户",
+    requireSignIn: () => true,
+  }),
+}))
+
 vi.mock("sonner", () => ({
   toast: {
     error: mocks.toastError,
@@ -288,7 +298,7 @@ describe("settings model configs", () => {
     expect(mocks.toastError).toHaveBeenCalledWith("Backup 验证失败：模型服务连接验证失败。")
   })
 
-  it("places conversation timing beside the compact layout controls on desktop", () => {
+  it("places conversation controls in non-overlapping grid cells on desktop", () => {
     render(
       <LearningMemoryProvider>
         <SettingsForm />
@@ -304,21 +314,30 @@ describe("settings model configs", () => {
     const timingCard = screen
       .getByText("控制会话续接、多次提问合并和语音停顿判断。")
       .closest('[data-slot="card"]')
+    const voiceCard = screen
+      .getByText("统一设置 AI 对话与影子跟读使用的主角色音色。")
+      .closest('[data-slot="card"]')
     const promptCard = screen
       .getByText("在系统 Prompt 之后追加你自己的要求，用于调整语气、纠错严格程度或练习重点。")
       .closest('[data-slot="card"]')
 
-    // The prompt editor spans the full row above the layout grid, so the layout card moved to the
-    // second row while the right-hand timing column keeps its two-row span.
+    // The prompt editor spans the full first row; the four compact cards pair up in the two rows
+    // below it, so no two cards ever claim the same grid cell.
     expect(promptCard?.className).toContain("lg:col-span-2")
+    expect(promptCard?.className).toContain("lg:row-start-1")
     expect(layoutCard?.className).toContain("lg:col-start-1")
     expect(layoutCard?.className).toContain("lg:row-start-2")
     expect(layoutCard?.className).toContain("order-2")
+    expect(timingCard?.className).toContain("lg:col-start-2")
+    expect(timingCard?.className).toContain("lg:row-start-2")
+    expect(timingCard?.className).not.toContain("lg:row-span-2")
+    expect(timingCard?.className).toContain("order-2")
+    expect(inputCard?.className).toContain("lg:col-start-1")
     expect(inputCard?.className).toContain("lg:row-start-3")
     expect(inputCard?.className).toContain("order-3")
-    expect(timingCard?.className).toContain("lg:col-start-2")
-    expect(timingCard?.className).toContain("lg:row-span-2")
-    expect(timingCard?.className).toContain("order-2")
+    expect(voiceCard?.className).toContain("lg:col-start-2")
+    expect(voiceCard?.className).toContain("lg:row-start-3")
+    expect(voiceCard?.className).toContain("order-4")
   })
 
   it("keeps model and agent cards at half width on desktop", () => {
