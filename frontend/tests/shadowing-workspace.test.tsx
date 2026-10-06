@@ -117,10 +117,63 @@ describe("ShadowingWorkspace", () => {
         waveform: Array.from({ length: 20 }, () => 50),
       })
     })
+    expect(mocks.recordShadowingAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemId: "shadowing-coffee-2",
+        overallScore: 82,
+        sentence: "Could I get a latte with oat milk, please?",
+      }),
+    )
+
+    // 自动接话把目标推进到本角色的下一句；回到该句仍可查看这次录音。
+    expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
+      "Iced, please, and could I have it to go?",
+    )
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "选择学习者台词：Could I get a latte with oat milk, please?",
+      }),
+    )
+    expect(screen.getByRole("region", { name: "录音对比" }).textContent).toContain("本次录音")
+  })
+
+  it("keeps takes of the same line comparable when auto partner turns are off", () => {
+    const assessment: ShadowingAssessment = {
+      overallScore: 82,
+      clarityScore: 84,
+      fluencyScore: 79,
+      rhythmScore: 83,
+      durationSeconds: 4.2,
+      voicedRatio: 0.68,
+    }
+    const view = render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("switch", { name: "录完后自动播放对方台词" }))
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+    mocks.recorder.result = {
+      audioUrl: "blob:recording",
+      assessment,
+      waveform: Array.from({ length: 20 }, () => 50),
+    }
+    view.rerender(<ShadowingWorkspace />)
+    mocks.speakWithVoice.mockClear()
+
+    act(() => {
+      mocks.onComplete?.({
+        assessment,
+        audioUrl: "blob:recording",
+        waveform: Array.from({ length: 20 }, () => 50),
+      })
+    })
+
+    // 关闭后不播放提示、不推进目标，同一句的历次录音仍可比较分数。
+    expect(mocks.speakWithVoice).not.toHaveBeenCalled()
+    expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
+      "Could I get a latte with oat milk, please?",
+    )
     expect(screen.getByRole("region", { name: "录音对比" }).textContent).toContain("本次录音")
 
     fireEvent.click(screen.getByRole("button", { name: "重新录音" }))
-    expect(mocks.start).toHaveBeenCalledTimes(2)
+    expect(mocks.start).toHaveBeenCalledOnce()
     act(() => {
       mocks.onComplete?.({
         assessment: { ...assessment, overallScore: 88 },
@@ -128,15 +181,70 @@ describe("ShadowingWorkspace", () => {
         waveform: Array.from({ length: 20 }, () => 60),
       })
     })
+
     expect(screen.getByRole("region", { name: "录音对比" }).textContent).toContain("之前录音")
     expect(screen.getByText("+6")).toBeTruthy()
+  })
 
-    expect(mocks.recordShadowingAttempt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        itemId: "shadowing-coffee-2",
-        overallScore: 82,
-        sentence: "Could I get a latte with oat milk, please?",
-      }),
+  it("plays the partner cue, then each reply, across a full role run", async () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // 进入跟读阶段先听到对方的开场，学习者听到问题再开口。
+    expect(mocks.speakWithVoice.mock.calls[0]?.[0]).toBe(
+      "Good morning! What can I get started for you today?",
+    )
+    expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
+      "Could I get a latte with oat milk, please?",
+    )
+
+    const assessment: ShadowingAssessment = {
+      overallScore: 82,
+      clarityScore: 84,
+      fluencyScore: 79,
+      rhythmScore: 83,
+      durationSeconds: 4.2,
+      voicedRatio: 0.68,
+    }
+    for (const [index, expectedLine] of [
+      "Iced, please, and could I have it to go?",
+      "That's right. Thank you.",
+    ].entries()) {
+      await act(async () => {
+        mocks.onComplete?.({
+          assessment,
+          audioUrl: `blob:recording-${index}`,
+          waveform: Array.from({ length: 20 }, () => 50),
+        })
+      })
+      expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
+        expectedLine,
+      )
+    }
+
+    // 每轮只播一次接话，已播过的台词不作为下一轮的提示重复播放。
+    expect(mocks.speakWithVoice.mock.calls.map((call) => call[0])).toEqual([
+      "Good morning! What can I get started for you today?",
+      "Of course. Would you like that hot or iced?",
+      "Absolutely. A medium iced oat latte to go.",
+    ])
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
+        "这是你在这段对话里的最后一句",
+      ),
+    )
+
+    // 最后一句之后不再接话，避免回绕到已练过的台词。
+    await act(async () => {
+      mocks.onComplete?.({
+        assessment,
+        audioUrl: "blob:recording-final",
+        waveform: Array.from({ length: 20 }, () => 50),
+      })
+    })
+    expect(mocks.speakWithVoice).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
+      "That's right. Thank you.",
     )
   })
 
