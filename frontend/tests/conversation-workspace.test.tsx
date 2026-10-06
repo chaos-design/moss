@@ -284,6 +284,29 @@ describe("conversation feedback UI", () => {
     expect(composerClasses).not.toContain("has-disabled:bg-input/50")
   })
 
+  it("gives the transcript its own breathing room below the session metrics bar", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // The log is the only scroll region without vertical padding, so without pt-* the first turn
+    // touches the metrics bar above it. Both regions carry the same horizontal padding so the
+    // transcript does not read as narrower than the column it belongs to.
+    const transcript = screen.getByRole("log", { name: "实时对话内容" })
+    const transcriptClasses = transcript.className.split(/\s+/)
+    const metricsClasses = transcript.previousElementSibling?.className.split(/\s+/) ?? []
+    expect(transcriptClasses).toContain("pt-5")
+    expect(transcriptClasses).toContain("md:pt-6")
+    for (const padding of ["px-5", "md:px-8"]) {
+      expect(transcriptClasses).toContain(padding)
+      expect(metricsClasses).toContain(padding)
+    }
+    expect(transcriptClasses).not.toContain("py-5")
+  })
+
   it("labels an English-only recall hint as learning support", () => {
     render(
       <TranscriptTurn
