@@ -40,6 +40,10 @@ function isValidPracticeMemory(value: unknown): value is PracticeMemoryWrite {
     )
   }
 
+  if (memory.sourceType === "expression") {
+    return isBoundedString(memory.libraryKind, 40) && isBoundedString(memory.example, 500)
+  }
+
   return (
     memory.sourceType === "shadowing" &&
     isBoundedString(memory.focusWord, 120) &&

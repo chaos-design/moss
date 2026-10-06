@@ -15,6 +15,8 @@ import type { RecallRating } from "@/lib/memory"
 import {
   type ConversationTurnMemoryInput,
   createEmptyLearningMemory,
+  type ExpressionStudyMemoryInput,
+  forgetConversationTurn,
   getLearningMemoryFingerprint,
   type LearnerProfile,
   type LearningMemorySnapshotRow,
@@ -24,7 +26,10 @@ import {
   type PracticeMemoryWrite,
   parseLearningMemory,
   parseLearningMemorySnapshot,
+  type RecallAttemptMemoryInput,
   recordConversationMemory,
+  recordExpressionStudy,
+  recordRecallAttempt,
   recordReviewMemory,
   recordShadowingMemory,
   type ShadowingAttemptMemoryInput,
@@ -46,8 +51,11 @@ type LearningMemoryContextValue = {
   lastSyncedAt: string | null
   syncError: string
   recordConversationTurn: (input: ConversationTurnMemoryInput) => void
+  forgetConversationTurn: (turnId: string) => void
   rateReview: (itemId: string, rating: RecallRating) => void
   recordShadowingAttempt: (input: ShadowingAttemptMemoryInput) => void
+  recordExpressionStudy: (input: ExpressionStudyMemoryInput) => void
+  recordRecallAttempt: (input: RecallAttemptMemoryInput) => void
   updateProfile: (profile: Partial<LearnerProfile>) => void
   resetMemory: () => void
   syncNow: () => void
@@ -459,6 +467,15 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
     setState(nextState)
   }, [])
 
+  const forgetTurn = useCallback((turnId: string) => {
+    const nextState = forgetConversationTurn(stateRef.current, turnId)
+    if (nextState === stateRef.current) {
+      return
+    }
+    stateRef.current = nextState
+    setState(nextState)
+  }, [])
+
   const rateReview = useCallback(
     (itemId: string, rating: RecallRating) => {
       const currentItem = stateRef.current.items.find((item) => item.id === itemId)
@@ -543,6 +560,38 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
     [saveVectorMemory],
   )
 
+  const recordRecallAttemptInMemory = useCallback((input: RecallAttemptMemoryInput) => {
+    // 回想尝试只进本机快照：它没有可语义检索的内容，也不该污染向量记忆。
+    const nextState = recordRecallAttempt(stateRef.current, input)
+    stateRef.current = nextState
+    setState(nextState)
+  }, [])
+
+  const recordExpressionStudyAttempt = useCallback(
+    (input: ExpressionStudyMemoryInput) => {
+      const nextState = recordExpressionStudy(stateRef.current, input)
+      const nextItem = nextState.items.find((item) => item.id === input.itemId)
+      stateRef.current = nextState
+      setState(nextState)
+      if (!nextItem) {
+        return
+      }
+      saveVectorMemory({
+        sourceType: "expression",
+        sourceId: nextItem.id,
+        sceneId: input.sceneCategory,
+        sceneTitle: input.sceneTitle,
+        label: nextItem.label,
+        expression: nextItem.answer,
+        explanation: nextItem.explanation || input.explanation,
+        strength: nextItem.strength,
+        libraryKind: input.libraryKind,
+        example: input.example,
+      })
+    },
+    [saveVectorMemory],
+  )
+
   const updateProfile = useCallback((profile: Partial<LearnerProfile>) => {
     const nextState = updateLearnerProfile(stateRef.current, profile)
     stateRef.current = nextState
@@ -573,6 +622,9 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordConversationTurn,
       rateReview,
       recordShadowingAttempt,
+      recordExpressionStudy: recordExpressionStudyAttempt,
+      recordRecallAttempt: recordRecallAttemptInMemory,
+      forgetConversationTurn: forgetTurn,
       updateProfile,
       resetMemory,
       syncNow,
@@ -586,6 +638,9 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordConversationTurn,
       rateReview,
       recordShadowingAttempt,
+      recordExpressionStudyAttempt,
+      recordRecallAttemptInMemory,
+      forgetTurn,
       updateProfile,
       resetMemory,
       syncNow,

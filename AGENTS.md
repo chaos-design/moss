@@ -61,6 +61,36 @@ flowchart LR
     Tts --> CosyVoice[CosyVoice sidecar]
 ```
 
+## Learning Memory
+
+`LearningMemoryProvider` is the shared state owner for dashboard, conversation, review,
+shadowing, and notebook features.
+
+- Every interaction writes locally first.
+- Authenticated users synchronize snapshots through Supabase.
+- Cloud conflicts merge by item identity, latest timestamps, maxima for cumulative counters,
+  and union for transfer targets and practiced expressions.
+- Model configuration stays only in `moss:model-config:v1`; never add it to learning memory,
+  API payloads unrelated to inference, logs, or Supabase.
+- Raw microphone audio is not persisted.
+
+When changing `LearningMemoryState`, update parsing, merge behavior, default data, API or SQL
+contracts where relevant, tests, and architecture documentation together.
+
+`recordLearningActivity` is the only writer. A learning activity and its event type come from
+the single `learningActivityTypes` vocabulary; add a new surface there, never a parallel
+enumeration. Distinguish observed behavior from self-reported outcomes: a recall attempt records
+that retrieval happened, while a review rating is the only signal allowed to change strength and
+interval. Navigation and passive views must never record a learning event, and UI copy must not
+imply otherwise.
+
+Key memory by the fact, not by the action. A retried turn must not read as a second practice and
+a deleted turn must not leave progress behind, so a conversation turn is identified by
+`conversation.turnId` and the event records the exact deltas it applied. `mergeEvents` still
+unions by event ID, which cannot express a deletion arriving from another device: a cross-device
+snapshot may resurrect a locally removed turn's counters. This is a known limit of the current
+merge contract, not a solved problem.
+
 Dependency direction is one-way:
 
 1. `app` composes routes and layouts; it does not own domain rules.
@@ -113,22 +143,6 @@ relevant focused document in the same change.
 - Fixed controls, counters, waveforms, and progress elements must not shift when content
   changes.
 - Text wraps inside its container; only compact identifiers and list titles may truncate.
-
-## Learning Memory
-
-`LearningMemoryProvider` is the shared state owner for dashboard, conversation, review,
-shadowing, and notebook features.
-
-- Every interaction writes locally first.
-- Authenticated users synchronize snapshots through Supabase.
-- Cloud conflicts merge by item identity, latest timestamps, maxima for cumulative counters,
-  and union for transfer targets and practiced expressions.
-- Model configuration stays only in `moss:model-config:v1`; never add it to learning memory,
-  API payloads unrelated to inference, logs, or Supabase.
-- Raw microphone audio is not persisted.
-
-When changing `LearningMemoryState`, update parsing, merge behavior, default data, API or SQL
-contracts where relevant, tests, and architecture documentation together.
 
 ## Scene Content
 

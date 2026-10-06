@@ -28,6 +28,8 @@ import {
   createMemoryTargetHref,
   getLearningMemoryStats,
   type LearningPlanStep,
+  learningActivityLabels,
+  learningActivityTypes,
 } from "@/lib/memory"
 import { cn } from "@/lib/utils"
 
@@ -37,11 +39,7 @@ const stepIcons = {
   shadowing: AudioLinesIcon,
 } satisfies Record<LearningPlanStep["id"], typeof RotateCcwIcon>
 
-const eventLabels = {
-  conversation: "AI 对话",
-  review: "智能复习",
-  shadowing: "影子跟读",
-} as const
+const eventLabels = learningActivityLabels
 
 function getMemoryStatus(strength: number) {
   if (strength >= 75) {
@@ -74,7 +72,7 @@ export function LearningAgentDashboard() {
   }, [state.sceneProgress])
   const eventCounts = useMemo(
     () =>
-      (["conversation", "review", "shadowing"] as const).map((type) => ({
+      learningActivityTypes.map((type) => ({
         type,
         count: state.events.filter((event) => event.type === type).length,
       })),
@@ -306,9 +304,9 @@ export function LearningAgentDashboard() {
           icon={CalendarClockIcon}
           action={<Badge variant="secondary">{state.events.length} 次</Badge>}
         >
-          <div className="grid grid-cols-3 border-t">
+          <div className="grid grid-cols-2 gap-px border-t bg-border sm:grid-cols-3 lg:grid-cols-5">
             {eventCounts.map((event) => (
-              <div key={event.type} className="border-r px-3 py-4 text-center last:border-r-0">
+              <div key={event.type} className="bg-card px-3 py-4 text-center">
                 <p className="font-serif text-xl font-semibold">{event.count}</p>
                 <p className="mt-1 text-[10px] text-muted-foreground">
                   {eventLabels[event.type]}
@@ -318,7 +316,9 @@ export function LearningAgentDashboard() {
           </div>
           <div className="flex items-start gap-2 border-t px-4 py-3 text-xs leading-5 text-muted-foreground">
             <Clock3Icon className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
-            <span>每次对话、找回与跟读都会重新计算下一步优先级。</span>
+            <span>
+              每次对话、找回、跟读与表达学习都会重新计算下一步优先级；单纯打开这些页面不会。
+            </span>
           </div>
         </DashboardPanel>
 

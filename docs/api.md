@@ -18,7 +18,7 @@
 | `DELETE /api/expressions` | Supabase session | 120 次/分钟/用户 | 删除一条导入表达 |
 | `GET /api/account` | Supabase session | 10 次/小时/用户 | 导出当前用户全部云端数据 |
 | `DELETE /api/account` | Supabase session + 邮箱确认 | 5 次/小时/用户 | 删除账户并审计残留 |
-| `POST /api/memory-documents` | Supabase session | 60 次/分钟/用户 | 复习与跟读向量记忆 |
+| `POST /api/memory-documents` | Supabase session | 60 次/分钟/用户 | 复习、跟读与表达学习向量记忆 |
 | `POST /api/translation` | Supabase session 或加密自带配置 | 30 次/分钟/主体 | 单条翻译 |
 | `POST /api/speech/asr` | 无（请求自带端点配置） | 120 次/分钟/endpoint | 单段语音转写 |
 | `POST /api/speech/tts` | 无（请求自带端点配置） | 240 次/分钟/endpoint | 文本转音频 |
@@ -515,9 +515,9 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
 
 ## POST `/api/memory-documents`
 
-将已在本机保存的复习或跟读结果转为长期向量文档。接口只接受结构化学习结果，不接收
-`user_id`、模型配置或原始音频；服务端从 Supabase session 获取用户身份，并使用部署侧的
-`AI_EMBEDDING_MODEL`。
+将已在本机保存的复习、跟读或表达学习结果转为长期向量文档。接口只接受结构化学习结果，
+不接收 `user_id`、模型配置或原始音频；服务端从 Supabase session 获取用户身份，并使用
+部署侧的 `AI_EMBEDDING_MODEL`。
 
 ### Input
 
@@ -537,7 +537,9 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
 ```
 
 `sourceType` 为 `shadowing` 时，结果字段改为 `focusWord`、`overallScore`、
-`clarityScore`、`fluencyScore`、`rhythmScore` 和 `durationSeconds`。服务端以
+`clarityScore`、`fluencyScore`、`rhythmScore` 和 `durationSeconds`；为 `expression` 时改为
+`libraryKind` 和 `example`。`sourceId` 使用词库条目的稳定身份（如
+`expression-library-<clientId>`），`sceneId` 使用词库分类而非对话场景 ID。服务端以
 `(user_id, source_type, source_id)` 幂等更新最新结果。
 
 ### Output

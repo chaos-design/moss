@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { ConversationMemoryContextItem } from "./learning-memory"
+import type { ConversationMemoryContextItem, LearningActivityType } from "./learning-memory"
 
 type LongTermMemoryRow = {
   id: string
@@ -11,11 +11,22 @@ type LongTermMemoryRow = {
   similarity: number
 }
 
+/**
+ * 云端长期记忆的存储词表。`sourceType` 与本地 `LearningActivityType` 保持一致，
+ * `memoryKind` 额外区分同一活动下的记忆性质，两者都必须落在 SQL 约束内。
+ */
+export type StoredMemoryKind =
+  | "successful_expression"
+  | "correction"
+  | "review"
+  | "pronunciation"
+  | "expression_library"
+
 export type StoredMemoryDocument = {
-  sourceType: "conversation" | "review" | "shadowing"
+  sourceType: LearningActivityType
   sourceId: string
   sceneId: string
-  memoryKind: "successful_expression" | "correction" | "review" | "pronunciation"
+  memoryKind: StoredMemoryKind
   content: string
   metadata: Record<string, unknown>
   strength: number

@@ -132,6 +132,33 @@ test("expression imports are owner-scoped, categorized, and exportable", async (
   }
 })
 
+test("long-term vector memory accepts every learning activity in both SQL entry points", async () => {
+  const [schema, update] = await Promise.all([
+    readFile(schemaPath, "utf8"),
+    readFile(updatePath, "utf8"),
+  ])
+
+  for (const sql of [schema, update]) {
+    assert.match(sql, /constraint learning_memory_documents_source_type_check/)
+    assert.match(sql, /constraint learning_memory_documents_memory_kind_check/)
+    assert.match(sql, /source_type in \('conversation', 'review', 'shadowing', 'expression'\)/)
+    assert.match(sql, /'expression_library'/)
+  }
+
+  // 幂等键只在建表语句里定义，两套 SQL 必须指向同一张表。
+  assert.match(schema, /unique \(user_id, source_type, source_id\)/)
+
+  // 既有实例必须靠增量 SQL 扩宽约束，因此 update.sql 不能只出现约束名。
+  assert.match(
+    update,
+    /alter table public\.learning_memory_documents\s+drop constraint if exists learning_memory_documents_source_type_check;/,
+  )
+  assert.match(
+    update,
+    /alter table public\.learning_memory_documents\s+drop constraint if exists learning_memory_documents_memory_kind_check;/,
+  )
+})
+
 test("shared rate limiting is atomic, authenticated, and private", async () => {
   const [schema, update] = await Promise.all([
     readFile(schemaPath, "utf8"),

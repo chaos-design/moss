@@ -1,10 +1,12 @@
 import { type SceneLevel, sceneItems } from "@/lib/demo-data"
 import { getCurrentLearningLevel } from "@/lib/learning-progress"
 import type {
+  LearningActivityType,
   LearningMemoryEvent,
   LearningMemoryItem,
   LearningMemoryState,
 } from "@/lib/memory/learning-memory"
+import { learningActivityTypes } from "@/lib/memory/learning-memory"
 
 export const learningAnalyticsPeriods = [
   { label: "最近 7 天", value: "7d" },
@@ -14,18 +16,20 @@ export const learningAnalyticsPeriods = [
 
 export type LearningAnalyticsPeriod = (typeof learningAnalyticsPeriods)[number]["value"]
 
+/** 每种学习活动在每日活跃度里各占一个计数键，直接由单一词表派生。 */
 export type LearningActivityPoint = {
   date: string
   label: string
-  conversation: number
-  shadowing: number
-  review: number
-}
+} & Record<LearningActivityType, number>
 
 export type LearningAnalyticsSummary = {
   activeMemoryCount: number
   conversationAccuracy: number | null
   eventCount: number
+  /** 被实际想起过的次数，与"得出结论"的 review 事件分开统计。 */
+  recallAttempts: number
+  /** 揭示答案后没有给出自评的尝试数，代表尚未确认的记忆。 */
+  unresolvedAttempts: number
   recallRate: number | null
 }
 
@@ -105,13 +109,11 @@ export function getLearningAnalyticsEvents(
 }
 
 function createActivityPoint(date: Date): LearningActivityPoint {
-  return {
-    date: getDayKey(date),
-    label: dayLabelFormatter.format(date),
-    conversation: 0,
-    shadowing: 0,
-    review: 0,
+  const counts = {} as Record<LearningActivityType, number>
+  for (const type of learningActivityTypes) {
+    counts[type] = 0
   }
+  return { date: getDayKey(date), label: dayLabelFormatter.format(date), ...counts }
 }
 
 function createActivityRange(start: Date, end: Date) {
@@ -164,9 +166,13 @@ export function createLearningAnalytics(
   const events = getLearningAnalyticsEvents(state, period, now)
   const conversationEvents = events.filter((event) => event.type === "conversation")
   const reviewEvents = events.filter((event) => event.type === "review")
+  // 回想尝试记录"被想起过"，自评记录"得出结论"。两者分开才能区分
+  // 练过但没结论（reveal 后未评分）与真正完成的一次回忆。
+  const recallEvents = events.filter((event) => event.type === "recall")
   const failureCounts = new Map<string, number>()
   for (const event of events) {
-    if (!event.successful) {
+    // 回想尝试没有成败结论，把它算作失误会把"练过"误读成"没记住"。
+    if (event.type !== "recall" && !event.successful) {
       failureCounts.set(event.itemId, (failureCounts.get(event.itemId) ?? 0) + 1)
     }
   }
@@ -187,12 +193,18 @@ export function createLearningAnalytics(
     currentStage: getCurrentLearningStage(state),
     events,
     summary: {
-      activeMemoryCount: new Set(events.map((event) => event.itemId)).size,
+      // 只统计真正落到记忆条目上的练习，没有目标表达的回合不计入活跃记忆。
+      activeMemoryCount: new Set(
+        events.filter((event) => event.itemId).map((event) => event.itemId),
+      ).size,
       conversationAccuracy: percentage(
         conversationEvents.filter((event) => event.successful).length,
         conversationEvents.length,
       ),
       eventCount: events.length,
+      recallAttempts: recallEvents.length,
+      // 揭示答案后没有给出结论的尝试，说明这条记忆还没被真正确认。
+      unresolvedAttempts: recallEvents.filter((event) => event.recall?.rated === false).length,
       recallRate: percentage(
         reviewEvents.filter((event) => event.successful).length,
         reviewEvents.length,

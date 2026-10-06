@@ -29,15 +29,22 @@ export type PracticeMemoryWrite =
       durationSeconds: number
       focusWord: string
     })
+  | (PracticeMemoryBase & {
+      sourceType: "expression"
+      libraryKind: string
+      example: string
+    })
 
 function createPracticeMemoryContent(memory: PracticeMemoryWrite) {
   const result =
     memory.sourceType === "review"
       ? `复习结果：${memory.rating}，${memory.successful ? "成功找回" : "需要再次练习"}`
-      : [
-          `跟读重点：${memory.focusWord}`,
-          `综合 ${memory.overallScore}，清晰度 ${memory.clarityScore}，连贯度 ${memory.fluencyScore}，节奏 ${memory.rhythmScore}`,
-        ].join("\n")
+      : memory.sourceType === "shadowing"
+        ? [
+            `跟读重点：${memory.focusWord}`,
+            `综合 ${memory.overallScore}，清晰度 ${memory.clarityScore}，连贯度 ${memory.fluencyScore}，节奏 ${memory.rhythmScore}`,
+          ].join("\n")
+        : [`表达类型：${memory.libraryKind}`, `例句：${memory.example}`].join("\n")
 
   return [
     `场景：${memory.sceneTitle}`,
@@ -72,7 +79,12 @@ export async function persistPracticeMemory({
       sourceType: memory.sourceType,
       sourceId: memory.sourceId,
       sceneId: memory.sceneId,
-      memoryKind: memory.sourceType === "review" ? "review" : "pronunciation",
+      memoryKind:
+        memory.sourceType === "review"
+          ? "review"
+          : memory.sourceType === "shadowing"
+            ? "pronunciation"
+            : "expression_library",
       content,
       metadata: {
         label: memory.label,
@@ -84,14 +96,19 @@ export async function persistPracticeMemory({
               rating: memory.rating,
               successful: memory.successful,
             }
-          : {
-              focusWord: memory.focusWord,
-              overallScore: memory.overallScore,
-              clarityScore: memory.clarityScore,
-              fluencyScore: memory.fluencyScore,
-              rhythmScore: memory.rhythmScore,
-              durationSeconds: memory.durationSeconds,
-            }),
+          : memory.sourceType === "shadowing"
+            ? {
+                focusWord: memory.focusWord,
+                overallScore: memory.overallScore,
+                clarityScore: memory.clarityScore,
+                fluencyScore: memory.fluencyScore,
+                rhythmScore: memory.rhythmScore,
+                durationSeconds: memory.durationSeconds,
+              }
+            : {
+                libraryKind: memory.libraryKind,
+                example: memory.example,
+              }),
       },
       strength: memory.strength,
       embedding,

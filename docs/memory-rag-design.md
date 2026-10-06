@@ -169,10 +169,16 @@ sequenceDiagram
 type LearningMemoryDocument = {
   id: string
   userId: string
-  sourceType: "conversation" | "review" | "shadowing"
+  // 本地 LearningActivityType 的真子集：recall 尝试没有可检索内容，因此不入库
+  sourceType: "conversation" | "review" | "shadowing" | "expression"
   sourceId: string
   sceneId: string
-  memoryKind: "successful_expression" | "correction" | "review" | "pronunciation"
+  memoryKind:
+    | "successful_expression"
+    | "correction"
+    | "review"
+    | "pronunciation"
+    | "expression_library"
   content: string
   metadata: {
     label?: string
@@ -188,9 +194,10 @@ type LearningMemoryDocument = {
 }
 ```
 
-`(user_id, source_type, source_id)` 唯一。对话使用回合级来源 ID；复习与跟读使用稳定的
-记忆项 ID，因此重复练习会更新最新评分、强度和 embedding，不产生重复文档。HNSW
-`vector_cosine_ops` 索引用于相似度排序。
+`(user_id, source_type, source_id)` 唯一。对话使用回合级来源 ID；复习、跟读与表达学习使用
+稳定的记忆项 ID，因此重复练习会更新最新评分、强度和 embedding，不产生重复文档。表达学习
+的 `sceneId` 使用词库分类而不是对话场景 ID，因此不会被 `match_long_term_memories` 的场景
+加权误判为某个场景的练习成果。HNSW `vector_cosine_ops` 索引用于相似度排序。
 
 ## 7. 检索策略
 
