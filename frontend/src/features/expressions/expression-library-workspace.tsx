@@ -53,6 +53,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ExpressionEditDialog } from "@/features/expressions/expression-edit-dialog"
 import { ExpressionImportDialog } from "@/features/expressions/expression-import-dialog"
+import { getLocalOnlySuffix } from "@/lib/auth-status"
 import type { SceneCategory } from "@/lib/demo-data"
 import type { ExpressionImportResult } from "@/lib/expression-import"
 import {
@@ -76,7 +77,6 @@ import {
   updateCloudExpressionItem,
 } from "@/lib/expression-library-client"
 import { createExpressionMemoryItemId } from "@/lib/memory"
-import { getLocalOnlySuffix } from "@/lib/auth-status"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 
 type SourceFilter = "all" | ExpressionSource
@@ -310,9 +310,7 @@ export function ExpressionLibraryWorkspace() {
     try {
       const stored = await updateCloudExpressionItem(item)
       setCloudAvailable(stored)
-      toast.success(
-        stored ? "表达已修改并同步" : `表达修改已保存到本机${localOnlySuffix}`,
-      )
+      toast.success(stored ? "表达已修改并同步" : `表达修改已保存到本机${localOnlySuffix}`)
     } catch (error) {
       setCloudAvailable(false)
       toast.error(error instanceof Error ? error.message : "修改已保存到本机，云端同步失败。")

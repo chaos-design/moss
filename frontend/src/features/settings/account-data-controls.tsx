@@ -4,6 +4,7 @@ import { DownloadIcon, LoaderCircleIcon, ShieldAlertIcon, Trash2Icon } from "luc
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
+import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -17,7 +18,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useAuth } from "@/components/auth-provider"
 import { canOfferSignIn, isSignedIn } from "@/lib/auth-status"
 
 type AccountResponse = {
