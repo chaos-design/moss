@@ -40,6 +40,7 @@ import {
   useState,
 } from "react"
 import { toast } from "sonner"
+import { useAuth } from "@/components/auth-provider"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { LevelBadge } from "@/components/level-badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -67,7 +68,10 @@ import {
   ConversationGuideSheet,
 } from "@/features/conversation/conversation-guide"
 import { ConversationHistorySheet } from "@/features/conversation/conversation-history-sheet"
-import { requestConversationTranslation } from "@/features/conversation/conversation-transport"
+import {
+  canRequestTranslation,
+  requestConversationTranslation,
+} from "@/features/conversation/conversation-transport"
 import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { speechTransportItems } from "@/features/conversation/use-voice-call-runtime"
 import {
@@ -1114,6 +1118,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
 }) {
   const assistant = message.role === "assistant"
   const errorTurn = message.variant === "error"
+  const { requireSignIn } = useAuth()
   const [translationVisible, setTranslationVisible] = useState(false)
   const [translation, setTranslation] = useState(message.translation)
   const [translating, setTranslating] = useState(false)
@@ -1128,6 +1133,11 @@ export const TranscriptTurn = memo(function TranscriptTurn({
     }
     if (translation) {
       setTranslationVisible(true)
+      return
+    }
+    // The endpoint serves anonymous callers who configured their own model, so sign-in is only
+    // required once the client knows the request would otherwise come back 401.
+    if (!canRequestTranslation() && !requireSignIn("使用翻译")) {
       return
     }
 

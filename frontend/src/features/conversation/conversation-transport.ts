@@ -58,6 +58,15 @@ function readModelInferenceConfig() {
 }
 
 /**
+ * Mirrors the translation route's own admission rule: a request is served when it either carries a
+ * signed-in session or a complete client-side model config. The route rejects with 401 only when
+ * both are missing, so the client must not demand sign-in in the case the route would have served.
+ */
+export function canRequestTranslation() {
+  return readModelInferenceConfig() !== null
+}
+
+/**
  * Runs one request plus parse attempt. Transport failures and non-JSON bodies become
  * `UserFacingError` here, because both would otherwise reach the transcript as a raw
  * `TypeError: Failed to fetch` or `SyntaxError`. Aborts stay aborts so callers keep their

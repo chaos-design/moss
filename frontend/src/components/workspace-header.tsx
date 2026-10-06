@@ -1,20 +1,21 @@
 "use client"
 
-import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js"
 import {
   BrainCircuitIcon,
   CloudIcon,
   CloudOffIcon,
   LoaderCircleIcon,
+  LogInIcon,
   LogOutIcon,
   MenuIcon,
   Settings2Icon,
   UserRoundIcon,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { AppNavigation } from "@/components/app-navigation"
+import { useAuth } from "@/components/auth-provider"
 import { Brand } from "@/components/brand"
 import { GlobalSearchDialog } from "@/components/global-search-dialog"
 import { useLearningMemory } from "@/components/learning-memory-provider"
@@ -40,70 +41,52 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getAvatarLabelFromAccount, getSyncBlockedReason, isSignedIn } from "@/lib/auth-status"
 import { getDueMemoryItems } from "@/lib/memory"
-import { isDemoMode } from "@/lib/runtime-mode"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { describeUserError } from "@/lib/user-error"
 
-function getAccountLabel(user: Pick<User, "email" | "user_metadata">) {
-  const metadata = user.user_metadata
-  const displayName = metadata?.display_name ?? metadata?.full_name ?? metadata?.name
-  return typeof displayName === "string" && displayName.trim()
-    ? displayName.trim()
-    : user.email || "学习账户"
-}
-
-function getAvatarLabel(label: string) {
-  const normalized = label.trim()
-  if (!normalized) {
-    return "M"
-  }
-  if (normalized.includes("@")) {
-    return normalized.slice(0, 2).toUpperCase()
-  }
-  return normalized.slice(0, 2)
-}
-
 export function WorkspaceHeader() {
   const router = useRouter()
+  const { accountLabel, status, requireSignIn } = useAuth()
   const { state, syncError, syncNow, syncStatus } = useLearningMemory()
   const [signingOut, setSigningOut] = useState(false)
-  const [accountLabel, setAccountLabel] = useState(isDemoMode() ? "本地演示账户" : "学习账户")
+  const signedIn = isSignedIn(status)
   const dueCount = useMemo(() => getDueMemoryItems(state).length, [state])
-  const syncLabel = {
-    connecting: "正在连接云端记忆",
-    local: "当前使用本机记忆",
-    syncing: "正在同步学习记忆",
-    synced: "学习记忆已跨设备同步",
-    offline: "当前离线，联网后自动同步",
-    error: syncError || "学习记忆同步失败",
-  }[syncStatus]
+  // The account state explains a blocked sync better than the transport state can: a signed-out
+  // learner needs to know signing in is the fix, while a demo deployment has no fix to offer.
+  const syncLabel =
+    getSyncBlockedReason(status) ??
+    {
+      connecting: "正在连接云端记忆",
+      local: "当前使用本机记忆",
+      syncing: "正在同步学习记忆",
+      synced: "学习记忆已跨设备同步",
+      offline: "当前离线，联网后自动同步",
+      error: syncError || "学习记忆同步失败",
+    }[syncStatus]
 
-  useEffect(() => {
-    const supabase = getSupabaseBrowserClient()
-    if (!supabase) {
+  function handleSignIn() {
+    const target = new URL("/login", window.location.origin)
+    target.searchParams.set("next", window.location.pathname)
+    router.push(target.pathname + target.search)
+  }
+
+  function handleAccountStatusRequest() {
+    if (signedIn) {
+      toast.info(`已登录：${accountLabel}`)
       return
     }
+    requireSignIn("学习记忆跨设备同步")
+  }
 
-    let active = true
-    void supabase.auth.getUser().then(({ data }: { data: { user: User | null } }) => {
-      if (active && data.user) {
-        setAccountLabel(getAccountLabel(data.user))
-      }
-    })
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (active && session?.user) {
-        setAccountLabel(getAccountLabel(session.user))
-      }
-    })
-
-    return () => {
-      active = false
-      subscription.unsubscribe()
+  function handleSyncRequest() {
+    if (!signedIn) {
+      requireSignIn("学习记忆跨设备同步")
+      return
     }
-  }, [])
+    syncNow()
+  }
 
   async function handleSignOut() {
     if (signingOut) {
@@ -121,6 +104,7 @@ export function WorkspaceHeader() {
       }
     }
 
+    toast.success("已退出登录，学习记忆保留在本机")
     router.replace("/login")
     router.refresh()
   }
@@ -148,7 +132,7 @@ export function WorkspaceHeader() {
                 size="icon"
                 aria-label={syncLabel}
                 disabled={syncStatus === "connecting" || syncStatus === "syncing"}
-                onClick={syncNow}
+                onClick={handleSyncRequest}
               />
             }
           >
@@ -172,17 +156,27 @@ export function WorkspaceHeader() {
 
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon" aria-label="打开账户菜单" />}
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={signedIn ? "打开账户菜单" : "未登录，打开账户菜单"}
+              />
+            }
           >
             <Avatar>
-              <AvatarFallback>{getAvatarLabel(accountLabel)}</AvatarFallback>
+              <AvatarFallback>{getAvatarLabelFromAccount(accountLabel)}</AvatarFallback>
             </Avatar>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-56">
             <DropdownMenuGroup>
-              <DropdownMenuLabel>学习账户</DropdownMenuLabel>
-              <DropdownMenuItem>
-                <UserRoundIcon aria-hidden="true" />
+              <DropdownMenuLabel>{signedIn ? "学习账户" : "本机账户"}</DropdownMenuLabel>
+              <DropdownMenuItem onClick={handleAccountStatusRequest}>
+                {signedIn ? (
+                  <UserRoundIcon aria-hidden="true" />
+                ) : (
+                  <CloudOffIcon aria-hidden="true" />
+                )}
                 <span className="max-w-44 truncate">{accountLabel}</span>
               </DropdownMenuItem>
             </DropdownMenuGroup>
@@ -192,10 +186,17 @@ export function WorkspaceHeader() {
                 <Settings2Icon aria-hidden="true" />
                 偏好设置
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={signingOut} onClick={handleSignOut}>
-                <LogOutIcon aria-hidden="true" />
-                {signingOut ? "正在退出" : "退出登录"}
-              </DropdownMenuItem>
+              {signedIn ? (
+                <DropdownMenuItem disabled={signingOut} onClick={handleSignOut}>
+                  <LogOutIcon aria-hidden="true" />
+                  {signingOut ? "正在退出" : "退出登录"}
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={handleSignIn}>
+                  <LogInIcon aria-hidden="true" />
+                  登录
+                </DropdownMenuItem>
+              )}
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>

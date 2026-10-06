@@ -117,6 +117,7 @@ export function LoginForm({
         return
       }
 
+      toast.success(mode === "login" ? "登录成功，正在进入学习空间" : "账户已创建")
       router.replace(nextPath)
       router.refresh()
     } catch (error) {

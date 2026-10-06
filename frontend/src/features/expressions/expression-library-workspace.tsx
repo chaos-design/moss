@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import { useAuth } from "@/components/auth-provider"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import {
   AlertDialog,
@@ -75,6 +76,7 @@ import {
   updateCloudExpressionItem,
 } from "@/lib/expression-library-client"
 import { createExpressionMemoryItemId } from "@/lib/memory"
+import { getLocalOnlySuffix } from "@/lib/auth-status"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 
 type SourceFilter = "all" | ExpressionSource
@@ -109,6 +111,10 @@ function matchesQuery(item: ExpressionLibraryItem, query: string) {
 
 export function ExpressionLibraryWorkspace() {
   const { recordExpressionStudy, state } = useLearningMemory()
+  const { status } = useAuth()
+  // Cloud sync is best-effort here: the local write already succeeded, so the account state only
+  // explains the skipped sync instead of gating the learner's work.
+  const localOnlySuffix = getLocalOnlySuffix(status)
   const [importedItems, setImportedItems] = useState<ExpressionLibraryItem[]>([])
   const [storageScope, setStorageScope] = useState("anonymous")
   const [cloudAvailable, setCloudAvailable] = useState(false)
@@ -269,7 +275,7 @@ export function ExpressionLibraryWorkspace() {
       toast.success(
         stored
           ? `已导入并同步 ${importedBatch.length} 条表达`
-          : `已保存到本机 ${importedBatch.length} 条表达`,
+          : `已保存到本机 ${importedBatch.length} 条表达${localOnlySuffix}`,
       )
     } catch (error) {
       setCloudAvailable(false)
@@ -304,7 +310,9 @@ export function ExpressionLibraryWorkspace() {
     try {
       const stored = await updateCloudExpressionItem(item)
       setCloudAvailable(stored)
-      toast.success(stored ? "表达已修改并同步" : "表达修改已保存到本机")
+      toast.success(
+        stored ? "表达已修改并同步" : `表达修改已保存到本机${localOnlySuffix}`,
+      )
     } catch (error) {
       setCloudAvailable(false)
       toast.error(error instanceof Error ? error.message : "修改已保存到本机，云端同步失败。")
@@ -330,7 +338,7 @@ export function ExpressionLibraryWorkspace() {
     try {
       const deleted = await deleteCloudExpressionItem(clientId)
       setCloudAvailable(deleted)
-      toast.success(deleted ? "表达已删除" : "表达已从本机删除")
+      toast.success(deleted ? "表达已删除" : `表达已从本机删除${localOnlySuffix}`)
     } catch (error) {
       setCloudAvailable(false)
       toast.error(error instanceof Error ? error.message : "表达已从本机删除，云端同步失败。")
