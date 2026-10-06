@@ -43,6 +43,10 @@ afterEach(() => {
 })
 
 describe("login form", () => {
+  function agreeToTerms() {
+    fireEvent.click(screen.getByRole("checkbox", { name: "同意服务条款与隐私政策" }))
+  }
+
   it("uses the local callback URL for email confirmation", async () => {
     render(<LoginForm nextPath="/workspace/conversation?scene=meeting" />)
     fireEvent.click(screen.getByRole("tab", { name: "创建账户" }))
@@ -52,6 +56,7 @@ describe("login form", () => {
     fireEvent.change(screen.getByLabelText("密码"), {
       target: { value: "long-password" },
     })
+    agreeToTerms()
     fireEvent.click(screen.getByRole("button", { name: "创建账户" }))
 
     await waitFor(() => {
@@ -89,10 +94,39 @@ describe("login form", () => {
     )
   })
 
-  it("links the consent sentence to the published legal documents", () => {
+  it("links the consent checkbox to the published legal documents", () => {
     render(<LoginForm nextPath="/workspace" />)
-    expect(screen.getByText(/继续即表示你同意/)).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "同意服务条款与隐私政策" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "服务条款" }).getAttribute("href")).toBe("/terms")
     expect(screen.getByRole("link", { name: "隐私政策" }).getAttribute("href")).toBe("/privacy")
+  })
+
+  it("keeps login and register disabled until the terms are accepted", () => {
+    render(<LoginForm nextPath="/workspace" />)
+
+    const loginButton = screen.getByRole("button", { name: "进入学习空间" })
+    expect((loginButton as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole("tab", { name: "创建账户" }))
+    const registerButton = screen.getByRole("button", { name: "创建账户" })
+    expect((registerButton as HTMLButtonElement).disabled).toBe(true)
+
+    agreeToTerms()
+    expect(
+      (screen.getByRole("button", { name: "创建账户" }) as HTMLButtonElement).disabled,
+    ).toBe(false)
+  })
+
+  it("keeps Google login disabled until the terms are accepted", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED", "true")
+    render(<LoginForm nextPath="/workspace" />)
+
+    const googleButton = screen.getByRole("button", { name: /使用 Google 继续/ })
+    expect((googleButton as HTMLButtonElement).disabled).toBe(true)
+
+    agreeToTerms()
+    expect(
+      (screen.getByRole("button", { name: /使用 Google 继续/ }) as HTMLButtonElement).disabled,
+    ).toBe(false)
   })
 })

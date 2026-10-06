@@ -13,6 +13,7 @@ import { type FormEvent, useState } from "react"
 import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Field,
   FieldDescription,
@@ -68,6 +69,7 @@ export function LoginForm({
   const [mode, setMode] = useState<AuthMode>("login")
   const [showPassword, setShowPassword] = useState(false)
   const [pending, setPending] = useState(false)
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -230,7 +232,45 @@ export function LoginForm({
               <FieldDescription>密码仅用于 Supabase 身份认证。</FieldDescription>
             ) : null}
           </Field>
-          <Button type="submit" size="lg" disabled={pending} className="mt-1 w-full">
+          <div className="flex items-start gap-2.5 text-xs leading-5 text-muted-foreground">
+            <Checkbox
+              id="agree-terms"
+              className="mt-0.5"
+              checked={agreedToTerms}
+              onCheckedChange={(checked) => setAgreedToTerms(checked)}
+            />
+            <span>
+              {/* Base UI derives the checkbox name from this label; the full sentence keeps the
+              accessible name complete while the legal links stay outside the clickable label. */}
+              <label
+                htmlFor="agree-terms"
+                aria-label="同意服务条款与隐私政策"
+                className="cursor-pointer select-none"
+              >
+                我已阅读并同意
+              </label>
+              <Link
+                href="/terms"
+                className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                服务条款
+              </Link>
+              与
+              <Link
+                href="/privacy"
+                className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                隐私政策
+              </Link>
+              。
+            </span>
+          </div>
+          <Button
+            type="submit"
+            size="lg"
+            disabled={pending || !agreedToTerms}
+            className="mt-1 w-full"
+          >
             {pending ? (
               <LoaderCircleIcon data-icon="inline-start" className="animate-spin" />
             ) : null}
@@ -244,7 +284,7 @@ export function LoginForm({
                 type="button"
                 variant="outline"
                 size="lg"
-                disabled={pending}
+                disabled={pending || !agreedToTerms}
                 onClick={handleGoogleLogin}
               >
                 <span data-icon="inline-start" className="font-mono font-semibold">
@@ -258,21 +298,7 @@ export function LoginForm({
       </form>
 
       <p className="mt-6 text-xs leading-5 text-muted-foreground">
-        继续即表示你同意
-        <Link
-          href="/terms"
-          className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          服务条款
-        </Link>
-        与
-        <Link
-          href="/privacy"
-          className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          隐私政策
-        </Link>
-        。本地演示模式需要由项目配置显式启用。
+        登录与注册都需要先勾选同意条款。本地演示模式需要由项目配置显式启用。
       </p>
     </div>
   )

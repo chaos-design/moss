@@ -6,6 +6,7 @@
 | --- | --- | --- | --- | --- |
 | T-312 | P1 | 统一学习记忆写入层，并把词库表达学习接入长期记忆 | `recordLearningActivity` 以穷尽式 `switch` 统一对话、复习、跟读、表达学习与回想尝试；`learningActivityTypes` 成为事件类型与 `source_type` 的单一词表；词库新增“加入长期记忆”动作；对话回合以 `turnId` 为主键，重试改写而删除按事件增量回滚 | 表达学习写入条目与事件并可被 RAG 召回；SQL 两套入口均接受新 `source_type`；回想尝试与自评分离记录；重试不重复计数、删除不留残余进度；`pnpm check` 与 `pnpm build` 通过 |
 | T-313 | P1 | 用共享认证状态词表描述账户状态，并修复设置页对话体验网格重叠 | 新增 `AuthProvider` 与 React-free 的 `lib/auth-status` 五态词表（loading/authenticated/anonymous/unconfigured/demo）；云端操作经 `requireSignIn` 门控，本机写入不被阻止、仅在提示中说明未同步原因；设置页“对话体验”五张卡片在 `lg` 下各占独立网格单元：Prompt 通栏首行，布局+判句、输入+发音两两成对 | `pnpm check` 与 `pnpm build` 通过；桌面 1440px 与 390px 截图无重叠、无横向溢出；布局测试固定各卡片的行列位置 |
+| T-315 | P1 | 登录与注册前要求显式同意服务条款与隐私政策 | 登录表单新增同意勾选（复选框，Base UI Checkbox），未勾选时登录、创建账户与 Google 登录按钮均禁用；底部“继续即表示你同意”的隐含同意文案改为指向勾选框；法律文档链接保留在勾选文案内且不触发勾选 | 勾选前按钮 disabled、勾选后可用（登录/注册/Google 均覆盖）；`pnpm check` 与 `pnpm build` 通过 |
 
 ## 流转规则
 
