@@ -534,7 +534,7 @@ export function ConversationWorkspace({
           </div>
         </header>
 
-        <div className="grid shrink-0 grid-cols-3 border-b bg-muted/20 px-4 py-2.5 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] md:items-center md:gap-5 md:px-7">
+        <div className="grid shrink-0 grid-cols-3 border-b bg-muted/20 px-5 py-2.5 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] md:items-center md:gap-5 md:px-8">
           <div className="col-span-3 min-w-0 pb-2 md:col-span-1 md:pb-0">
             <p className="text-[10px] font-semibold text-muted-foreground">本轮目标</p>
             <p className="mt-0.5 text-xs leading-5">{scene.objective}</p>
@@ -572,7 +572,7 @@ export function ConversationWorkspace({
 
         <div
           ref={transcriptRef}
-          className="min-h-0 flex-1 overflow-y-auto px-4 md:px-7 pb-30"
+          className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-30 md:px-8 md:pt-6"
           role="log"
           aria-label="实时对话内容"
         >
@@ -580,7 +580,7 @@ export function ConversationWorkspace({
             className="mx-auto w-full max-w-5xl"
             style={{ paddingBottom: composerHeight + 24 }}
           >
-            <div className="flex items-center gap-3 py-5">
+            <div className="flex items-center gap-3 pb-5">
               <Separator className="flex-1" />
               <span className="font-mono text-[10px] text-muted-foreground">TRANSCRIPT</span>
               <Separator className="flex-1" />
