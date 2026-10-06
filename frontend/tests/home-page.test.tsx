@@ -59,4 +59,13 @@ describe("home page", () => {
     expect(screen.getByRole("heading", { name: "个性建议" })).toBeTruthy()
     expect(screen.getByAltText("在咖啡店进行英语情景对话")).toBeTruthy()
   })
+
+  it("links the footer to the project repository in a new tab", () => {
+    render(<HomePage />)
+
+    const repository = screen.getByRole("link", { name: "GitHub" })
+    expect(repository.getAttribute("href")).toBe("https://github.com/chaos-design/moss")
+    expect(repository.getAttribute("target")).toBe("_blank")
+    expect(repository.getAttribute("rel")).toBe("noreferrer")
+  })
 })
