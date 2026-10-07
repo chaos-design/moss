@@ -282,6 +282,122 @@ Next.js 服务的内网出口。
 向量。未配置或向量服务不可用时，对话回退到本地长期记忆。
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 与 `AI_MODEL` 仅作为旧部署的兼容变量。
 
+### 浏览器自带模型（BYOK）与服务端密钥变量
+
+三个服务端变量共同构成浏览器自带模型的安全边界与账户删除审计：`AI_ALLOWED_BROWSER_MODEL_HOSTS`（生产 BYOK 主机白名单）、`MODEL_CONFIG_PRIVATE_KEY_BASE64`（BYOK 信封解密私钥）、`ACCOUNT_DELETION_AUDIT_SECRET`（删除审计指纹盐）。以下为每个变量的含义、格式、生成与轮换方法。
+
+#### AI_ALLOWED_BROWSER_MODEL_HOSTS
+
+**作用**：浏览器自带模型请求在生产环境（`NODE_ENV=production`）强制校验 baseUrl 的主机名，只有出现在该白名单中的主机才被接受。默认只允许 `api.openai.com` 与 `api.anthropic.com`。本地开发与 Vercel Preview 不启用该限制（`NODE_ENV !== "production"` 直接放行合规 https 地址），因此**漏配通常只在生产暴露**：解密成功但主机不在白名单时返回 `400 invalid_model_config`。
+
+**格式规则**：
+
+- 逗号分隔的**准确主机名**，代码按 `split(",")` 逐项 trim 并转小写，与请求主机名**精确匹配**。
+- 不含 scheme（`https://`）、不含路径、不含端口；**不支持通配符**（`*.example.com` 会被当作字面主机名而永不匹配）。
+- 主机名与 `apiType` 无关；一个条目匹配即可放行该主机上的所有模型。
+- 示例（多域名）：
+
+```bash
+AI_ALLOWED_BROWSER_MODEL_HOSTS=api.deepseek.com,open.bigmodel.cn,api.siliconflow.cn,apihub.agnes-ai.com
+```
+
+**baseUrl 还要一起通过的其他校验**（`isValidModelEndpoint` 与 `isPrivateModelEndpointHostname`）：
+
+- 生产环境必须 `https:`；本地开发额外允许 `localhost`、`127.0.0.1`、`::1`。
+- URL 中不允许出现 username/password。
+- 拒绝私网与保留网段：`localhost`、`*.localhost`、`*.local`、`*.internal`、`metadata`、IPv4 的 `0/8`、`10/8`、`127/8`、`100.64/10`、`169.254/16`、`172.16/12`、`192.168/16`、`198.18/15`、`224/4` 及以上，IPv6 的 `::`、`::1`、`fc00::/7`、`fe80::/10` 与 `::ffff:` 映射地址。
+- 所有环境拒绝 Provider 3xx 重定向（请求以 `redirect: "error"` 发出）。
+
+**请求 URL 的拼接规则**（服务端按 `apiType` 规范化，白名单只看主机名）：
+
+| `apiType` | 最终请求 URL | 说明 |
+| --- | --- | --- |
+| `chat-completions`（默认） | 去尾部斜杠的 baseUrl，追加 `/chat/completions`（已以该后缀结尾则不重复） | OpenAI 兼容服务 baseUrl 一般填到 `/v1` 为止 |
+| `anthropic-messages` | 追加 `/messages` | Anthropic 官方地址可由 `AI_BASE_URL` 自动推断 |
+| `custom` | baseUrl 即最终请求 URL，原样发出 | 单 URL 单模型场景（如 Azure 每资源每部署一个 URL） |
+
+**主流供应商参考**（baseUrl 以各厂商官方文档为准；加白名单时只填主机名列）：
+
+| 供应商 | baseUrl | `apiType` | 备注 |
+| --- | --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | `chat-completions` | 默认已允许 |
+| Anthropic | `https://api.anthropic.com/v1` | `anthropic-messages` | 默认已允许 |
+| DeepSeek | `https://api.deepseek.com` | `chat-completions` | |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `chat-completions` | [官方兼容说明](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction) |
+| 阿里云百炼（通义千问） | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `chat-completions` | [兼容模式](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) |
+| Moonshot Kimi | `https://api.moonshot.cn/v1` | `chat-completions` | |
+| MiniMax | `https://api.minimax.chat/v1` | `chat-completions` | [官方工具接入说明](https://platform.minimax.cn/docs/token-plan/other-tools) |
+| 阶跃星辰 | `https://api.stepfun.com/v1` | `chat-completions` | |
+| 零一万物 | `https://api.lingyiwanwu.com/v1` | `chat-completions` | |
+| 百川智能 | `https://api.baichuan-ai.com/v1` | `chat-completions` | |
+| 硅基流动 | `https://api.siliconflow.cn/v1` | `chat-completions` | 聚合多家开源模型 |
+| 火山方舟（豆包） | `https://ark.cn-beijing.volces.com/api/v3` | `chat-completions` | [兼容 OpenAI/Anthropic 协议](https://www.volcengine.com/docs/ark/compatible-with-openai-sdk) |
+| 腾讯混元 | `https://api.hunyuan.cloud.tencent.com/v1` | `chat-completions` | [OpenAI 兼容](https://cloud.tencent.com/document/product/1729/111007) |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `chat-completions` | 官方 OpenAI 兼容层 |
+| xAI Grok | `https://api.x.ai/v1` | `chat-completions` | |
+| Mistral | `https://api.mistral.ai/v1` | `chat-completions` | |
+| Groq | `https://api.groq.com/openai/v1` | `chat-completions` | |
+| OpenRouter | `https://openrouter.ai/api/v1` | `chat-completions` | 聚合网关 |
+| Together | `https://api.together.xyz/v1` | `chat-completions` | |
+| Fireworks | `https://api.fireworks.ai/inference/v1` | `chat-completions` | |
+| Azure OpenAI | `https://<资源名>.openai.azure.com/openai/deployments/<部署名>/chat/completions?api-version=<版本>` | `custom` | URL 含部署名与 api-version，须用 `custom` 把完整地址作为 baseUrl；白名单填 `<资源名>.openai.azure.com` |
+| 自建推理（Ollama、vLLM、LM Studio） | `http://127.0.0.1:<端口>` | `chat-completions` | 仅本地开发可用；生产被私网校验拒绝 |
+
+**配置位置与生效**：Vercel Dashboard → 项目 Settings → Environment Variables，或 CLI `vercel env add AI_ALLOWED_BROWSER_MODEL_HOSTS production`；修改后必须 Redeploy 才对运行实例生效。
+
+**BYOK 相关错误码速查**：
+
+| 错误 | 原因 | 处理 |
+| --- | --- | --- |
+| `400 invalid_model_config` | 信封解密成功，但主机不在白名单或 URL 不合规 | 把主机加入 `AI_ALLOWED_BROWSER_MODEL_HOSTS` 后 Redeploy |
+| `400 invalid_model_config_envelope` | 信封无法解密（密文损坏或 AES 校验失败） | 学习者重新保存模型配置 |
+| `409 model_config_key_expired` | 信封 `keyId` 与当前实例不一致：多实例未配置私钥，或私钥刚轮换 | 配置/统一 `MODEL_CONFIG_PRIVATE_KEY_BASE64`；客户端会自动重取公钥重试 |
+| `502 provider_unavailable` | 上游不可用或认证失败 | 检查 BYOK Key；服务端模式检查 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` |
+| `429 provider_rate_limited` | 上游供应商限流（如免费配额用尽） | 稍后重试；非本站限流 |
+| `503 service_not_configured` | 服务端模式缺少 `AI_*` 配置 | 在 Vercel 配置三个 `AI_*` 变量 |
+
+#### MODEL_CONFIG_PRIVATE_KEY_BASE64
+
+**作用**：保护"浏览器自带模型"的密钥传输。学习者把 `{apiKey, baseUrl, model, apiType}` 交给本站接口时**从不上行明文**：浏览器先从 `GET /api/conversation` 获取 `{keyId, publicKey}`，生成一次性 AES-256-GCM 内容密钥加密配置，再用 RSA-OAEP(SHA-256) 公钥包裹内容密钥，`additionalData` 绑定 `keyId` 防止跨密钥重放，最终信封 `{version:1, keyId, wrappedKey, iv, ciphertext}` 全部 base64url。服务端用本私钥解密。`keyId` 是公钥指纹（SHA-256(SPKI DER) 的 base64url 前 24 位），随公钥一起下发，用于判断信封是否属于当前服务端密钥。
+
+**为什么生产必需**：未配置时每个部署实例在启动后首次用到时生成临时密钥对，实例间 `keyId` 互不相同。学习者用 A 实例公钥加密的信封被负载分到 B 实例时得到 `409 model_config_key_expired`；客户端会自动重取公钥重试一次自愈，但实例越多失败概率越高。配置后所有实例共享同一密钥，`keyId` 全局一致。
+
+**格式**：PKCS#8 DER 编码的 base64 单行字符串（无 `-----BEGIN`/`-----END` 头尾、无换行），RSA ≥ 2048 位。
+
+**生成**：
+
+```bash
+# OpenSSL（macOS / Linux 通用）
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -outform DER 2>/dev/null | base64 | tr -d '\n'
+```
+
+```bash
+# Node 等价写法
+node -e "const{generateKeyPairSync}=require('node:crypto');const{privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});console.log(privateKey.export({format:'der',type:'pkcs8'}).toString('base64'))"
+```
+
+**计算 keyId**（部署后与线上 `GET /api/conversation` 返回的 `keyId` 比对即可确认配置生效）：
+
+```bash
+node -e "const{createPrivateKey,createPublicKey,createHash}=require('node:crypto');const b64='粘贴生成的base64';const k=createPrivateKey({key:Buffer.from(b64,'base64'),format:'der',type:'pkcs8'});console.log(createHash('sha256').update(createPublicKey(k).export({format:'der',type:'spki'})).digest('base64url').slice(0,24))"
+```
+
+**部署与验证**：把值写入 Vercel（生产必需，建议同时勾选 Preview 与 Development）→ Redeploy → 并发请求生产 `GET /api/conversation` 多次，`keyId` 应全部一致且等于上一步计算值。本地开发把同一值写入仓库根目录 `.env.local`（已被 git 忽略），本地与生产即可共享同一 `keyId`。
+
+**轮换**：生成新值 → 更新 Vercel 变量 → Redeploy。旧信封立即失效，浏览器收到 `409` 后自动重取新公钥重试，学习者最多多一次往返，无需配合客户端发版；怀疑泄露时立即轮换。
+
+#### ACCOUNT_DELETION_AUDIT_SECRET
+
+**作用**：账户删除审计的身份指纹盐。删除账户时，审计表 `account_deletion_audits` 只写入 `HMAC-SHA256(userId, secret)` 指纹和删除前后的行计数，不存明文 userId——审计记录能证明"删除发生、是否残留数据"，但不能反查具体用户。服务端校验该 secret 长度必须 ≥ 32 字符，缺失或过短时 `DELETE /api/account` 返回 `503 account_deletion_not_configured`。配套要求 `SUPABASE_SERVICE_ROLE_KEY`（服务端 admin 权限删除账号）同时配置。
+
+**生成**：
+
+```bash
+openssl rand -hex 32   # 输出 64 个十六进制字符
+```
+
+**轮换注意**：与 `MODEL_CONFIG_PRIVATE_KEY_BASE64` 不同——审计指纹的长期可比性依赖 secret 不变。轮换后历史审计行无法再用新 secret 复算比对（行仍保留，但失去与未来审计的连续性）。除非怀疑泄露，否则不要轮换；确需轮换时在变更记录中注明断点时间。
+
 ### 旧记忆 embedding 回填
 
 先备份目标数据库，并确认 `learning_memory_snapshots` 与
@@ -383,7 +499,8 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 
 ### 生产必需检查
 
-1. 生成并配置 `MODEL_CONFIG_PRIVATE_KEY_BASE64`，否则每个实例会生成临时密钥对，
+1. 生成并配置 `MODEL_CONFIG_PRIVATE_KEY_BASE64`（生成与验证步骤见
+   [浏览器自带模型（BYOK）与服务端密钥变量](#浏览器自带模型byok与服务端密钥变量)），否则每个实例会生成临时密钥对，
    多实例无法解密同一份浏览器模型配置信封。故障特征：`GET /api/conversation` 返回的
    `keyId` 随实例漂移，BYOK 请求间歇性得到 `409 model_config_key_expired`（客户端会
    自动重取公钥重试一次，但仍多一次往返）；Vercel 运行时日志会出现
