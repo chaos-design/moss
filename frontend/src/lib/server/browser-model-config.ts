@@ -29,6 +29,7 @@ const defaultBrowserModelHosts = [
   "api.stepfun.com",
   "api.together.xyz",
   "api.x.ai",
+  "api.z.ai",
   "ark.cn-beijing.volces.com",
   "dashscope.aliyuncs.com",
   "generativelanguage.googleapis.com",

@@ -269,9 +269,10 @@ AI_EMBEDDING_MODEL=...
 `AI_API_TYPE` 支持 `chat-completions` 和 `anthropic-messages`；不配置时会根据
 `AI_BASE_URL` 自动推断 Anthropic 官方地址，其他地址默认使用 OpenAI 兼容协议。
 浏览器自带模型在生产环境按精确主机名白名单校验，默认已内置主流公共推理主机
-（OpenAI、Anthropic、DeepSeek、智谱、阿里云百炼、Kimi、MiniMax、阶跃星辰、零一万物、
-百川、硅基流动、火山方舟、腾讯混元、Gemini 兼容层、xAI、Mistral、Groq、OpenRouter、
-Together、Fireworks，完整清单见[BYOK 章节](#浏览器自带模型byok与服务端密钥变量)的参考表）；
+（OpenAI、Anthropic、DeepSeek、智谱国内与国际域名、阿里云百炼、Kimi、MiniMax、
+阶跃星辰、零一万物、百川、硅基流动、火山方舟、腾讯混元、Gemini 兼容层、xAI、Mistral、
+Groq、OpenRouter、Together、Fireworks、Z.ai，完整清单见
+[BYOK 章节](#浏览器自带模型byok与服务端密钥变量)的参考表）；
 默认之外的服务才需要把准确主机名加入 `AI_ALLOWED_BROWSER_MODEL_HOSTS`（逗号分隔）。
 主机不在白名单时，BYOK 验证与推理请求直接得到
 `400 invalid_model_config`（本地与 Preview 不校验白名单，容易漏配到生产才暴露）。
@@ -326,7 +327,9 @@ AI_ALLOWED_BROWSER_MODEL_HOSTS=api.deepseek.com,open.bigmodel.cn,api.siliconflow
 | OpenAI | `https://api.openai.com/v1` | `chat-completions` | 默认已允许 |
 | Anthropic | `https://api.anthropic.com/v1` | `anthropic-messages` | 默认已允许 |
 | DeepSeek | `https://api.deepseek.com` | `chat-completions` | 默认已允许 |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `chat-completions` | 默认已允许；[官方兼容说明](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction) |
+| 智谱 GLM（国内） | `https://open.bigmodel.cn/api/paas/v4` | `chat-completions` | 默认已允许；[官方兼容说明](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction) |
+| 智谱 GLM（国际 Z.ai） | `https://api.z.ai/api/paas/v4` | `chat-completions` | 默认已允许；[Z.AI 开发者文档](https://docs.z.ai) |
+| 智谱 GLM（Anthropic 协议） | `https://open.bigmodel.cn/api/anthropic/v1`（国内）/ `https://api.z.ai/api/anthropic/v1`（国际） | `anthropic-messages` | 默认已允许（两域名均在白名单）；服务端补 `/messages`，GLM Coding Plan 同域名 |
 | 阿里云百炼（通义千问） | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `chat-completions` | 默认已允许；[兼容模式](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) |
 | Moonshot Kimi | `https://api.moonshot.cn/v1` | `chat-completions` | 默认已允许 |
 | MiniMax | `https://api.minimax.chat/v1` | `chat-completions` | 默认已允许；[官方工具接入说明](https://platform.minimax.cn/docs/token-plan/other-tools) |
