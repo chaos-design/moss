@@ -7,13 +7,15 @@ import { setConversationPrefs } from "@/features/conversation/use-conversation-p
 import { SettingsForm } from "@/features/settings/settings-form"
 import {
   conversationPrefsStorageKey,
+  conversationPromptMaxLength,
   parseConversationPrefs,
-  promptSupplementMaxLength,
 } from "@/lib/conversation-prefs"
+import { defaultConversationPrompt } from "@/lib/memory/conversation-prompt-text"
 import { modelConfigStorageKey } from "@/lib/model-config"
 
 const mocks = vi.hoisted(() => ({
   createModelConfigEnvelope: vi.fn(),
+  renderCounts: { speechService: 0 },
   resetModelConfigPublicKey: vi.fn(),
   toastError: vi.fn(),
   toastInfo: vi.fn(),
@@ -55,6 +57,16 @@ vi.mock("@/lib/model-config-envelope", () => ({
   resetModelConfigPublicKey: mocks.resetModelConfigPublicKey,
 }))
 
+// Counts how often an unrelated card renders. The conversation-experience cards hold their drafts
+// locally, so typing in one of them must not drag the rest of this page through React again — that
+// re-render fan-out, not the input itself, is what pushed interaction latency over budget.
+vi.mock("@/features/settings/speech-service-card", () => ({
+  SpeechServiceCard: () => {
+    mocks.renderCounts.speechService += 1
+    return <div data-testid="speech-service-card" />
+  },
+}))
+
 const storedConfigs = {
   version: 3,
   activeConfigId: "primary",
@@ -92,6 +104,7 @@ beforeEach(() => {
   mocks.toastError.mockReset()
   mocks.toastInfo.mockReset()
   mocks.toastSuccess.mockReset()
+  mocks.renderCounts.speechService = 0
   window.localStorage.clear()
   window.localStorage.setItem(modelConfigStorageKey, JSON.stringify(storedConfigs))
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
@@ -121,52 +134,116 @@ describe("settings model configs", () => {
     expect(screen.getByText("模型服务")).toBeTruthy()
     expect(screen.getByText("学习策略")).toBeTruthy()
     expect(screen.getByRole("heading", { name: "对话体验" })).toBeTruthy()
+    expect(screen.getByText("对话方式")).toBeTruthy()
     expect(screen.getByText("系统发音")).toBeTruthy()
     expect(screen.getByLabelText("AI 角色音色")).toBeTruthy()
     expect(screen.getByText(/影子跟读主角色沿用此音色/)).toBeTruthy()
     expect(screen.getByRole("heading", { name: "账户与数据" })).toBeTruthy()
   })
 
-  it("exposes an editable prompt supplement that persists only on save", () => {
+  it("shows the whole prompt actually in effect and persists edits only on save", () => {
     render(
       <LearningMemoryProvider>
         <SettingsForm />
       </LearningMemoryProvider>,
     )
 
-    const field = screen.getByLabelText("补充指令") as HTMLTextAreaElement
-    expect(field.value).toBe("")
-    expect(field.getAttribute("maxlength")).toBe(String(promptSupplementMaxLength))
+    const field = screen.getByLabelText("系统 Prompt（当前生效）") as HTMLTextAreaElement
+    // The editor opens on the full text that will be sent, output contract included, rather than an
+    // empty box that hides what it does.
+    expect(field.value).toBe(defaultConversationPrompt)
+    expect(field.value).toContain("## Output Contract")
+    expect(field.getAttribute("maxlength")).toBe(String(conversationPromptMaxLength))
+    expect(screen.getByText("使用内置")).toBeTruthy()
 
     // Typing alone must not reach the next inference request.
-    fireEvent.change(field, { target: { value: "每轮都纠正我的语法错误" } })
+    fireEvent.change(field, { target: { value: "只用一句短回复" } })
     expect(
       parseConversationPrefs(window.localStorage.getItem(conversationPrefsStorageKey))
-        .promptSupplement,
+        .conversationPrompt,
     ).toBe("")
 
-    fireEvent.click(screen.getByRole("button", { name: "保存补充指令" }))
+    fireEvent.click(screen.getByRole("button", { name: "保存 Prompt" }))
     expect(
       parseConversationPrefs(window.localStorage.getItem(conversationPrefsStorageKey))
-        .promptSupplement,
-    ).toBe("每轮都纠正我的语法错误")
+        .conversationPrompt,
+    ).toBe("只用一句短回复")
+    expect(screen.getByText("已自定义")).toBeTruthy()
   })
 
-  it("clears a saved prompt supplement", () => {
-    setConversationPrefs((current) => ({ ...current, promptSupplement: "只说一句" }))
+  it("lets the learner remove the output contract, and warns instead of blocking", () => {
     render(
       <LearningMemoryProvider>
         <SettingsForm />
       </LearningMemoryProvider>,
     )
 
-    expect((screen.getByLabelText("补充指令") as HTMLTextAreaElement).value).toBe("只说一句")
-    fireEvent.click(screen.getByRole("button", { name: "清空" }))
+    expect(screen.queryByTestId("contract-warning")).toBeNull()
+    const field = screen.getByLabelText("系统 Prompt（当前生效）")
+
+    fireEvent.change(field, { target: { value: "你是口语陪练，只回一句话。" } })
+
+    // The prompt is entirely the learner's, so this is allowed. What must not happen is a silent
+    // degradation, so the consequence is stated before it is saved.
+    const warning = document.querySelector("[data-contract-warning]")
+    expect(warning?.textContent).toContain("## Output Contract")
+
+    fireEvent.click(screen.getByRole("button", { name: "保存 Prompt" }))
+    expect(
+      parseConversationPrefs(window.localStorage.getItem(conversationPrefsStorageKey))
+        .conversationPrompt,
+    ).toBe("你是口语陪练，只回一句话。")
+  })
+
+  it("restores the built-in prompt", () => {
+    setConversationPrefs((current) => ({ ...current, conversationPrompt: "只说一句" }))
+    render(
+      <LearningMemoryProvider>
+        <SettingsForm />
+      </LearningMemoryProvider>,
+    )
+
+    expect(
+      (screen.getByLabelText("系统 Prompt（当前生效）") as HTMLTextAreaElement).value,
+    ).toBe("只说一句")
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复内置" }))
 
     expect(
       parseConversationPrefs(window.localStorage.getItem(conversationPrefsStorageKey))
-        .promptSupplement,
+        .conversationPrompt,
     ).toBe("")
+    expect(
+      (screen.getByLabelText("系统 Prompt（当前生效）") as HTMLTextAreaElement).value,
+    ).toBe(defaultConversationPrompt)
+    expect(screen.getByText("使用内置")).toBeTruthy()
+  })
+
+  it("keeps typing out of the render path of unrelated cards", () => {
+    render(
+      <LearningMemoryProvider>
+        <SettingsForm />
+      </LearningMemoryProvider>,
+    )
+
+    const speechCardRenders = mocks.renderCounts.speechService
+    expect(speechCardRenders).toBeGreaterThan(0)
+
+    // The prompt editor is the largest interactive field on the page. Every keystroke that re-renders
+    // the model-config cards and their selects with it is interaction latency the learner pays for
+    // each character typed.
+    const promptField = screen.getByLabelText("系统 Prompt（当前生效）")
+    for (const value of ["只说一句", "只说一句短回复", "只说一句简短回复"]) {
+      fireEvent.change(promptField, { target: { value } })
+    }
+    expect(mocks.renderCounts.speechService).toBe(speechCardRenders)
+
+    // Same rule for the timing numbers, which used to write the shared store on each keystroke.
+    const timingField = screen.getByLabelText("会话续接时限（分钟）")
+    for (const value of ["1", "12", "120"]) {
+      fireEvent.change(timingField, { target: { value } })
+    }
+    expect(mocks.renderCounts.speechService).toBe(speechCardRenders)
   })
 
   it("shows multiple configs, switches the active one, and adds without replacing", async () => {
@@ -305,11 +382,9 @@ describe("settings model configs", () => {
       </LearningMemoryProvider>,
     )
 
-    const layoutCard = screen
-      .getByText("调整练习转写的问答排列方式。")
-      .closest('[data-slot="card"]')
-    const inputCard = screen
-      .getByText("设置文字练习时的发送快捷键。")
+    const promptCard = screen.getByText(/可整段改写/).closest('[data-slot="card"]')
+    const waysCard = screen
+      .getByText("调整练习转写的问答排列方式与发送快捷键。")
       .closest('[data-slot="card"]')
     const timingCard = screen
       .getByText("控制会话续接、多次提问合并和语音停顿判断。")
@@ -317,27 +392,49 @@ describe("settings model configs", () => {
     const voiceCard = screen
       .getByText("统一设置 AI 对话与影子跟读使用的主角色音色。")
       .closest('[data-slot="card"]')
-    const promptCard = screen
-      .getByText("在系统 Prompt 之后追加你自己的要求，用于调整语气、纠错严格程度或练习重点。")
-      .closest('[data-slot="card"]')
 
-    // The prompt editor spans the full first row; the four compact cards pair up in the two rows
-    // below it, so no two cards ever claim the same grid cell.
+    // The prompt editor spans the full first row because it carries two long text regions. The
+    // three compact cards below occupy row 2 columns 1 and 2 plus a full-width row 3, so no two
+    // cards ever claim the same grid cell and nothing stretches to fill a taller neighbour.
     expect(promptCard?.className).toContain("lg:col-span-2")
     expect(promptCard?.className).toContain("lg:row-start-1")
-    expect(layoutCard?.className).toContain("lg:col-start-1")
-    expect(layoutCard?.className).toContain("lg:row-start-2")
-    expect(layoutCard?.className).toContain("order-2")
-    expect(timingCard?.className).toContain("lg:col-start-2")
-    expect(timingCard?.className).toContain("lg:row-start-2")
-    expect(timingCard?.className).not.toContain("lg:row-span-2")
-    expect(timingCard?.className).toContain("order-2")
-    expect(inputCard?.className).toContain("lg:col-start-1")
-    expect(inputCard?.className).toContain("lg:row-start-3")
-    expect(inputCard?.className).toContain("order-3")
+    expect(waysCard?.className).toContain("lg:col-start-1")
+    expect(waysCard?.className).toContain("lg:row-start-2")
+    expect(waysCard?.className).toContain("order-2")
+    expect(waysCard?.className).not.toContain("lg:col-span-2")
     expect(voiceCard?.className).toContain("lg:col-start-2")
-    expect(voiceCard?.className).toContain("lg:row-start-3")
-    expect(voiceCard?.className).toContain("order-4")
+    expect(voiceCard?.className).toContain("lg:row-start-2")
+    expect(voiceCard?.className).toContain("order-3")
+    expect(timingCard?.className).toContain("lg:col-span-2")
+    expect(timingCard?.className).toContain("lg:col-start-1")
+    expect(timingCard?.className).toContain("lg:row-start-3")
+    expect(timingCard?.className).toContain("order-4")
+
+    const grid = promptCard?.parentElement
+    // `items-start` is what keeps a short card from being stretched into a tall empty block.
+    expect(grid?.className).toContain("items-start")
+  })
+
+  it("packs the two dialogue controls into one card and the timing fields into one row", () => {
+    render(
+      <LearningMemoryProvider>
+        <SettingsForm />
+      </LearningMemoryProvider>,
+    )
+
+    const waysCard = screen
+      .getByText("调整练习转写的问答排列方式与发送快捷键。")
+      .closest('[data-slot="card"]')
+    const timingGroup = screen
+      .getByLabelText("会话续接时限（分钟）")
+      .closest('[data-slot="field-group"]')
+
+    expect(waysCard?.querySelector("#transcript-layout")).toBeTruthy()
+    expect(waysCard?.querySelector("#send-shortcut")).toBeTruthy()
+
+    // Three numeric timing fields read as one row across the full-width card instead of a tall
+    // column that left the neighbouring half of the grid empty.
+    expect(timingGroup?.className).toContain("lg:grid-cols-3")
   })
 
   it("keeps model and agent cards at half width on desktop", () => {
@@ -382,7 +479,9 @@ describe("settings model configs", () => {
     const cards = Array.from(container.querySelectorAll('[data-slot="card"]'))
     const cardContents = Array.from(container.querySelectorAll('[data-slot="card-content"]'))
 
-    expect(cards).toHaveLength(9)
+    // Model service, learning strategy, prompt, dialogue ways, voice, timing, and account data. The
+    // speech-service card renders a bare div in this suite, so it contributes no card here.
+    expect(cards).toHaveLength(7)
     expect(
       cards.every((card) => card.className.includes("max-h-[min(680px,calc(100svh-6rem))]")),
     ).toBe(true)

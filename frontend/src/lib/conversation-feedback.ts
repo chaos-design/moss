@@ -48,6 +48,15 @@ export type ConversationResponseData = {
   inputAnalysis: ConversationInputAnalysis
   validation: ExpressionValidation
   source?: "demo" | "provider"
+  /**
+   * False when the provider reply did not match the output contract and the parser fell back to a
+   * generic turn.
+   *
+   * The system prompt is fully learner-owned, so a prompt that no longer asks for the contract JSON
+   * produces exactly this. Reporting it lets the transcript blame the configuration instead of
+   * presenting a silently degraded reply as if the model had simply slowed down.
+   */
+  contractApplied?: boolean
 }
 
 type ProviderPayload = {
@@ -594,6 +603,7 @@ export function parseProviderConversation(
               : createPracticeExamples(corrected),
       },
       source: "provider",
+      contractApplied: true,
     }
   } catch {
     const validation = createExpressionValidation(originalInput, suggestedPhrase, sceneTag)
@@ -614,6 +624,7 @@ export function parseProviderConversation(
       inputAnalysis: localAnalysis,
       validation,
       source: "provider",
+      contractApplied: false,
     }
   }
 }

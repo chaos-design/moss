@@ -201,7 +201,7 @@ export function useVoiceConversation({
           scene,
           memoryContext,
           messages: requestMessages,
-          promptSupplement: prefs.promptSupplement,
+          conversationPrompt: prefs.conversationPrompt,
           signal: abortController.signal,
           tutorMode: prefs.tutorMode,
         })
@@ -227,6 +227,10 @@ export function useVoiceConversation({
           note: result.recall,
           timestamp: formatCallDuration(callSecondsRef.current),
           validation,
+          // The prompt is entirely the learner's, so a reply that missed the output contract is a
+          // configuration problem they can fix. Marking the turn says so instead of letting the
+          // degraded reply read as a normal turn.
+          ...(result.contractApplied === false ? { variant: "prompt" as const } : {}),
         }
         const nextMessages = [...messagesRef.current, assistantMessage]
         messagesRef.current = nextMessages
@@ -289,8 +293,8 @@ export function useVoiceConversation({
       memoryContext,
       onTurnComplete,
       persistSession,
+      prefs.conversationPrompt,
       prefs.consecutiveQuestionDelayMs,
-      prefs.promptSupplement,
       prefs.tutorMode,
       scene,
       speak,

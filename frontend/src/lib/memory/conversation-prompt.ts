@@ -1,12 +1,13 @@
 import { analyzeConversationInput } from "@/lib/conversation-feedback"
 import type { TutorMode } from "@/lib/conversation-prefs"
 import { getConversationScene } from "@/lib/conversation-scenes"
+import { defaultConversationPrompt } from "./conversation-prompt-text"
 import type {
   ConversationMemoryContextItem,
   ConversationMemoryPayload,
   ConversationShortTermMemory,
 } from "./learning-memory"
-import { loadPromptTemplate, renderPromptTemplate } from "./prompt-template"
+import { renderLearnerPrompt } from "./prompt-template"
 
 export type ConversationPromptTurn = {
   role: "assistant" | "user"
@@ -20,14 +21,16 @@ export type ConversationPromptInput = {
   memory?: ConversationMemoryPayload | ConversationMemoryContextItem[]
   messages: ConversationPromptTurn[]
   /**
-   * Learner-authored additions from conversation preferences. Appended after the immutable base
-   * prompt so the output contract above cannot be edited away, and capped again here because the
-   * value is attacker-controlled transport input rather than a trusted local preference.
+   * Learner-authored system prompt from conversation preferences, used verbatim when non-empty.
+   *
+   * The learner owns the whole prompt, output contract included. `{{...}}` placeholders it keeps are
+   * still resolved so it can reference the current scene, recalled memory, and tutor mode, and
+   * removing the output contract degrades reply parsing exactly as the learner chose. Capped again
+   * here because the value is attacker-controlled transport input rather than a trusted local
+   * preference.
    */
-  promptSupplement?: string
+  conversationPrompt?: string
 }
-
-const conversationPromptTemplate = loadPromptTemplate("conversation-system.md")
 
 export function getLongTermMemory(request: ConversationPromptInput) {
   if (!request.memory) {
@@ -108,7 +111,7 @@ export function createConversationPrompt(
     ]),
   )
 
-  const rendered = renderPromptTemplate(conversationPromptTemplate, {
+  return renderLearnerPrompt(resolveConversationPrompt(request.conversationPrompt), {
     sceneTitle: scene.title,
     sceneEnglishTitle: scene.englishTitle,
     partnerRole: scene.partnerRole,
@@ -128,29 +131,23 @@ export function createConversationPrompt(
     ),
     tutorModeInstruction: getTutorModeInstruction(tutorMode),
   })
-
-  return appendPromptSupplement(rendered, request.promptSupplement)
 }
 
-/** Transport-side cap. Matches `promptSupplementMaxLength` without importing browser-facing prefs. */
-const promptSupplementLimit = 2_000
+/** Transport-side cap. Matches `conversationPromptMaxLength` without importing browser-facing prefs. */
+const conversationPromptLimit = 12_000
 
 /**
- * Appends the learner's own instructions to the rendered system prompt.
+ * Picks the system prompt the request will actually send.
  *
- * Two properties matter here. First, the supplement is placed after the base prompt so it cannot
- * remove the JSON output contract that reply parsing depends on. Second, `{{...}}` placeholders are
- * neutralized: the base prompt is rendered before this point, so a placeholder surviving in
- * learner text is never a variable, and leaving it intact would only invite the model to echo it.
+ * The learner owns the whole prompt, so a non-empty value replaces the built-in text outright rather
+ * than being layered onto it: settings can then edit one continuous document and what it shows is
+ * exactly what goes out. Whitespace-only input counts as no customization, which keeps a field the
+ * learner cleared from silently sending an empty prompt.
  */
-export function appendPromptSupplement(rendered: string, supplement?: string) {
-  const normalized = (supplement ?? "").replace(/\r\n?/g, "\n").trim()
+export function resolveConversationPrompt(value?: string) {
+  const normalized = (value ?? "").replace(/\r\n?/g, "\n").trim()
   if (!normalized) {
-    return rendered
+    return defaultConversationPrompt
   }
-  const safeSupplement = normalized
-    .slice(0, promptSupplementLimit)
-    .replace(/\{\{/g, "{ {")
-    .replace(/\}\}/g, "} }")
-  return `${rendered}\n\n## Learner-Added Instructions\n\n${safeSupplement}`
+  return normalized.slice(0, conversationPromptLimit)
 }

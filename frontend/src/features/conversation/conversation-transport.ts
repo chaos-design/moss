@@ -39,7 +39,7 @@ type ConversationTransportInput = {
   scene: ConversationScene
   memoryContext: ConversationMemoryContextItem[]
   messages: ConversationMessage[]
-  promptSupplement?: string
+  conversationPrompt?: string
   signal: AbortSignal
   tutorMode: TutorMode
 }
@@ -158,7 +158,7 @@ export async function requestConversationReply({
   scene,
   memoryContext,
   messages,
-  promptSupplement,
+  conversationPrompt,
   signal,
   tutorMode,
 }: ConversationTransportInput) {
@@ -170,7 +170,7 @@ export async function requestConversationReply({
     language: "auto" as const,
     tutorMode,
     // Only sent when non-empty, so the default request shape is unchanged.
-    ...(promptSupplement ? { promptSupplement } : {}),
+    ...(conversationPrompt ? { conversationPrompt } : {}),
     memory: {
       shortTerm: {
         sceneId: scene.id,

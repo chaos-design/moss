@@ -10,6 +10,7 @@ import {
   ChevronUpIcon,
   CircleAlertIcon,
   Clock3Icon,
+  FileWarningIcon,
   KeyboardIcon,
   LanguagesIcon,
   LightbulbIcon,
@@ -1118,6 +1119,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
 }) {
   const assistant = message.role === "assistant"
   const errorTurn = message.variant === "error"
+  const promptTurn = message.variant === "prompt"
   const { requireSignIn } = useAuth()
   const [translationVisible, setTranslationVisible] = useState(false)
   const [translation, setTranslation] = useState(message.translation)
@@ -1201,6 +1203,12 @@ export const TranscriptTurn = memo(function TranscriptTurn({
               临时错误
             </span>
           ) : null}
+          {promptTurn ? (
+            <span className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[10px] font-medium text-foreground">
+              <FileWarningIcon className="size-3" aria-hidden="true" />
+              未按输出契约返回
+            </span>
+          ) : null}
           {assistant && !errorTurn ? (
             <Button
               type="button"
@@ -1279,6 +1287,14 @@ export const TranscriptTurn = memo(function TranscriptTurn({
             </Button>
           </div>
         ) : null}
+        {promptTurn ? (
+          // The prompt is fully learner-owned, so this is the one failure the learner can actually
+          // fix. Naming it here beats a degraded reply that looks like a slow model.
+          <p className="mt-2 rounded-md border border-dashed px-3 py-2 text-xs leading-5 text-muted-foreground">
+            模型这次没有按输出契约返回 JSON，本轮的翻译、纠错和例句因此缺失。可以在 设置 →
+            对话体验 → 对话 Prompt 里确认输出契约段落是否被改写。
+          </p>
+        ) : null}
         {assistant && !errorTurn ? (
           <AssistantSupportPanel
             note={message.note}
@@ -1288,7 +1304,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
             translationVisible={translationVisible}
           />
         ) : null}
-        {assistant && !errorTurn && message.validation && message.feedbackFor ? (
+        {assistant && !errorTurn && !promptTurn && message.validation && message.feedbackFor ? (
           <ExpressionValidationFeedback
             inputAnalysis={message.inputAnalysis}
             onSpeak={onSpeak}

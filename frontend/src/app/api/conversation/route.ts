@@ -45,7 +45,7 @@ type ConversationRequest = {
   tutorMode?: TutorMode
   memory?: ConversationMemoryPayload | ConversationMemoryContextItem[]
   messages: ChatTurn[]
-  promptSupplement?: string
+  conversationPrompt?: string
   modelConfigEnvelope?: ModelConfigEnvelope
 }
 
@@ -129,11 +129,13 @@ function isValidMemory(value: unknown) {
   )
 }
 
-function isValidPromptSupplement(value: unknown): value is string | undefined {
+// The transport ceiling matches the preference cap: the learner owns the whole prompt, so this is
+// only an admission limit on request size, not a second place where prompt text gets truncated.
+function isValidConversationPrompt(value: unknown): value is string | undefined {
   if (value === undefined) {
     return true
   }
-  return typeof value === "string" && value.length <= 4_000
+  return typeof value === "string" && value.length <= 12_000
 }
 
 function isValidRequest(value: unknown): value is ConversationRequest {
@@ -148,7 +150,7 @@ function isValidRequest(value: unknown): value is ConversationRequest {
       candidate.language === "bilingual" ||
       candidate.language === "english") &&
     (candidate.tutorMode === undefined || isTutorMode(candidate.tutorMode)) &&
-    isValidPromptSupplement(candidate.promptSupplement) &&
+    isValidConversationPrompt(candidate.conversationPrompt) &&
     isValidMemory(candidate.memory) &&
     !("modelConfig" in candidate) &&
     isValidModelConfigEnvelope(candidate.modelConfigEnvelope) &&

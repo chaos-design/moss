@@ -43,6 +43,33 @@ flowchart LR
 核心学习算法覆盖率门槛为 statements、branches、functions、lines 均不低于 80%。覆盖率
 命令是 `pnpm test:coverage`，不属于默认 `pnpm check`，发布候选版本需单独执行。
 
+`tests/conversation-prompt-ownership.test.ts` 覆盖整段 Prompt 的偏好解析、v4 补充指令与 v5
+指令段两级迁移、学习者占位符解析与未知占位符中和、传输长度上限，以及“学习者文本原样发送
+（含输出契约）”。`tests/settings-form.test.tsx` 覆盖可编辑全文、删除输出契约时给出警告而非
+拦截、恢复内置，以及“编辑某个控件不会重渲染无关卡片”的渲染隔离断言。
+`tests/conversation-workspace.test.tsx` 与 `tests/voice-conversation.test.tsx` 覆盖
+`contractApplied: false` 时转写标注该轮并指向设置页。`tests/workspace-loading.test.tsx` 覆盖
+对话路由占位层的内边距。
+
+## 性能与交互延迟
+
+2026-10-07 本机为 Apple Silicon macOS、Node 22、无浏览器环境，因此**未采集真实 INP、LCP
+或 CLS**：这三项需要 Chrome DevTools 或 field data，本环境两者都不具备，任何数值都会是编造。
+已确认的可测量结果与结构保证如下：
+
+- `pnpm build` 产物中 `frontend/.next/static/chunks` 共 57 个客户端 chunk，合计 956.3 KB
+  gzip（含全部路由，非单路由首屏）。系统 Prompt 内置文本 4560 字符，约 1.5 KB gzip，随设置页
+  客户端 chunk 下发，相对总量可忽略。
+- 设置页「对话体验」原本把 Prompt 编辑器、三个数值输入和模型配置表单放在同一个
+  `SettingsForm` 内，受控输入每次按键都会重渲染整页全部卡片与 Base UI Select。现在
+  `ConversationPromptEditor` 与 `ConversationTimingFields` 为 `memo` 组件、草稿保存在组件内部，
+  只有失焦或点保存才写共享 store。
+- `tests/settings-form.test.tsx` 的渲染计数断言固定了这条约束：连续三次按键修改 Prompt 与
+  会话续接时限时，被桩替换的无关卡片渲染次数保持不变。该断言防止回归，但不等于 INP 实测值。
+
+INP 达标仍需在真实浏览器执行：在桌面与移动视口下用 DevTools Performance 面板测量
+LCP/INP/CLS，或接入 field data 后观察 p75 INP ≤ 200ms。此项**未在本次验证**，不能视为通过。
+
 ## 视觉验证
 
 2026-08-28 使用 Chrome 验证桌面 `1440 x 1000` 与移动 `390 x 844`。移动端覆盖公共首页、
@@ -277,6 +304,32 @@ Prompt 基础契约的修改只经单元测试覆盖，未经真实模型验证�
 - 浏览器对本机 TTS 的 health、CORS、prepare、synthesize 和音频播放。
 
 这些结果证明协议链路可运行，不代表所有目标硬件的质量、延迟或容量达标。
+
+## 2026-10-07 系统 Prompt 改为学习者全权所有
+
+`conversationPrompt` 非空时整体替换内置文本，包含 `## Output Contract` 输出契约；
+`conversationPromptMaxLength` 与路由校验同步放宽至 12000。为把「改坏契约」这一合法配置结果
+变成可归因事件，`parseProviderConversation` 新增 `contractApplied` 字段，解析降级时返回
+`false`，转写标注「未按输出契约返回」并指向设置页；设置页在草稿缺少该段时给出警告但不拦截。
+偏好记录升级到版本 6，v4 补充指令与 v5 指令段两级迁移均不改变实际发送的 Prompt。
+`pnpm check` 通过（74 文件、515 用例）；`pnpm build` 通过。
+
+Prompt 文本从 `src/lib/memory/prompts/conversation-system.md`（`node:fs` 运行时读取）迁到
+`src/lib/memory/conversation-prompt-text.ts`，`next.config.ts` 的
+`outputFileTracingIncludes` 随之移除。
+
+2026-10-06 调整设置页「对话体验」布局。新增
+`app/workspace/conversation/loading.tsx`：工作区 Shell 在对话路由下取消自身内边距，
+原共享占位层会紧贴左侧与顶部边缘，新边界按 `conversation-workspace` 的
+`px-4 md:px-5`（页头）与 `px-5 md:px-8`（转写）自持内边距。设置页把「对话布局」与「输入
+方式」合并为「对话方式」一张卡片、两个下拉，`items-start` 防止短卡片被同行高卡片拉伸成空
+块，会话与判句三段数值在 `lg` 下改为三列。本次未执行桌面与 390px 截图核对，需按
+[界面规范](ui-guidelines.md) 补验。
+
+`tests/shadowing-workspace.test.tsx`、`tests/expression-library-workspace.test.tsx` 与
+`tests/conversation-workspace.test.tsx` 各有一个用例在整包运行时触发 10s 超时；用 `git stash`
+在未修改的基线上复现了 shadowing 超时，单独重跑亦消失，最终 `pnpm check` 全量通过。判定为
+本机负载相关的既有不稳定项，未由本次变更引入，也未因此放宽断言。
 
 ## 2026-10-04 导航反馈与语音接入
 

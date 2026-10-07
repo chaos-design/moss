@@ -141,7 +141,7 @@ describe("POST /api/conversation authentication", () => {
     expect(await response.json()).toMatchObject({ error: { code: "invalid_request" } })
   })
 
-  it("rejects an oversized prompt supplement", async () => {
+  it("rejects an oversized conversation prompt", async () => {
     getSupabaseServerClient.mockResolvedValue(null)
     const response = await POST(
       new Request("https://moss.local/api/conversation", {
@@ -151,7 +151,7 @@ describe("POST /api/conversation authentication", () => {
           sceneId: "coffee",
           language: "auto",
           messages: [{ role: "user", content: "A latte, please." }],
-          promptSupplement: "x".repeat(4_001),
+          conversationPrompt: "x".repeat(12_001),
         }),
       }),
     )
@@ -160,7 +160,7 @@ describe("POST /api/conversation authentication", () => {
     expect(await response.json()).toMatchObject({ error: { code: "invalid_request" } })
   })
 
-  it("rejects a non-string prompt supplement", async () => {
+  it("rejects a non-string conversation prompt", async () => {
     getSupabaseServerClient.mockResolvedValue(null)
     const response = await POST(
       new Request("https://moss.local/api/conversation", {
@@ -170,13 +170,32 @@ describe("POST /api/conversation authentication", () => {
           sceneId: "coffee",
           language: "auto",
           messages: [{ role: "user", content: "A latte, please." }],
-          promptSupplement: { hijack: true },
+          conversationPrompt: { hijack: true },
         }),
       }),
     )
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "invalid_request" } })
+  })
+
+  it("accepts a conversation prompt at the transport ceiling", async () => {
+    getSupabaseServerClient.mockResolvedValue(null)
+    const response = await POST(
+      new Request("https://moss.local/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: "coffee",
+          language: "auto",
+          messages: [{ role: "user", content: "A latte, please." }],
+          conversationPrompt: "x".repeat(12_000),
+        }),
+      }),
+    )
+
+    // Demo mode never reaches inference, so a non-400 status proves the request was admitted.
+    expect(response.status).not.toBe(400)
   })
 
   it("asks the client to refresh an expired encryption key", async () => {

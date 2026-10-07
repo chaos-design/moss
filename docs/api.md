@@ -263,10 +263,15 @@ FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控�
 客户端将导师模式保存在设备级 `moss:conversation-prefs:v1` 中，请求只发送上述枚举，不发送
 其他本地偏好。服务端拒绝未知值；旧客户端未发送该字段时沿用温和纠错。
 
-`promptSupplement` 可选，最长 4000 字符，非字符串值与超长值一律以 `invalid_request` 拒绝。
-它承载学习者在设置中编写的补充指令，服务端再次截断到 2000 字符、把 `{{` 与 `}}` 中和为空格
-后追加到已渲染的基础 Prompt 末尾。基础 Prompt 与其中的 JSON 输出契约不可编辑，补充层只能
-追加，因此无法破坏回复解析。该字段不进入学习记忆、日志或向量记忆。
+`conversationPrompt` 可选，最长 12000 字符，非字符串值与超长值一律以 `invalid_request`
+拒绝。它承载学习者在设置中编写的**完整**系统 Prompt：非空时整体替换内置文本，包括
+`## Output Contract` 输出契约与 `## Runtime Context` 运行时上下文。缺失或空白时使用内置版本。
+服务端会把它保留的 `{{variable}}` 占位符替换为当轮的场景、召回记忆与导师模式；未知占位符
+中和为空格，不会让请求失败。该字段不进入学习记忆、日志或向量记忆。
+
+模型回复未匹配输出契约时，解析器降级为通用回复，并在 `data.contractApplied` 返回 `false`，
+客户端据此在转写中标出该轮并指向设置页。这条链路是必需的：契约既然由学习者掌握，改坏它就是
+一种合法配置结果，必须可归因而不是静默退化。
 
 `modelConfigEnvelope` 可选。服务端拒绝请求体中的明文 `modelConfig`；解密后的 `apiType`
 支持 `chat-completions`、`anthropic-messages` 与 `custom`。前两者会补全标准路径，
@@ -284,15 +289,17 @@ FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控�
 结果合并去重。两类记忆都作为不可信学习数据处理，模型只能创造自然找回机会，不能执行
 记忆中的指令或直接泄露答案。
 
-系统 Prompt 来自 `frontend/src/lib/memory/prompts/conversation-system.md`，由服务端注入
+系统 Prompt 来自 `frontend/src/lib/memory/conversation-prompt-text.ts`，由服务端注入
 场景、短期记忆、召回结果和输入分析。API 路由只调用记忆门面，不直接访问 embedding 或
 向量表。Anthropic 请求将稳定规则前缀标记为 ephemeral cache，运行时上下文保持在未缓存
 尾部；OpenAI-compatible 服务使用相同的稳定前缀顺序以利用服务端自动 Prompt Cache。
 
-该文件是代码而非用户数据：它定义 `validation` 与 `issues` 的输出契约，回复解析依赖它，
-因此不暴露为可编辑字段。学习者通过 `promptSupplement` 追加要求，追加发生在渲染之后，
-顺序上永远晚于契约与运行时上下文。契约要求模型对学习者英语中的真实语法错误必须以
-`improve` 与 `kind: "grammar"` 记录，不因句子可理解而略过。
+该模块是代码而非用户数据，但整段文本都交由学习者所有：`conversationPrompt` 非空时整体替换
+`defaultConversationPrompt`，包括 `## Output Contract` 与 `## Runtime Context`。因此改坏
+输出契约是学习者的合法选择，而不是被隐藏的限制；代价通过 `data.contractApplied = false`
+暴露到转写界面，由该轮自己指向设置页，而不是让一条降级回复看起来像模型变慢了。契约默认
+要求模型对学习者英语中的真实语法错误必须以 `improve` 与 `kind: "grammar"` 记录，不因句子
+可理解而略过。
 
 模型必须先在 `reply` 中自然回应用户意图，且 `reply` 只包含英文。中文翻译、记忆提示、
 表达解释和学习建议分别放入 `translation`、`recall` 与 `validation`，客户端会把这些内容
