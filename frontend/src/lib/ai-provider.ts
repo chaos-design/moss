@@ -49,6 +49,20 @@ export function getAiProviderConfig(): AiProviderConfig | null {
   }
 }
 
+/**
+ * Carries the upstream HTTP status so route handlers can tell a provider quota or auth failure
+ * apart from a provider being unreachable, without leaking upstream response details to learners.
+ */
+export class AiProviderStatusError extends Error {
+  readonly status: number
+
+  constructor(status: number) {
+    super(`AI provider returned ${status}`)
+    this.name = "AiProviderStatusError"
+    this.status = status
+  }
+}
+
 function getAiRequestUrl(config: AiProviderConfig) {
   const baseUrl = config.baseUrl.replace(/\/+$/, "")
   if (config.apiType === "custom") {
@@ -207,7 +221,7 @@ export async function requestAiText({
 
   let response = await sendRequest(maxTokens)
   if (!response.ok) {
-    throw new Error(`AI provider returned ${response.status}`)
+    throw new AiProviderStatusError(response.status)
   }
 
   let payload = await response.json()
@@ -216,7 +230,7 @@ export async function requestAiText({
     const retryTokenBudget = Math.min(8_192, Math.max(4_096, maxTokens * 3))
     response = await sendRequest(retryTokenBudget)
     if (!response.ok) {
-      throw new Error(`AI provider returned ${response.status}`)
+      throw new AiProviderStatusError(response.status)
     }
     payload = await response.json()
     text = extractAiResponseText(payload)

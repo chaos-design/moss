@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
+import { AiProviderStatusError, getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
 import { removeMarkdownEmphasis } from "@/lib/conversation-feedback"
 import {
   decryptModelConfigEnvelope,
@@ -171,7 +171,18 @@ export async function POST(request: Request) {
     return NextResponse.json({
       data: { translation: removeMarkdownEmphasis(translation) },
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof AiProviderStatusError && error.status === 429) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "provider_rate_limited",
+            message: "模型服务请求过于频繁，请稍后再试。",
+          },
+        },
+        { status: 429 },
+      )
+    }
     return NextResponse.json(
       {
         error: {
