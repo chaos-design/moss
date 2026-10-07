@@ -43,6 +43,10 @@ flowchart LR
 核心学习算法覆盖率门槛为 statements、branches、functions、lines 均不低于 80%。覆盖率
 命令是 `pnpm test:coverage`，不属于默认 `pnpm check`，发布候选版本需单独执行。
 
+`tests/hold-to-record-shortcut.test.tsx`（10 个用例）覆盖长按录音的按下/抬起配对、keydown
+重复抑制、非本快捷键的 keyup、失焦与标签页隐藏兜底停止、文本框与按钮焦点下不触发、禁用态、
+非 Space 键与 IME 组合态。
+
 `tests/conversation-prompt-ownership.test.ts` 覆盖整段 Prompt 的偏好解析、v4 补充指令与 v5
 指令段两级迁移、学习者占位符解析与未知占位符中和、传输长度上限，以及“学习者文本原样发送
 （含输出契约）”。`tests/settings-form.test.tsx` 覆盖可编辑全文、删除输出契约时给出警告而非
@@ -304,6 +308,23 @@ Prompt 基础契约的修改只经单元测试覆盖，未经真实模型验证�
 - 浏览器对本机 TTS 的 health、CORS、prepare、synthesize 和音频播放。
 
 这些结果证明协议链路可运行，不代表所有目标硬件的质量、延迟或容量达标。
+
+## ## 2026-10-07 影子跟读长按空格录音，Prompt 编辑区取消卡内滚动
+
+2026-10-07 设置页「对话 Prompt」卡片此前与其他设置卡共用 `settingsCardHeightClass` 高度上限与
+`overflow-y-auto`，编辑器、契约警告与操作按钮因此挤在卡内滚动区里：警告可能被滚出视野，保存
+按钮也需要卡内滚动才能到达。该卡片改为不使用高度上限、不设卡内滚动，textarea 自身保留固定
+高度（`h-80` / `lg:h-96`）以维持「字段」而非「页面区块」的定位。布局测试固定「除 Prompt
+卡片外其余 6 张卡仍带高度上限」。
+
+2026-10-07 影子跟读新增长按空格录音。新增 `use-hold-to-record-shortcut`：仅在跟读阶段生效，
+且在文本框、按钮等可交互元素获得焦点时不触发，避免覆盖空格输入与按钮激活；长按期间忽略
+keydown 重复事件，否则每几百毫秒重启录音；`window.blur` 与 `visibilitychange` 均停止录音，
+因为在窗口外松手时 keyup 不会到达该文档。录音按钮旁新增 `kbd` 提示。
+
+`tests/hold-to-record-shortcut.test.tsx`（10 个用例）与 `tests/shadowing-workspace.test.tsx`
+新增用例覆盖快捷键行为。本次未执行桌面与 390px 截图核对；空格长按的真实手感（含系统级快捷键
+冲突与 macOS 全屏空格冲突）需在浏览器中人工确认。
 
 ## 2026-10-07 系统 Prompt 改为学习者全权所有
 

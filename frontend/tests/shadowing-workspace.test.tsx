@@ -74,9 +74,66 @@ afterEach(() => {
   mocks.recordShadowingAttempt.mockReset()
   mocks.speakWithVoice.mockReset().mockResolvedValue(undefined)
   mocks.start.mockReset()
+  mocks.stop.mockReset()
 })
 
 describe("ShadowingWorkspace", () => {
+  it("records on Space keydown and stops on keyup in the shadowing stage", () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // Hold-to-record keeps begin and end on one key, so a take never needs a pointer round trip.
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    })
+    expect(mocks.start).toHaveBeenCalledOnce()
+    expect(mocks.stop).not.toHaveBeenCalled()
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    })
+    expect(mocks.stop).toHaveBeenCalledOnce()
+  })
+
+  it("advertises the hold-Space shortcut next to the record button", () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // The button already said what it did; the key hint says how to do it without looking.
+    expect(screen.getByTitle("按住空格开始录音，松开停止").textContent).toContain("空格")
+  })
+
+  it("ignores the shortcut outside the shadowing stage", () => {
+    render(<ShadowingWorkspace />)
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    })
+
+    expect(mocks.start).not.toHaveBeenCalled()
+  })
+
   it("shows measured scores and saves the completed attempt", () => {
     const view = render(<ShadowingWorkspace />)
     fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))

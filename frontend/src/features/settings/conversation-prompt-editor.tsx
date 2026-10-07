@@ -16,10 +16,8 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
-import { settingsCardHeightClass } from "@/features/settings/settings-layout"
 import { conversationPromptMaxLength } from "@/lib/conversation-prefs"
 import { defaultConversationPrompt } from "@/lib/memory/conversation-prompt-text"
-import { cn } from "@/lib/utils"
 
 /** The heading the parser keys off, and the one place a learner edit silently breaks reply parsing. */
 const contractHeading = "## Output Contract"
@@ -78,12 +76,12 @@ export const ConversationPromptEditor = memo(function ConversationPromptEditor()
   const contractMissing = !draft.includes(contractHeading)
 
   return (
-    <Card
-      className={cn(
-        "order-1 rounded-lg lg:col-span-2 lg:col-start-1 lg:row-start-1",
-        settingsCardHeightClass,
-      )}
-    >
+    // No height cap and no inner scroll region, unlike the other settings cards. The editor, the
+    // contract warning and the actions are one control surface: hiding any of them behind a scroll
+    // meant the learner could not see the warning they were about to dismiss, or reach 保存 without
+    // scrolling inside the card. The textarea keeps its own bounded height because it must stay a
+    // field rather than a page section.
+    <Card className="order-1 rounded-lg lg:col-span-2 lg:col-start-1 lg:row-start-1">
       <CardHeader className="shrink-0">
         <CardTitle className="flex items-center gap-2 font-serif text-lg">
           <MessagesSquareIcon className="size-4 text-primary" aria-hidden="true" />
@@ -99,7 +97,7 @@ export const ConversationPromptEditor = memo(function ConversationPromptEditor()
         </CardAction>
         <div className="col-span-full mt-2 w-full border-b" aria-hidden="true" />
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain">
+      <CardContent className="flex flex-col gap-4">
         <Field>
           <FieldLabel htmlFor="conversation-prompt">系统 Prompt（当前生效）</FieldLabel>
           <Textarea
@@ -107,10 +105,10 @@ export const ConversationPromptEditor = memo(function ConversationPromptEditor()
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={save}
-            rows={18}
+            rows={14}
             maxLength={conversationPromptMaxLength}
             spellCheck={false}
-            className="min-h-96 resize-y font-mono text-xs leading-5"
+            className="h-80 resize-y font-mono text-xs leading-5 lg:h-96"
           />
           <FieldDescription>
             双花括号占位符由服务端按每轮场景替换，例如 {"{{sceneTitle}}"}、
@@ -126,7 +124,7 @@ export const ConversationPromptEditor = memo(function ConversationPromptEditor()
             <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             <p>
               当前 Prompt 里没有 <code className="font-mono">{contractHeading}</code>{" "}
-              段落。模型不被要求返回 结构化 JSON
+              段落。模型不被要求返回结构化 JSON
               时，回复仍会显示，但翻译、纠错、例句和记忆找回都会缺失，界面上会标注该轮未按契约返回。
             </p>
           </div>

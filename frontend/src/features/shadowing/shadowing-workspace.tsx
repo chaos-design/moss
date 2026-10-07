@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useHoldToRecordShortcut } from "@/features/shadowing/use-hold-to-record-shortcut"
 import {
   type ShadowingRecording,
   useShadowingRecorder,
@@ -366,6 +367,14 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     }
   }
 
+  // 长按空格录音，松开停止。跟读是节奏练习，开始与结束都放在同一个键上，
+  // 中途不用把视线移回屏幕找按钮；窗口失焦时 effect 会兜底停止，避免麦克风一直开着。
+  useHoldToRecordShortcut({
+    disabled: stage !== "shadow" || recorder.processing || playing || speechLoading,
+    onStart: handleRecord,
+    onStop: recorder.stop,
+  })
+
   return (
     <div className="grid min-h-0 min-w-0 items-stretch gap-4 lg:h-full lg:overflow-hidden lg:grid-cols-[220px_minmax(0,1fr)_260px] xl:grid-cols-[248px_minmax(0,1fr)_300px]">
       <aside className="flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card lg:h-full lg:min-h-0">
@@ -621,6 +630,14 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                   )}
                   {recorder.recording ? "停止录音" : recorder.result ? "重新录音" : "开始录音"}
                 </Button>
+                <kbd
+                  className="flex h-8 items-center gap-1 rounded-md border bg-muted px-2 font-mono text-[11px] text-muted-foreground"
+                  title="按住空格开始录音，松开停止"
+                >
+                  <span>长按</span>
+                  <span className="rounded border bg-background px-1">空格</span>
+                  <span>录音</span>
+                </kbd>
                 <Button
                   variant="outline"
                   disabled={speechLoading}

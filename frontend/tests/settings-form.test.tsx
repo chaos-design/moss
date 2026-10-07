@@ -219,6 +219,27 @@ describe("settings model configs", () => {
     expect(screen.getByText("使用内置")).toBeTruthy()
   })
 
+  it("shows the whole prompt control surface without an inner scroll region", () => {
+    // Editor, contract warning and actions are one control surface. Scrolling inside the card could
+    // hide the warning from the learner at the moment they were about to dismiss it.
+    const { container } = render(
+      <LearningMemoryProvider>
+        <SettingsForm />
+      </LearningMemoryProvider>,
+    )
+
+    const promptCard = container
+      .querySelector("#conversation-prompt")
+      ?.closest('[data-slot="card"]')
+    const promptBody = container
+      .querySelector("#conversation-prompt")
+      ?.closest('[data-slot="card-content"]')
+
+    expect(promptCard).toBeTruthy()
+    expect(promptCard?.className).not.toContain("max-h-")
+    expect(promptBody?.className).not.toContain("overflow-y-auto")
+  })
+
   it("keeps typing out of the render path of unrelated cards", () => {
     render(
       <LearningMemoryProvider>
@@ -482,12 +503,18 @@ describe("settings model configs", () => {
     // Model service, learning strategy, prompt, dialogue ways, voice, timing, and account data. The
     // speech-service card renders a bare div in this suite, so it contributes no card here.
     expect(cards).toHaveLength(7)
-    expect(
-      cards.every((card) => card.className.includes("max-h-[min(680px,calc(100svh-6rem))]")),
-    ).toBe(true)
-    expect(cardContents.every((content) => content.className.includes("overflow-y-auto"))).toBe(
-      true,
+    // Every card but the prompt editor is capped and scrolls inside itself.
+    const capped = cards.filter((card) =>
+      card.className.includes("max-h-[min(680px,calc(100svh-6rem))]"),
     )
+    expect(capped).toHaveLength(6)
+    expect(
+      cardContents
+        .filter((content) => content.className.includes("overflow-y-auto"))
+        .every((content) =>
+          capped.some((card) => card.contains(content as HTMLElement | null)),
+        ),
+    ).toBe(true)
   })
 
   it("expands an existing inactive config and updates it in place", async () => {
