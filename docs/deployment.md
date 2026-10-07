@@ -268,10 +268,13 @@ AI_EMBEDDING_MODEL=...
 
 `AI_API_TYPE` 支持 `chat-completions` 和 `anthropic-messages`；不配置时会根据
 `AI_BASE_URL` 自动推断 Anthropic 官方地址，其他地址默认使用 OpenAI 兼容协议。
-浏览器自带模型在生产环境默认只允许 `api.openai.com` 和 `api.anthropic.com`；
-其他 OpenAI 兼容服务必须把准确主机名加入 `AI_ALLOWED_BROWSER_MODEL_HOSTS`（逗号分隔）。
-生产环境未把主机加入白名单时，BYOK 验证与推理请求直接得到
-`400 invalid_model_config`（本地与 Preview 不受限，容易漏配到生产才暴露）。
+浏览器自带模型在生产环境按精确主机名白名单校验，默认已内置主流公共推理主机
+（OpenAI、Anthropic、DeepSeek、智谱、阿里云百炼、Kimi、MiniMax、阶跃星辰、零一万物、
+百川、硅基流动、火山方舟、腾讯混元、Gemini 兼容层、xAI、Mistral、Groq、OpenRouter、
+Together、Fireworks，完整清单见[BYOK 章节](#浏览器自带模型byok与服务端密钥变量)的参考表）；
+默认之外的服务才需要把准确主机名加入 `AI_ALLOWED_BROWSER_MODEL_HOSTS`（逗号分隔）。
+主机不在白名单时，BYOK 验证与推理请求直接得到
+`400 invalid_model_config`（本地与 Preview 不校验白名单，容易漏配到生产才暴露）。
 生产环境拒绝私网、回环、链路本地地址，所有环境都拒绝 Provider 重定向；部署侧仍应限制
 Next.js 服务的内网出口。
 正常模式缺少配置时返回 `service_not_configured`。认证 API 使用 Supabase 固定窗口共享
@@ -288,7 +291,7 @@ Next.js 服务的内网出口。
 
 #### AI_ALLOWED_BROWSER_MODEL_HOSTS
 
-**作用**：浏览器自带模型请求在生产环境（`NODE_ENV=production`）强制校验 baseUrl 的主机名，只有出现在该白名单中的主机才被接受。默认只允许 `api.openai.com` 与 `api.anthropic.com`。本地开发与 Vercel Preview 不启用该限制（`NODE_ENV !== "production"` 直接放行合规 https 地址），因此**漏配通常只在生产暴露**：解密成功但主机不在白名单时返回 `400 invalid_model_config`。
+**作用**：浏览器自带模型请求在生产环境（`NODE_ENV=production`）强制校验 baseUrl 的主机名，只有出现在该白名单中的主机才被接受。代码默认内置主流公共推理主机（见下方参考表中标注『默认已允许』的行）；默认之外的供应商才需要配置本变量。本地开发与 Vercel Preview 不启用该限制（`NODE_ENV !== "production"` 直接放行合规 https 地址），因此**漏配通常只在生产暴露**：解密成功但主机不在白名单时返回 `400 invalid_model_config`。
 
 **格式规则**：
 
@@ -316,30 +319,30 @@ AI_ALLOWED_BROWSER_MODEL_HOSTS=api.deepseek.com,open.bigmodel.cn,api.siliconflow
 | `anthropic-messages` | 追加 `/messages` | Anthropic 官方地址可由 `AI_BASE_URL` 自动推断 |
 | `custom` | baseUrl 即最终请求 URL，原样发出 | 单 URL 单模型场景（如 Azure 每资源每部署一个 URL） |
 
-**主流供应商参考**（baseUrl 以各厂商官方文档为准；加白名单时只填主机名列）：
+**主流供应商参考**（baseUrl 以各厂商官方文档为准；标注『默认已允许』的主机开箱即用，加白名单时只填主机名列）：
 
 | 供应商 | baseUrl | `apiType` | 备注 |
 | --- | --- | --- | --- |
 | OpenAI | `https://api.openai.com/v1` | `chat-completions` | 默认已允许 |
 | Anthropic | `https://api.anthropic.com/v1` | `anthropic-messages` | 默认已允许 |
-| DeepSeek | `https://api.deepseek.com` | `chat-completions` | |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `chat-completions` | [官方兼容说明](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction) |
-| 阿里云百炼（通义千问） | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `chat-completions` | [兼容模式](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) |
-| Moonshot Kimi | `https://api.moonshot.cn/v1` | `chat-completions` | |
-| MiniMax | `https://api.minimax.chat/v1` | `chat-completions` | [官方工具接入说明](https://platform.minimax.cn/docs/token-plan/other-tools) |
-| 阶跃星辰 | `https://api.stepfun.com/v1` | `chat-completions` | |
-| 零一万物 | `https://api.lingyiwanwu.com/v1` | `chat-completions` | |
-| 百川智能 | `https://api.baichuan-ai.com/v1` | `chat-completions` | |
-| 硅基流动 | `https://api.siliconflow.cn/v1` | `chat-completions` | 聚合多家开源模型 |
-| 火山方舟（豆包） | `https://ark.cn-beijing.volces.com/api/v3` | `chat-completions` | [兼容 OpenAI/Anthropic 协议](https://www.volcengine.com/docs/ark/compatible-with-openai-sdk) |
-| 腾讯混元 | `https://api.hunyuan.cloud.tencent.com/v1` | `chat-completions` | [OpenAI 兼容](https://cloud.tencent.com/document/product/1729/111007) |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `chat-completions` | 官方 OpenAI 兼容层 |
-| xAI Grok | `https://api.x.ai/v1` | `chat-completions` | |
-| Mistral | `https://api.mistral.ai/v1` | `chat-completions` | |
-| Groq | `https://api.groq.com/openai/v1` | `chat-completions` | |
-| OpenRouter | `https://openrouter.ai/api/v1` | `chat-completions` | 聚合网关 |
-| Together | `https://api.together.xyz/v1` | `chat-completions` | |
-| Fireworks | `https://api.fireworks.ai/inference/v1` | `chat-completions` | |
+| DeepSeek | `https://api.deepseek.com` | `chat-completions` | 默认已允许 |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `chat-completions` | 默认已允许；[官方兼容说明](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction) |
+| 阿里云百炼（通义千问） | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `chat-completions` | 默认已允许；[兼容模式](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) |
+| Moonshot Kimi | `https://api.moonshot.cn/v1` | `chat-completions` | 默认已允许 |
+| MiniMax | `https://api.minimax.chat/v1` | `chat-completions` | 默认已允许；[官方工具接入说明](https://platform.minimax.cn/docs/token-plan/other-tools) |
+| 阶跃星辰 | `https://api.stepfun.com/v1` | `chat-completions` | 默认已允许 |
+| 零一万物 | `https://api.lingyiwanwu.com/v1` | `chat-completions` | 默认已允许 |
+| 百川智能 | `https://api.baichuan-ai.com/v1` | `chat-completions` | 默认已允许 |
+| 硅基流动 | `https://api.siliconflow.cn/v1` | `chat-completions` | 默认已允许；聚合多家开源模型 |
+| 火山方舟（豆包） | `https://ark.cn-beijing.volces.com/api/v3` | `chat-completions` | 默认已允许；[兼容 OpenAI/Anthropic 协议](https://www.volcengine.com/docs/ark/compatible-with-openai-sdk) |
+| 腾讯混元 | `https://api.hunyuan.cloud.tencent.com/v1` | `chat-completions` | 默认已允许；[OpenAI 兼容](https://cloud.tencent.com/document/product/1729/111007) |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `chat-completions` | 默认已允许；官方 OpenAI 兼容层 |
+| xAI Grok | `https://api.x.ai/v1` | `chat-completions` | 默认已允许 |
+| Mistral | `https://api.mistral.ai/v1` | `chat-completions` | 默认已允许 |
+| Groq | `https://api.groq.com/openai/v1` | `chat-completions` | 默认已允许 |
+| OpenRouter | `https://openrouter.ai/api/v1` | `chat-completions` | 默认已允许；聚合网关 |
+| Together | `https://api.together.xyz/v1` | `chat-completions` | 默认已允许 |
+| Fireworks | `https://api.fireworks.ai/inference/v1` | `chat-completions` | 默认已允许 |
 | Azure OpenAI | `https://<资源名>.openai.azure.com/openai/deployments/<部署名>/chat/completions?api-version=<版本>` | `custom` | URL 含部署名与 api-version，须用 `custom` 把完整地址作为 baseUrl；白名单填 `<资源名>.openai.azure.com` |
 | 自建推理（Ollama、vLLM、LM Studio） | `http://127.0.0.1:<端口>` | `chat-completions` | 仅本地开发可用；生产被私网校验拒绝 |
 
@@ -349,7 +352,7 @@ AI_ALLOWED_BROWSER_MODEL_HOSTS=api.deepseek.com,open.bigmodel.cn,api.siliconflow
 
 | 错误 | 原因 | 处理 |
 | --- | --- | --- |
-| `400 invalid_model_config` | 信封解密成功，但主机不在白名单或 URL 不合规 | 把主机加入 `AI_ALLOWED_BROWSER_MODEL_HOSTS` 后 Redeploy |
+| `400 invalid_model_config` | 信封解密成功，但主机不在白名单或 URL 不合规 | 非默认主机时加入 `AI_ALLOWED_BROWSER_MODEL_HOSTS` 后 Redeploy |
 | `400 invalid_model_config_envelope` | 信封无法解密（密文损坏或 AES 校验失败） | 学习者重新保存模型配置 |
 | `409 model_config_key_expired` | 信封 `keyId` 与当前实例不一致：多实例未配置私钥，或私钥刚轮换 | 配置/统一 `MODEL_CONFIG_PRIVATE_KEY_BASE64`；客户端会自动重取公钥重试 |
 | `502 provider_unavailable` | 上游不可用或认证失败 | 检查 BYOK Key；服务端模式检查 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` |

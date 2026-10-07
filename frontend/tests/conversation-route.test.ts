@@ -266,6 +266,9 @@ describe("POST /api/conversation authentication", () => {
     vi.stubEnv("NODE_ENV", "production")
 
     expect(isAllowedBrowserModelEndpoint("https://api.openai.com/v1")).toBe(true)
+    // 主流公共推理主机在默认白名单内，学习者无需运维配置即可自带 Key。
+    expect(isAllowedBrowserModelEndpoint("https://api.deepseek.com")).toBe(true)
+    expect(isAllowedBrowserModelEndpoint("https://ark.cn-beijing.volces.com/api/v3")).toBe(true)
     expect(isAllowedBrowserModelEndpoint("https://custom.example.com/v1")).toBe(false)
 
     vi.stubEnv("AI_ALLOWED_BROWSER_MODEL_HOSTS", "custom.example.com")
