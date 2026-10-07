@@ -1,3 +1,10 @@
+export type ShadowingUtteranceRole = "learner" | "partner"
+
+/**
+ * The four scores are persisted across memory and the API. Role changes affect only the composite
+ * weighting and presentation; without ASR or phoneme alignment the acoustic signal cannot tell
+ * whether a line is a question, a request, or an answer, let alone measure semantic correctness.
+ */
 export type ShadowingAssessment = {
   overallScore: number
   clarityScore: number
@@ -11,6 +18,7 @@ type ShadowingAssessmentInput = {
   durationSeconds: number
   expectedDurationSeconds: number
   rmsSamples: number[]
+  utteranceRole: ShadowingUtteranceRole
 }
 
 function clampScore(value: number) {
@@ -37,6 +45,7 @@ export function assessShadowingAttempt({
   durationSeconds,
   expectedDurationSeconds,
   rmsSamples,
+  utteranceRole,
 }: ShadowingAssessmentInput): ShadowingAssessment {
   const normalizedDuration = Math.max(0, durationSeconds)
   const samples = rmsSamples.filter((sample) => Number.isFinite(sample) && sample >= 0)
@@ -80,7 +89,18 @@ export function assessShadowingAttempt({
   const durationRatio =
     expectedDurationSeconds > 0 ? normalizedDuration / expectedDurationSeconds : 1
   const rhythmScore = clampScore(100 - Math.abs(durationRatio - 1) * 72)
-  const overallScore = clampScore(clarityScore * 0.35 + fluencyScore * 0.35 + rhythmScore * 0.3)
+  // Both roles use the same measured acoustic components. The partner role places more weight on
+  // intelligibility, while the learner role emphasizes keeping a turn going without long pauses.
+  // These are pedagogical weights, not phoneme or semantic judgments.
+  const weights =
+    utteranceRole === "partner"
+      ? { clarity: 0.4, fluency: 0.3, rhythm: 0.3 }
+      : { clarity: 0.3, fluency: 0.4, rhythm: 0.3 }
+  const overallScore = clampScore(
+    clarityScore * weights.clarity +
+      fluencyScore * weights.fluency +
+      rhythmScore * weights.rhythm,
+  )
 
   return {
     overallScore,

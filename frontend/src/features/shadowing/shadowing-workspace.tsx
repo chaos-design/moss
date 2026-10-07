@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { scrollShadowingLineIntoView } from "@/features/shadowing/scroll-shadowing-line"
 import { useHoldToRecordShortcut } from "@/features/shadowing/use-hold-to-record-shortcut"
 import {
   type ShadowingRecording,
@@ -41,7 +42,10 @@ import {
 import { useLocalTts } from "@/features/speech/use-local-tts"
 import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import { createLearningPlan, createMemoryTargetHref } from "@/lib/memory"
-import { estimateShadowingDuration, type ShadowingAssessment } from "@/lib/shadowing-assessment"
+import {
+  estimateShadowingDuration,
+  type ShadowingUtteranceRole,
+} from "@/lib/shadowing-assessment"
 import {
   createMemoryShadowingDialogue,
   getShadowingDialogues,
@@ -50,6 +54,7 @@ import {
   type ShadowingDialogueLine,
   type ShadowingSpeaker,
 } from "@/lib/shadowing-dialogues"
+import { getShadowingNextStep, getShadowingScoreDimensions } from "@/lib/shadowing-feedback"
 import { apiTtsVoiceOptions, getSelectedApiVoiceValue } from "@/lib/speech-config"
 import { getShadowingVoicePair } from "@/lib/tts-config"
 import { cn } from "@/lib/utils"
@@ -104,6 +109,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   const [selectedRole, setSelectedRole] = useState<ShadowingSpeaker>("learner")
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
   const [playingLineId, setPlayingLineId] = useState<string | null>(null)
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null)
   const [playingTakeId, setPlayingTakeId] = useState<string | null>(null)
   const [takeHistory, setTakeHistory] = useState<ShadowingTake[]>([])
   const playbackRunRef = useRef(0)
@@ -135,8 +141,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   const activeLineNumber = dialogue.lines.findIndex((line) => line.id === activeLine.id) + 1
   const targetMemory = state.items.find((item) => item.id === getTargetMemoryItemId(dialogue))
   const expectedDurationSeconds = estimateShadowingDuration(activeLine.text, Number(speed))
+  const utteranceRole = activeLine.speaker
   const recorder = useShadowingRecorder({
     expectedDurationSeconds,
+    utteranceRole,
     onComplete: (recording) => {
       takeIdRef.current += 1
       setTakeHistory((current) => [
@@ -162,6 +170,20 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
       void advanceTurn(activeLine)
     },
   })
+  // Auto-turn resets the recorder as soon as the partner starts replying. Keep the latest take for
+  // this dialogue AND role in the sidebar so its score does not disappear or get attributed to the
+  // next line (or to a different role after a swap).
+  const feedbackTake = takeHistory.find(
+    (take) => take.dialogueId === dialogue.id && take.speaker === selectedRole,
+  )
+  const feedbackAssessment = feedbackTake?.assessment ?? recorder.result?.assessment
+  const feedbackRole = feedbackTake?.speaker ?? utteranceRole
+  const feedbackLine = feedbackTake
+    ? dialogue.lines.find((line) => line.id === feedbackTake.lineId)
+    : activeLine
+  const scoreDimensions = feedbackAssessment
+    ? getShadowingScoreDimensions(feedbackRole, feedbackAssessment)
+    : []
   const voicePair = getShadowingVoicePair(ttsConfig)
   // Shadowing speaks both roles. The API transport keeps that split with provider voice names:
   // the learner uses the configured voice and the partner the next preset.
@@ -299,6 +321,20 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
       cuePartnerTurn(activeLine)
     }
   }, [activeLine.id, stage])
+
+  // 录音期间把目标句留在可视区。自动跟读会在对方接话后推进到下一句，若不跟随滚动，
+  // 长对话的跟读者会一直对着已经滚出屏幕的目标句录音。对方正在播放时以播放句为准，
+  // 因为此刻该看的是他说了什么，而不是即将轮到自己说的那句。
+  useEffect(() => {
+    if (stage !== "shadow") {
+      return
+    }
+    const container = transcriptScrollRef.current
+    if (!container) {
+      return
+    }
+    scrollShadowingLineIntoView(container, playingLineId ?? activeLine.id)
+  }, [activeLine.id, playingLineId, recorder.recording, stage])
 
   async function playLine(line: ShadowingDialogueLine) {
     if (playbackState !== "idle") {
@@ -551,7 +587,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
           </TabsContent>
 
           <TabsContent value="shadow" className="m-0 flex min-h-0 flex-col overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable] md:p-6">
+            <div
+              ref={transcriptScrollRef}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable] md:p-6"
+            >
               <StageIntroduction
                 eyebrow="Shadow the dialogue"
                 title={`现在扮演${roleLabel}。`}
@@ -572,10 +611,6 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                 showTranslation={showTranslation}
                 onSelectLine={selectLine}
               />
-
-              {recorder.result ? (
-                <AssessmentSummary assessment={recorder.result.assessment} />
-              ) : null}
             </div>
 
             <section
@@ -755,32 +790,55 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
           </Button>
         </section>
 
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-lg border bg-card p-5" aria-label="跟读评分">
           <div className="flex items-center gap-2">
             <SparklesIcon className="size-4 text-primary" aria-hidden="true" />
             <h2 className="text-sm font-semibold">本轮反馈</h2>
           </div>
-          {recorder.result ? (
-            <div className="mt-4 flex flex-col gap-4">
+          {feedbackAssessment ? (
+            <div className="mt-4 flex flex-col gap-3">
+              <p className="break-words text-xs leading-5 text-muted-foreground">
+                {feedbackRole === "partner" ? dialogue.partnerRole : "学习者"} ·{" "}
+                {feedbackLine?.text}
+                {feedbackLine?.id !== activeLine.id ? "（上一句）" : ""}
+              </p>
+              <p className="text-sm font-medium">
+                综合{" "}
+                <span className="font-mono text-lg">{feedbackAssessment.overallScore}</span>
+              </p>
+              <div
+                className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"
+                data-score-dimensions
+              >
+                {scoreDimensions.map((dimension) => (
+                  <div key={dimension.label} className="bg-background px-2 py-2.5 text-center">
+                    <p className="text-[10px] leading-4 text-muted-foreground">
+                      {dimension.label}
+                    </p>
+                    <p className="mt-1 font-mono text-base font-semibold">{dimension.value}</p>
+                  </div>
+                ))}
+              </div>
               <FeedbackItem
                 label="本轮结果"
-                value={getAssessmentFeedback(recorder.result.assessment.overallScore)}
-                positive={recorder.result.assessment.overallScore >= 75}
-              />
-              <FeedbackItem
-                label="声学依据"
-                value={`有效发声占比 ${Math.round(
-                  recorder.result.assessment.voicedRatio * 100,
-                )}%，录音 ${recorder.result.assessment.durationSeconds.toFixed(1)} 秒。`}
+                value={getAssessmentFeedback(feedbackAssessment.overallScore, feedbackRole)}
+                positive={feedbackAssessment.overallScore >= 75}
               />
               <FeedbackItem
                 label="下一次"
-                value={`先用 0.75× 突出 ${dialogue.focusWord}，再恢复到 1.0×。`}
+                value={getShadowingNextStep(
+                  feedbackRole,
+                  feedbackAssessment,
+                  dialogue.focusWord,
+                )}
               />
+              <p className="text-xs leading-5 text-muted-foreground">
+                分数仅据发声强弱、停顿和时长估算，不评判发音准确性或台词含义。
+              </p>
             </div>
           ) : (
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
-              完成录音后，这里会显示基于实际音频计算的清晰度、连贯度和节奏反馈。
+              完成录音后，这里会按你当前扮演的角色显示对应的声学评分与下一步建议。
             </p>
           )}
         </section>
@@ -916,7 +974,11 @@ function DialogueTranscript({
         const playing = line.id === playingLineId
 
         return (
-          <li key={line.id} className={cn("flex", learner ? "justify-end" : "justify-start")}>
+          <li
+            key={line.id}
+            className={cn("flex", learner ? "justify-end" : "justify-start")}
+            data-shadowing-line={line.id}
+          >
             <button
               type="button"
               className={cn(
@@ -979,37 +1041,16 @@ function Waveform({
   )
 }
 
-function AssessmentSummary({ assessment }: { assessment: ShadowingAssessment }) {
-  const metrics = [
-    { label: "综合", value: assessment.overallScore },
-    { label: "清晰度", value: assessment.clarityScore },
-    { label: "连贯度", value: assessment.fluencyScore },
-    { label: "节奏", value: assessment.rhythmScore },
-  ]
-
-  return (
-    <section className="border-y py-4" aria-label="跟读评分">
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-border sm:grid-cols-4">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="bg-background px-3 py-3 text-center">
-            <p className="text-[11px] text-muted-foreground">{metric.label}</p>
-            <p className="mt-1 font-mono text-lg font-semibold">{metric.value}</p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        分数由本次录音的有效发声、音量稳定性、停顿和目标时长计算，不代表音素级识别结果。
-      </p>
-    </section>
-  )
-}
-
-function getAssessmentFeedback(score: number) {
+function getAssessmentFeedback(score: number, utteranceRole: ShadowingUtteranceRole) {
   if (score >= 85) {
-    return "清晰度、连贯度和整句节奏稳定，可以进入场景应用。"
+    return utteranceRole === "partner"
+      ? "扮演角色的发声稳定，可继续跟下一句。"
+      : "本句发声和节奏稳定，可进入场景应用。"
   }
   if (score >= 70) {
-    return "整句已经可辨识，继续减少长停顿并贴近示范速度。"
+    return utteranceRole === "partner"
+      ? "扮演角色时再减少长停顿，并贴近示范速度。"
+      : "练习本句时再减少长停顿，并贴近示范速度。"
   }
   return "当前有效发声或节奏偏弱，建议降低播放速度后重新录制。"
 }
