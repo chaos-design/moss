@@ -266,6 +266,12 @@ describe("POST /api/conversation authentication", () => {
     vi.stubEnv("NODE_ENV", "production")
 
     expect(isAllowedBrowserModelEndpoint("https://api.openai.com/v1")).toBe(true)
+    // 主流公共推理主机在默认白名单内，学习者无需运维配置即可自带 Key。
+    expect(isAllowedBrowserModelEndpoint("https://api.deepseek.com")).toBe(true)
+    expect(isAllowedBrowserModelEndpoint("https://ark.cn-beijing.volces.com/api/v3")).toBe(true)
+    // 智谱国内与国际两个域名都在默认白名单内。
+    expect(isAllowedBrowserModelEndpoint("https://open.bigmodel.cn/api/paas/v4")).toBe(true)
+    expect(isAllowedBrowserModelEndpoint("https://api.z.ai/api/paas/v4")).toBe(true)
     expect(isAllowedBrowserModelEndpoint("https://custom.example.com/v1")).toBe(false)
 
     vi.stubEnv("AI_ALLOWED_BROWSER_MODEL_HOSTS", "custom.example.com")
@@ -943,6 +949,51 @@ describe("POST /api/conversation authentication", () => {
       error: {
         code: "provider_unavailable",
         message: "AI 服务暂时不可用，请稍后重试。",
+      },
+    })
+  })
+
+  it("reports an upstream provider rate limit instead of an outage", async () => {
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+    vi.stubEnv("AI_API_KEY", "secret")
+    vi.stubEnv("AI_MODEL_NAME", "model")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 429 })))
+
+    const response = await POST(createConversationRequest())
+
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({
+      error: {
+        code: "provider_rate_limited",
+        message: "模型服务请求过于频繁，请稍后再试。",
+      },
+    })
+  })
+
+  it("reports an upstream rate limit when validating a browser model", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 429 })))
+
+    const response = await PUT(
+      new Request("https://moss.local/api/conversation", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelConfigEnvelope: await encryptModelConfig({
+            apiKey: "browser-secret",
+            baseUrl: "https://api.example.com/v1",
+            model: "example-model",
+            apiType: "chat-completions",
+          }),
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({
+      error: {
+        code: "provider_rate_limited",
+        message: "模型服务请求过于频繁，请稍后再试。",
       },
     })
   })

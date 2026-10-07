@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
+import { AiProviderStatusError, getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
 import {
   applyTutorModeToConversation,
   parseProviderConversation,
@@ -235,7 +235,18 @@ export async function PUT(request: Request) {
       signal: AbortSignal.timeout(15_000),
     })
     return NextResponse.json({ data: { valid: true } })
-  } catch {
+  } catch (error) {
+    if (error instanceof AiProviderStatusError && error.status === 429) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "provider_rate_limited",
+            message: "模型服务请求过于频繁，请稍后再试。",
+          },
+        },
+        { status: 429 },
+      )
+    }
     return NextResponse.json(
       { error: { code: "provider_unavailable", message: "模型服务连接验证失败。" } },
       { status: 502 },
@@ -475,7 +486,18 @@ export async function POST(request: Request) {
     return NextResponse.json({
       data: applyTutorModeToConversation(parsed, tutorMode),
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof AiProviderStatusError && error.status === 429) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "provider_rate_limited",
+            message: "模型服务请求过于频繁，请稍后再试。",
+          },
+        },
+        { status: 429 },
+      )
+    }
     return NextResponse.json(
       {
         error: {

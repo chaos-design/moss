@@ -238,4 +238,22 @@ describe("POST /api/translation", () => {
       },
     })
   })
+
+  it("reports an upstream provider rate limit instead of an outage", async () => {
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+    vi.stubEnv("AI_API_KEY", "secret")
+    vi.stubEnv("AI_MODEL_NAME", "model")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 429 })))
+
+    const response = await POST(createRequest())
+
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({
+      error: {
+        code: "provider_rate_limited",
+        message: "模型服务请求过于频繁，请稍后再试。",
+      },
+    })
+  })
 })

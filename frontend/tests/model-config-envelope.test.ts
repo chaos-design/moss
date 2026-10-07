@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { GET } from "@/app/api/conversation/route"
 import { decryptModelConfigEnvelope, getModelConfigPublicKey } from "@/lib/model-config-crypto"
 import { encryptModelConfigWithKey } from "@/lib/model-config-envelope"
@@ -39,5 +39,31 @@ describe("model config envelope", () => {
     }
 
     expect(() => decryptModelConfigEnvelope(modified)).toThrow()
+  })
+
+  it("warns in production when the model-config key is not configured", () => {
+    const globalStore = globalThis as { __mossModelConfigKeyMaterial?: unknown }
+    const cached = globalStore.__mossModelConfigKeyMaterial
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      vi.stubEnv("NODE_ENV", "production")
+      delete globalStore.__mossModelConfigKeyMaterial
+      getModelConfigPublicKey()
+      expect(warn).toHaveBeenCalledOnce()
+      expect(String(warn.mock.calls[0]?.[0])).toContain("MODEL_CONFIG_PRIVATE_KEY_BASE64")
+
+      warn.mockClear()
+      vi.stubEnv("NODE_ENV", "development")
+      delete globalStore.__mossModelConfigKeyMaterial
+      getModelConfigPublicKey()
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+      vi.unstubAllEnvs()
+      delete globalStore.__mossModelConfigKeyMaterial
+      if (cached) {
+        globalStore.__mossModelConfigKeyMaterial = cached
+      }
+    }
   })
 })

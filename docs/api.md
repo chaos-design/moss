@@ -360,6 +360,7 @@ final 文本也在服务端发送前移除 emoji。
 | `400` | `invalid_request` | 字段、长度或消息数量不合法 |
 | `401` | `unauthorized` | 当前请求没有有效用户 session |
 | `429` | `rate_limited` | 当前用户一分钟内超过 20 次 |
+| `429` | `provider_rate_limited` | 上游 AI 服务限流（例如免费配额用尽）；不是本站限流，稍后重试即可 |
 | `503` | `rate_limit_unavailable` | 共享限流存储不可用，服务端拒绝绕过保护 |
 | `503` | `service_not_configured` | Supabase 或 AI provider 未配置 |
 | `502` | `provider_unavailable` | 上游 AI 服务不可用；响应不包含上游错误详情 |
@@ -401,6 +402,9 @@ toast、对话记录和本机存储，规则如下：
   }
 }
 ```
+
+失败时返回 `429 provider_rate_limited`（上游 AI 服务限流）、`502 provider_unavailable`
+（上游 AI 服务不可用），或与 `/api/conversation` 相同的认证、限流与配置错误码。
 
 ## `/api/conversations`
 
