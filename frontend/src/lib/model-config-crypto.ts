@@ -33,6 +33,13 @@ function getKeyMaterial() {
   }
 
   const configuredPrivateKey = process.env.MODEL_CONFIG_PRIVATE_KEY_BASE64?.trim()
+  if (!configuredPrivateKey && process.env.NODE_ENV === "production") {
+    // Without the configured key every instance mints its own keypair, so BYOK envelopes fail
+    // intermittently with model_config_key_expired across a multi-instance deployment.
+    console.warn(
+      "MODEL_CONFIG_PRIVATE_KEY_BASE64 is not configured: each instance generates an ephemeral key and encrypted model-config envelopes will intermittently fail with model_config_key_expired. Set it in the deployment environment and redeploy.",
+    )
+  }
   const privateKey = configuredPrivateKey
     ? createPrivateKey({
         key: Buffer.from(configuredPrivateKey, "base64"),

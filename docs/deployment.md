@@ -270,6 +270,8 @@ AI_EMBEDDING_MODEL=...
 `AI_BASE_URL` 自动推断 Anthropic 官方地址，其他地址默认使用 OpenAI 兼容协议。
 浏览器自带模型在生产环境默认只允许 `api.openai.com` 和 `api.anthropic.com`；
 其他 OpenAI 兼容服务必须把准确主机名加入 `AI_ALLOWED_BROWSER_MODEL_HOSTS`（逗号分隔）。
+生产环境未把主机加入白名单时，BYOK 验证与推理请求直接得到
+`400 invalid_model_config`（本地与 Preview 不受限，容易漏配到生产才暴露）。
 生产环境拒绝私网、回环、链路本地地址，所有环境都拒绝 Provider 重定向；部署侧仍应限制
 Next.js 服务的内网出口。
 正常模式缺少配置时返回 `service_not_configured`。认证 API 使用 Supabase 固定窗口共享
@@ -381,8 +383,11 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 
 ### 生产必需检查
 
-1. 生成并配置 `MODEL_CONFIG_PRIVATE_KEY_BASE64`，否则多实例无法解密同一份浏览器
-   模型配置信封。
+1. 生成并配置 `MODEL_CONFIG_PRIVATE_KEY_BASE64`，否则每个实例会生成临时密钥对，
+   多实例无法解密同一份浏览器模型配置信封。故障特征：`GET /api/conversation` 返回的
+   `keyId` 随实例漂移，BYOK 请求间歇性得到 `409 model_config_key_expired`（客户端会
+   自动重取公钥重试一次，但仍多一次往返）；Vercel 运行时日志会出现
+   `MODEL_CONFIG_PRIVATE_KEY_BASE64 is not configured` 告警。
 2. 确认 `NEXT_PUBLIC_DEMO_MODE` 未开启。演示模式会让 `proxy.ts` 跳过认证校验。
 3. 将 Vercel 生产域名与 `/auth/callback` 加入 Supabase Site URL 与 Redirect URLs。
 4. 部署前在本地运行 `pnpm check` 与 `pnpm test:coverage`。
