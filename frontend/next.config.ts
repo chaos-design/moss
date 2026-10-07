@@ -37,9 +37,6 @@ export default function createNextConfig(phase: string): NextConfig {
     distDir: process.env.NEXT_DIST_DIR || ".next",
     reactStrictMode: true,
     allowedDevOrigins: ["127.0.0.1", "localhost"],
-    outputFileTracingIncludes: {
-      "/api/conversation": ["./src/lib/memory/prompts/conversation-system.md"],
-    },
     // Next only inlines public variables from its app directory automatically.
     // The workspace keeps one root env file, so expose those values explicitly.
     env: getPublicEnvironment(process.env),

@@ -6,12 +6,10 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleXIcon,
-  Clock3Icon,
   CloudIcon,
   CloudOffIcon,
   EyeIcon,
   EyeOffIcon,
-  KeyboardIcon,
   KeyRoundIcon,
   LoaderCircleIcon,
   MessagesSquareIcon,
@@ -76,14 +74,13 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { AccountDataControls } from "@/features/settings/account-data-controls"
+import { ConversationPromptEditor } from "@/features/settings/conversation-prompt-editor"
+import { ConversationTimingFields } from "@/features/settings/conversation-timing-fields"
+import { settingsCardHeightClass } from "@/features/settings/settings-layout"
 import { SpeechServiceCard } from "@/features/settings/speech-service-card"
 import { useLocalTts } from "@/features/speech/use-local-tts"
 import { useTtsConfig } from "@/features/speech/use-tts-config"
-import {
-  promptSupplementMaxLength,
-  type SendShortcut,
-  type TranscriptLayout,
-} from "@/lib/conversation-prefs"
+import type { SendShortcut, TranscriptLayout } from "@/lib/conversation-prefs"
 import {
   defaultModelConfig,
   defaultModelConfigCollection,
@@ -140,7 +137,9 @@ const sendShortcutItems: { label: string; value: SendShortcut; hint: string }[] 
   { label: "Shift+Enter 发送", value: "shift-enter", hint: "Enter 换行" },
 ]
 
-const settingsCardHeightClass = "max-h-[min(680px,calc(100svh-6rem))]"
+// Card bodies size to their own content so a short preference card never stretches to match its
+// row neighbour, which is what produced tall empty blocks between sections. The cap itself lives in
+// `settings-layout` so every settings card shares one cap.
 
 const providerDefaults: Record<
   Exclude<ModelProvider, "custom">,
@@ -214,8 +213,6 @@ export function SettingsForm() {
   const [config, setConfig] = useState<LocalModelConfig>(defaultModelConfig)
   const [showApiKey, setShowApiKey] = useState(false)
   const [learningGoal, setLearningGoal] = useState(state.profile.goal)
-  // Edited as a draft so a half-typed instruction never reaches the next inference request.
-  const [promptSupplementDraft, setPromptSupplementDraft] = useState(prefs.promptSupplement)
   const [dailyMinutes, setDailyMinutes] = useState(state.profile.dailyMinutes)
   const [preferredContext, setPreferredContext] = useState(state.profile.preferredContext)
   const [autoRecall, setAutoRecall] = useState(state.profile.autoRecall)
@@ -424,23 +421,6 @@ export function SettingsForm() {
         `${savedConfig.name} 验证失败：${describeUserError(error, "请检查地址和密钥后重试。")}`,
       )
     }
-  }
-
-  // `parseConversationPrefs` already trims and caps, so persisting the raw draft is safe: the
-  // stored value and this component's state converge on the next render.
-  function savePromptSupplement() {
-    const next = promptSupplementDraft.slice(0, promptSupplementMaxLength)
-    if (next === prefs.promptSupplement) {
-      return
-    }
-    setPrefs((current) => ({ ...current, promptSupplement: next }))
-    toast.success("补充指令已保存")
-  }
-
-  function clearPromptSupplement() {
-    setPromptSupplementDraft("")
-    setPrefs((current) => ({ ...current, promptSupplement: "" }))
-    toast.success("已清空补充指令")
   }
 
   function handleLearningPreferenceSave() {
@@ -987,60 +967,10 @@ export function SettingsForm() {
 
       <SettingsSection
         title="对话体验"
-        description="控制转写布局、输入方式、会话判句策略和对话 Prompt。"
+        description="整段改写实际发送的对话 Prompt，以及转写布局、输入方式、会话判句与发音。"
       >
-        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
-          <Card
-            className={cn(
-              "order-1 rounded-lg lg:col-span-2 lg:col-start-1 lg:row-start-1",
-              settingsCardHeightClass,
-            )}
-          >
-            <CardHeader className="shrink-0">
-              <CardTitle className="flex items-center gap-2 font-serif text-lg">
-                <MessagesSquareIcon className="size-4 text-primary" aria-hidden="true" />
-                对话 Prompt
-              </CardTitle>
-              <CardDescription>
-                在系统 Prompt 之后追加你自己的要求，用于调整语气、纠错严格程度或练习重点。
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="min-h-0 overflow-y-auto overscroll-contain">
-              <Field>
-                <FieldLabel htmlFor="prompt-supplement">补充指令</FieldLabel>
-                <Textarea
-                  id="prompt-supplement"
-                  value={promptSupplementDraft}
-                  onChange={(event) => setPromptSupplementDraft(event.target.value)}
-                  onBlur={savePromptSupplement}
-                  rows={6}
-                  maxLength={promptSupplementMaxLength}
-                  placeholder="例如：每轮都纠正我的语法错误，并说明错在哪里。优先使用生活场景高频表达。"
-                />
-                <FieldDescription>
-                  仅保存在本机，不进入学习记忆。基础 Prompt
-                  与输出格式由系统维护，语法纠错默认已开启。
-                </FieldDescription>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" size="sm" onClick={savePromptSupplement}>
-                    保存补充指令
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={clearPromptSupplement}
-                    disabled={!promptSupplementDraft.trim() && !prefs.promptSupplement}
-                  >
-                    清空
-                  </Button>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {promptSupplementDraft.length} / {promptSupplementMaxLength}
-                  </span>
-                </div>
-              </Field>
-            </CardContent>
-          </Card>
+        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-2">
+          <ConversationPromptEditor />
 
           <Card
             className={cn(
@@ -1051,112 +981,91 @@ export function SettingsForm() {
             <CardHeader className="shrink-0">
               <CardTitle className="flex items-center gap-2 font-serif text-lg">
                 <MessagesSquareIcon className="size-4 text-primary" aria-hidden="true" />
-                对话布局
+                对话方式
               </CardTitle>
-              <CardDescription>调整练习转写的问答排列方式。</CardDescription>
+              <CardDescription>调整练习转写的问答排列方式与发送快捷键。</CardDescription>
             </CardHeader>
             <CardContent className="min-h-0 overflow-y-auto overscroll-contain">
-              <Field>
-                <FieldLabel htmlFor="transcript-layout">
-                  <MessagesSquareIcon className="size-4" aria-hidden="true" />
-                  对话布局
-                </FieldLabel>
-                <Select
-                  items={transcriptLayoutItems}
-                  value={prefs.transcriptLayout}
-                  onValueChange={(value) => {
-                    if (value) {
-                      setPrefs((current) => ({
-                        ...current,
-                        transcriptLayout: value as TranscriptLayout,
-                      }))
-                    }
-                  }}
-                >
-                  <SelectTrigger id="transcript-layout" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      {transcriptLayoutItems.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>
-                          <span className="flex min-w-0 flex-col items-start">
-                            <span>{item.label}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {item.hint}
+              <FieldGroup className="gap-4">
+                <Field>
+                  <FieldLabel htmlFor="transcript-layout">对话布局</FieldLabel>
+                  <Select
+                    items={transcriptLayoutItems}
+                    value={prefs.transcriptLayout}
+                    onValueChange={(value) => {
+                      if (value) {
+                        setPrefs((current) => ({
+                          ...current,
+                          transcriptLayout: value as TranscriptLayout,
+                        }))
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="transcript-layout" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {transcriptLayoutItems.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            <span className="flex min-w-0 flex-col items-start">
+                              <span>{item.label}</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {item.hint}
+                              </span>
                             </span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  选择问答统一靠左，或问句靠右、回答靠左的分列排版。
-                </FieldDescription>
-              </Field>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    选择问答统一靠左，或问句靠右、回答靠左的分列排版。
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="send-shortcut">发送快捷键</FieldLabel>
+                  <Select
+                    items={sendShortcutItems}
+                    value={prefs.sendShortcut}
+                    onValueChange={(value) => {
+                      if (value) {
+                        setPrefs((current) => ({
+                          ...current,
+                          sendShortcut: value as SendShortcut,
+                        }))
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="send-shortcut" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {sendShortcutItems.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            <span className="flex min-w-0 flex-col items-start">
+                              <span>{item.label}</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {item.hint}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    文字模式下决定 Enter 与 Shift+Enter 谁负责发送、谁负责换行。
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
             </CardContent>
           </Card>
 
           <Card
             className={cn(
-              "order-3 rounded-lg lg:col-start-1 lg:row-start-3",
-              settingsCardHeightClass,
-            )}
-          >
-            <CardHeader className="shrink-0">
-              <CardTitle className="flex items-center gap-2 font-serif text-lg">
-                <KeyboardIcon className="size-4 text-primary" aria-hidden="true" />
-                输入方式
-              </CardTitle>
-              <CardDescription>设置文字练习时的发送快捷键。</CardDescription>
-            </CardHeader>
-            <CardContent className="min-h-0 overflow-y-auto overscroll-contain">
-              <Field>
-                <FieldLabel htmlFor="send-shortcut">
-                  <KeyboardIcon className="size-4" aria-hidden="true" />
-                  发送快捷键
-                </FieldLabel>
-                <Select
-                  items={sendShortcutItems}
-                  value={prefs.sendShortcut}
-                  onValueChange={(value) => {
-                    if (value) {
-                      setPrefs((current) => ({
-                        ...current,
-                        sendShortcut: value as SendShortcut,
-                      }))
-                    }
-                  }}
-                >
-                  <SelectTrigger id="send-shortcut" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      {sendShortcutItems.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>
-                          <span className="flex min-w-0 flex-col items-start">
-                            <span>{item.label}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {item.hint}
-                            </span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  文字模式下决定 Enter 与 Shift+Enter 谁负责发送、谁负责换行。
-                </FieldDescription>
-              </Field>
-            </CardContent>
-          </Card>
-
-          <Card
-            className={cn(
-              "order-4 rounded-lg lg:col-start-1 lg:row-start-3",
+              "order-3 rounded-lg lg:col-start-2 lg:row-start-2",
               settingsCardHeightClass,
             )}
           >
@@ -1227,79 +1136,7 @@ export function SettingsForm() {
             </CardContent>
           </Card>
 
-          <Card
-            className={cn(
-              "order-2 rounded-lg lg:col-start-2 lg:row-span-2 lg:row-start-1",
-              settingsCardHeightClass,
-            )}
-          >
-            <CardHeader className="shrink-0">
-              <CardTitle className="flex items-center gap-2 font-serif text-lg">
-                <Clock3Icon className="size-4 text-primary" aria-hidden="true" />
-                会话与判句
-              </CardTitle>
-              <CardDescription>控制会话续接、多次提问合并和语音停顿判断。</CardDescription>
-            </CardHeader>
-            <CardContent className="min-h-0 overflow-y-auto overscroll-contain">
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="session-resume-minutes">会话续接时限（分钟）</FieldLabel>
-                  <Input
-                    id="session-resume-minutes"
-                    type="number"
-                    min={5}
-                    max={240}
-                    value={prefs.sessionResumeMinutes}
-                    onChange={(event) =>
-                      setPrefs((current) => ({
-                        ...current,
-                        sessionResumeMinutes: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <FieldDescription>超过该时间后进入场景会创建新会话。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="question-delay">连续提问合并等待（毫秒）</FieldLabel>
-                  <Input
-                    id="question-delay"
-                    type="number"
-                    min={0}
-                    max={3000}
-                    step={100}
-                    value={prefs.consecutiveQuestionDelayMs}
-                    onChange={(event) =>
-                      setPrefs((current) => ({
-                        ...current,
-                        consecutiveQuestionDelayMs: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <FieldDescription>等待期间的新问题会合并到同一次回答。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="voice-sentence-delay">
-                    语音识别判句等待（毫秒）
-                  </FieldLabel>
-                  <Input
-                    id="voice-sentence-delay"
-                    type="number"
-                    min={800}
-                    max={5000}
-                    step={100}
-                    value={prefs.voiceSentenceDelayMs}
-                    onChange={(event) =>
-                      setPrefs((current) => ({
-                        ...current,
-                        voiceSentenceDelayMs: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <FieldDescription>说话停顿后继续等待，避免慢速表达被截断。</FieldDescription>
-                </Field>
-              </FieldGroup>
-            </CardContent>
-          </Card>
+          <ConversationTimingFields />
         </div>
       </SettingsSection>
 

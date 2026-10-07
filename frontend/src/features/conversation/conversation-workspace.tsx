@@ -10,6 +10,7 @@ import {
   ChevronUpIcon,
   CircleAlertIcon,
   Clock3Icon,
+  FileWarningIcon,
   KeyboardIcon,
   LanguagesIcon,
   LightbulbIcon,
@@ -40,6 +41,7 @@ import {
   useState,
 } from "react"
 import { toast } from "sonner"
+import { useAuth } from "@/components/auth-provider"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { LevelBadge } from "@/components/level-badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -67,7 +69,10 @@ import {
   ConversationGuideSheet,
 } from "@/features/conversation/conversation-guide"
 import { ConversationHistorySheet } from "@/features/conversation/conversation-history-sheet"
-import { requestConversationTranslation } from "@/features/conversation/conversation-transport"
+import {
+  canRequestTranslation,
+  requestConversationTranslation,
+} from "@/features/conversation/conversation-transport"
 import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { speechTransportItems } from "@/features/conversation/use-voice-call-runtime"
 import {
@@ -1114,6 +1119,8 @@ export const TranscriptTurn = memo(function TranscriptTurn({
 }) {
   const assistant = message.role === "assistant"
   const errorTurn = message.variant === "error"
+  const promptTurn = message.variant === "prompt"
+  const { requireSignIn } = useAuth()
   const [translationVisible, setTranslationVisible] = useState(false)
   const [translation, setTranslation] = useState(message.translation)
   const [translating, setTranslating] = useState(false)
@@ -1128,6 +1135,11 @@ export const TranscriptTurn = memo(function TranscriptTurn({
     }
     if (translation) {
       setTranslationVisible(true)
+      return
+    }
+    // The endpoint serves anonymous callers who configured their own model, so sign-in is only
+    // required once the client knows the request would otherwise come back 401.
+    if (!canRequestTranslation() && !requireSignIn("使用翻译")) {
       return
     }
 
@@ -1189,6 +1201,12 @@ export const TranscriptTurn = memo(function TranscriptTurn({
             <span className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1 text-[10px] font-medium text-destructive">
               <CircleAlertIcon className="size-3" aria-hidden="true" />
               临时错误
+            </span>
+          ) : null}
+          {promptTurn ? (
+            <span className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[10px] font-medium text-foreground">
+              <FileWarningIcon className="size-3" aria-hidden="true" />
+              未按输出契约返回
             </span>
           ) : null}
           {assistant && !errorTurn ? (
@@ -1269,6 +1287,14 @@ export const TranscriptTurn = memo(function TranscriptTurn({
             </Button>
           </div>
         ) : null}
+        {promptTurn ? (
+          // The prompt is fully learner-owned, so this is the one failure the learner can actually
+          // fix. Naming it here beats a degraded reply that looks like a slow model.
+          <p className="mt-2 rounded-md border border-dashed px-3 py-2 text-xs leading-5 text-muted-foreground">
+            模型这次没有按输出契约返回 JSON，本轮的翻译、纠错和例句因此缺失。可以在 设置 →
+            对话体验 → 对话 Prompt 里确认输出契约段落是否被改写。
+          </p>
+        ) : null}
         {assistant && !errorTurn ? (
           <AssistantSupportPanel
             note={message.note}
@@ -1278,7 +1304,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
             translationVisible={translationVisible}
           />
         ) : null}
-        {assistant && !errorTurn && message.validation && message.feedbackFor ? (
+        {assistant && !errorTurn && !promptTurn && message.validation && message.feedbackFor ? (
           <ExpressionValidationFeedback
             inputAnalysis={message.inputAnalysis}
             onSpeak={onSpeak}

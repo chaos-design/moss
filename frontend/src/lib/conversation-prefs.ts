@@ -1,6 +1,11 @@
 // Learner-facing conversation preferences stay outside learning memory. Only the tutor-mode
 // enum may enter inference requests; model credentials remain in their dedicated local store.
 
+import {
+  conversationContractTemplate,
+  defaultConversationPrompt,
+} from "./memory/conversation-prompt-text"
+
 // "stacked": every turn aligns to the left, avatar + content in one column stream.
 // "split": the learner's turns align right and the partner's align left, like a chat thread.
 export type TranscriptLayout = "stacked" | "split"
@@ -12,7 +17,7 @@ export type SendShortcut = "enter" | "shift-enter"
 export type TutorMode = "natural" | "coach" | "english"
 
 export type ConversationPrefs = {
-  version: 4
+  version: 6
   transcriptLayout: TranscriptLayout
   sendShortcut: SendShortcut
   tutorMode: TutorMode
@@ -20,31 +25,37 @@ export type ConversationPrefs = {
   consecutiveQuestionDelayMs: number
   voiceSentenceDelayMs: number
   /**
-   * Learner-authored additions to the conversation system prompt.
+   * The learner's own system prompt, used verbatim when non-empty.
    *
-   * The base prompt in `src/lib/memory/prompts` stays immutable: it owns the JSON output contract
-   * that `parseConversationReply` depends on, so a learner who deleted or rewrote that block would
-   * break reply parsing for themselves. This field is appended after the base prompt instead, which
-   * lets a learner steer tone, focus, and correction strictness without being able to corrupt the
-   * wire format. It is a local preference and never enters learning memory.
+   * The learner owns the entire prompt. That includes the JSON output contract
+   * `parseProviderConversation` reads, so removing it really does degrade reply parsing — the choice
+   * is theirs, and the transcript names the prompt as the cause instead of degrading quietly.
+   *
+   * Keeping one field rather than a base plus an appended extra block is what makes the editor
+   * usable: the textarea holds the text that will be sent, so what it shows is what it means.
+   * It is a local preference and never enters learning memory.
    */
-  promptSupplement: string
+  conversationPrompt: string
 }
 
 export const conversationPrefsStorageKey = "moss:conversation-prefs:v1"
 
-/** Bounds the supplement so a pasted document cannot dominate the system prompt or the request. */
-export const promptSupplementMaxLength = 2_000
+/**
+ * Bounds the prompt. It has to hold the whole built-in text plus real edits, so the cap sits well
+ * above the default length; the point is that a pasted document cannot dominate the system prompt,
+ * the request, or the provider token budget.
+ */
+export const conversationPromptMaxLength = 12_000
 
 export const defaultConversationPrefs: ConversationPrefs = {
-  version: 4,
+  version: 6,
   transcriptLayout: "stacked",
   sendShortcut: "enter",
   tutorMode: "coach",
   sessionResumeMinutes: 30,
   consecutiveQuestionDelayMs: 500,
   voiceSentenceDelayMs: 1_800,
-  promptSupplement: "",
+  conversationPrompt: "",
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {
@@ -61,12 +72,39 @@ function isSendShortcut(value: unknown): value is SendShortcut {
   return value === "enter" || value === "shift-enter"
 }
 
-function normalizePromptSupplement(value: unknown): string {
+function normalizeConversationPrompt(value: unknown): string {
   if (typeof value !== "string") {
-    return defaultConversationPrefs.promptSupplement
+    return defaultConversationPrefs.conversationPrompt
   }
-  // Collapse the line endings a paste can carry so the appended block stays stable, then bound it.
-  return value.replace(/\r\n?/g, "\n").trim().slice(0, promptSupplementMaxLength)
+  // Collapse the line endings a paste can carry so the stored prompt stays stable, then bound it.
+  return value.replace(/\r\n?/g, "\n").trim().slice(0, conversationPromptMaxLength)
+}
+
+/**
+ * Resolves the prompt text for a stored record, migrating the two earlier shapes.
+ *
+ * v4 appended a supplement after an immutable base prompt; v5 replaced only the instruction half.
+ * Both produce the same effective prompt when the learner's text is spliced onto the right base, so
+ * neither upgrade silently changes what gets sent. A record that already carries the full prompt is
+ * left exactly as written.
+ */
+function migrateConversationPrompt(parsed: Record<string, unknown>) {
+  if (typeof parsed.conversationPrompt === "string") {
+    return parsed.conversationPrompt
+  }
+  const legacySupplement =
+    typeof parsed.promptSupplement === "string" ? parsed.promptSupplement.trim() : ""
+  if (legacySupplement) {
+    return `${defaultConversationPrompt}\n\n## Learner-Added Instructions\n\n${legacySupplement}`
+  }
+  const legacyInstructions =
+    typeof parsed.conversationInstructions === "string"
+      ? parsed.conversationInstructions.trim()
+      : ""
+  if (legacyInstructions) {
+    return `${legacyInstructions}\n\n${conversationContractTemplate}`
+  }
+  return ""
 }
 
 export function isTutorMode(value: unknown): value is TutorMode {
@@ -79,9 +117,9 @@ export function parseConversationPrefs(value: string | null): ConversationPrefs 
   }
 
   try {
-    const parsed = JSON.parse(value) as Partial<ConversationPrefs>
+    const parsed = JSON.parse(value) as Partial<ConversationPrefs> & Record<string, unknown>
     return {
-      version: 4,
+      version: 6,
       transcriptLayout: isTranscriptLayout(parsed.transcriptLayout)
         ? parsed.transcriptLayout
         : defaultConversationPrefs.transcriptLayout,
@@ -109,7 +147,7 @@ export function parseConversationPrefs(value: string | null): ConversationPrefs 
         800,
         5_000,
       ),
-      promptSupplement: normalizePromptSupplement(parsed.promptSupplement),
+      conversationPrompt: normalizeConversationPrompt(migrateConversationPrompt(parsed)),
     }
   } catch {
     return defaultConversationPrefs

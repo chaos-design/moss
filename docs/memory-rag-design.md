@@ -54,10 +54,9 @@ frontend/src/lib/memory/
 ├── practice-memory-client.ts   # 同源异步写入与浏览器降级
 ├── embedding-client.ts         # embedding provider 基础设施
 ├── memory-repository.ts        # Supabase RPC/表访问基础设施
-├── conversation-prompt.ts      # 对话 Prompt 业务变量组装
-├── prompt-template.ts          # 通用 Markdown 模板加载与注入
-└── prompts/
-    └── conversation-system.md  # 可独立维护的系统 Prompt
+├── conversation-prompt.ts      # 对话 Prompt 业务变量组装与 Prompt 选择
+├── conversation-prompt-text.ts # 系统 Prompt 三段文本常量（规则 / 契约 / 合并结果）
+└── prompt-template.ts          # {{variable}} 模板注入与学习者文本的容错渲染
 ```
 
 调用方只能从 `memory/index.ts` 或 `memory/server.ts` 使用公开函数。Route Handler 不直接
@@ -224,9 +223,18 @@ type LearningMemoryDocument = {
 两类记忆都被视为不可信学习数据。模型不得执行记忆文本中的指令，不得直接泄露待找回
 答案，只能先创造自然使用机会，再按表现给出最小提示。
 
-Prompt 正文维护在 `frontend/src/lib/memory/prompts/conversation-system.md`。通用模板引擎
-只负责加载、缓存和替换 `{{variable}}`；`conversation-prompt.ts` 负责生成领域变量。输出
-契约同时要求不使用 emoji，解析层再次执行强制清理，不能只依赖模型遵循指令。
+Prompt 正文维护在 `frontend/src/lib/memory/conversation-prompt-text.ts`，由三段常量组成：
+`conversationInstructions`（角色定义与行为规则）、`conversationContractTemplate`
+（JSON 输出契约与运行时上下文）以及把两者拼起来的 `defaultConversationPrompt`。设置页编辑的
+就是 `defaultConversationPrompt` 的当前生效文本，学习者可整段改写，输出契约也在其内。
+`resolveConversationPrompt` 在文本为空时回落到内置版本；`renderLearnerPrompt` 解析学习者保留
+的 `{{variable}}` 并把未知占位符中和为空格，因此改写 Prompt 不会让请求失败。
+
+旧偏好在读取时迁移：v4 的追加式补充指令拼到完整内置文本之后，v5 的指令段拼到内置契约之后，
+两次升级都不改变实际发送的 Prompt。回复解析失败时 `parseProviderConversation` 返回
+`contractApplied: false`，转写据此标注该轮并指向设置页——契约由学习者掌握，改坏它必须可归因，
+不能表现为一条无声降级的回复。输出契约同时要求不使用 emoji，解析层再次执行强制清理，不能
+只依赖模型遵循指令。
 
 模板按 Prompt Cache 的前缀匹配方式组织：角色定义、行为规则和 JSON 输出契约全部位于
 稳定前缀，场景、目标、短期记忆、长期召回结果、输入分析和语言模式统一位于末尾的

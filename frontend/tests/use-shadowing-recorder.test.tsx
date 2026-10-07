@@ -86,6 +86,7 @@ describe("useShadowingRecorder", () => {
       useShadowingRecorder({
         expectedDurationSeconds: 2,
         onComplete: completed,
+        utteranceRole: "learner",
       }),
     )
 

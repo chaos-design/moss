@@ -8,7 +8,7 @@ import type { ConversationScene } from "@/lib/conversation-scenes"
 
 export type ConversationMessage = StoredConversationMessage & {
   transient?: boolean
-  variant?: "error"
+  variant?: "error" | "prompt"
 }
 
 export type ConversationRuntimeState = {

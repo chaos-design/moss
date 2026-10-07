@@ -337,17 +337,15 @@ Vercel 只承载 Next.js Web 与业务 API。ASR、TTS 网关与 sidecar 都不�
 | Build Command | `pnpm build` | 由 `vercel.json` 提供 |
 | Node.js | 22.x | 由 `frontend/package.json` 的 `engines` 提供 |
 
-Root Directory 必须为 `frontend`，不能改为仓库根。`src/lib/memory/prompt-template.ts`
-通过 `process.cwd()` 定位 `src/lib/memory/prompts`，`next.config.ts` 的
-`outputFileTracingIncludes` 也按 `frontend` 为基准解析。仓库根构建会让运行时找不到
-对话系统 Prompt，`/api/conversation` 在首次调用时抛出 `ENOENT`。`vercel.json` 位于
-`frontend/`，与该设置对应。
+Root Directory 必须为 `frontend`，不能改为仓库根。对话系统 Prompt 现在是
+`src/lib/memory/conversation-prompt-text.ts` 中的源码常量，不再在运行时读取 Markdown 文件，
+因此部署不再依赖 `process.cwd()` 定位 Prompt 资源或 `outputFileTracingIncludes` 解析。
+设置项仍必须保留：`vercel.json` 位于 `frontend/`，读不到它 Vercel 会回退到根目录的
+Next.js 检测结果并采用错误的构建命令。
 
 仓库只有 `frontend` 一个 workspace 包，`pnpm-lock.yaml` 与 `pnpm-workspace.yaml`
 位于仓库根。Vercel 依赖其 pnpm monorepo 支持向上查找 lockfile 并安装整个 workspace，
-因此 `installCommand` 才能解析到正确的锁文件。若把 Root Directory 改为仓库根，
-`vercel.json` 不会被读取，Vercel 将回退到根目录的 Next.js 检测结果并采用错误的
-Prompt 路径。
+因此 `installCommand` 才能解析到正确的锁文件。
 
 `pnpm-workspace.yaml` 的 `allowBuilds` 已批准 `sharp`、`esbuild` 与 `protobufjs` 的构建
 脚本，Vercel 构建无需额外批准。Kokoro、Audio8 与 CosyVoice 的推理运行时全部位于

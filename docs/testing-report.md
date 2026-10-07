@@ -43,6 +43,37 @@ flowchart LR
 核心学习算法覆盖率门槛为 statements、branches、functions、lines 均不低于 80%。覆盖率
 命令是 `pnpm test:coverage`，不属于默认 `pnpm check`，发布候选版本需单独执行。
 
+`tests/hold-to-record-shortcut.test.tsx`（10 个用例）覆盖长按录音的按下/抬起配对、keydown
+重复抑制、非本快捷键的 keyup、失焦与标签页隐藏兜底停止、文本框与按钮焦点下不触发、禁用态、
+非 Space 键与 IME 组合态。
+
+`tests/conversation-prompt-ownership.test.ts` 覆盖整段 Prompt 的偏好解析、v4 补充指令与 v5
+指令段两级迁移、学习者占位符解析与未知占位符中和、传输长度上限，以及“学习者文本原样发送
+（含输出契约）”。`tests/settings-form.test.tsx` 覆盖可编辑全文、删除输出契约时给出警告而非
+拦截、恢复内置，以及“编辑某个控件不会重渲染无关卡片”的渲染隔离断言。
+`tests/conversation-workspace.test.tsx` 与 `tests/voice-conversation.test.tsx` 覆盖
+`contractApplied: false` 时转写标注该轮并指向设置页。`tests/workspace-loading.test.tsx` 覆盖
+对话路由占位层的内边距。
+
+## 性能与交互延迟
+
+2026-10-07 本机为 Apple Silicon macOS、Node 22、无浏览器环境，因此**未采集真实 INP、LCP
+或 CLS**：这三项需要 Chrome DevTools 或 field data，本环境两者都不具备，任何数值都会是编造。
+已确认的可测量结果与结构保证如下：
+
+- `pnpm build` 产物中 `frontend/.next/static/chunks` 共 57 个客户端 chunk，合计 956.3 KB
+  gzip（含全部路由，非单路由首屏）。系统 Prompt 内置文本 4560 字符，约 1.5 KB gzip，随设置页
+  客户端 chunk 下发，相对总量可忽略。
+- 设置页「对话体验」原本把 Prompt 编辑器、三个数值输入和模型配置表单放在同一个
+  `SettingsForm` 内，受控输入每次按键都会重渲染整页全部卡片与 Base UI Select。现在
+  `ConversationPromptEditor` 与 `ConversationTimingFields` 为 `memo` 组件、草稿保存在组件内部，
+  只有失焦或点保存才写共享 store。
+- `tests/settings-form.test.tsx` 的渲染计数断言固定了这条约束：连续三次按键修改 Prompt 与
+  会话续接时限时，被桩替换的无关卡片渲染次数保持不变。该断言防止回归，但不等于 INP 实测值。
+
+INP 达标仍需在真实浏览器执行：在桌面与移动视口下用 DevTools Performance 面板测量
+LCP/INP/CLS，或接入 field data 后观察 p75 INP ≤ 200ms。此项**未在本次验证**，不能视为通过。
+
 ## 视觉验证
 
 2026-08-28 使用 Chrome 验证桌面 `1440 x 1000` 与移动 `390 x 844`。移动端覆盖公共首页、
@@ -277,6 +308,63 @@ Prompt 基础契约的修改只经单元测试覆盖，未经真实模型验证�
 - 浏览器对本机 TTS 的 health、CORS、prepare、synthesize 和音频播放。
 
 这些结果证明协议链路可运行，不代表所有目标硬件的质量、延迟或容量达标。
+
+## 2026-10-07 影子跟读自动跟随与角色反馈
+
+本轮新增中栏转写的目标句跟随：只滚动中栏容器，不滚动页面，播放对方台词时跟随播放句，
+录音和目标推进时跟随本角色台词，目标已可见则保持原位。原先评分位于转写下方，现只显示
+在右侧「本轮反馈」；即使自动接话调用 `recorder.reset()` 清除当前结果，仍使用当前场景、当前
+扮演角色最近一次已完成录音，显式标注评分所属台词及「上一句」，不把上一角色分数标给当前角色。
+
+既有评分字段和持久化契约不变，仅按角色调整综合分的清晰度/连贯度权重及展示顺序。没有 ASR
+或音素对齐，声学值只能表示发声强弱、有效发声占比、停顿与时长；UI 明示“不评判发音准确性
+或台词含义”。`tests/shadowing-assessment.test.ts` 覆盖角色权重与静音输入；
+`tests/shadowing-feedback.test.ts` 覆盖角色维度和文案；
+`tests/scroll-shadowing-line.test.ts` 覆盖中栏滚动；工作区测试覆盖自动推进后仍保留上一句成绩、
+切换角色不串分及实际台词跟随。桌面与 390px 视觉核对仍待浏览器环境。
+
+## 2026-10-07 影子跟读长按空格录音，Prompt 编辑区取消卡内滚动
+
+2026-10-07 设置页「对话 Prompt」卡片此前与其他设置卡共用 `settingsCardHeightClass` 高度上限与
+`overflow-y-auto`，编辑器、契约警告与操作按钮因此挤在卡内滚动区里：警告可能被滚出视野，保存
+按钮也需要卡内滚动才能到达。该卡片改为不使用高度上限、不设卡内滚动，textarea 自身保留固定
+高度（`h-80` / `lg:h-96`）以维持「字段」而非「页面区块」的定位。布局测试固定「除 Prompt
+卡片外其余 6 张卡仍带高度上限」。
+
+2026-10-07 影子跟读新增长按空格录音。新增 `use-hold-to-record-shortcut`：仅在跟读阶段生效，
+且在文本框、按钮等可交互元素获得焦点时不触发，避免覆盖空格输入与按钮激活；长按期间忽略
+keydown 重复事件，否则每几百毫秒重启录音；`window.blur` 与 `visibilitychange` 均停止录音，
+因为在窗口外松手时 keyup 不会到达该文档。录音按钮旁新增 `kbd` 提示。
+
+`tests/hold-to-record-shortcut.test.tsx`（10 个用例）与 `tests/shadowing-workspace.test.tsx`
+新增用例覆盖快捷键行为。本次未执行桌面与 390px 截图核对；空格长按的真实手感（含系统级快捷键
+冲突与 macOS 全屏空格冲突）需在浏览器中人工确认。
+
+## 2026-10-07 系统 Prompt 改为学习者全权所有
+
+`conversationPrompt` 非空时整体替换内置文本，包含 `## Output Contract` 输出契约；
+`conversationPromptMaxLength` 与路由校验同步放宽至 12000。为把「改坏契约」这一合法配置结果
+变成可归因事件，`parseProviderConversation` 新增 `contractApplied` 字段，解析降级时返回
+`false`，转写标注「未按输出契约返回」并指向设置页；设置页在草稿缺少该段时给出警告但不拦截。
+偏好记录升级到版本 6，v4 补充指令与 v5 指令段两级迁移均不改变实际发送的 Prompt。
+`pnpm check` 通过（74 文件、515 用例）；`pnpm build` 通过。
+
+Prompt 文本从 `src/lib/memory/prompts/conversation-system.md`（`node:fs` 运行时读取）迁到
+`src/lib/memory/conversation-prompt-text.ts`，`next.config.ts` 的
+`outputFileTracingIncludes` 随之移除。
+
+2026-10-06 调整设置页「对话体验」布局。新增
+`app/workspace/conversation/loading.tsx`：工作区 Shell 在对话路由下取消自身内边距，
+原共享占位层会紧贴左侧与顶部边缘，新边界按 `conversation-workspace` 的
+`px-4 md:px-5`（页头）与 `px-5 md:px-8`（转写）自持内边距。设置页把「对话布局」与「输入
+方式」合并为「对话方式」一张卡片、两个下拉，`items-start` 防止短卡片被同行高卡片拉伸成空
+块，会话与判句三段数值在 `lg` 下改为三列。本次未执行桌面与 390px 截图核对，需按
+[界面规范](ui-guidelines.md) 补验。
+
+`tests/shadowing-workspace.test.tsx`、`tests/expression-library-workspace.test.tsx` 与
+`tests/conversation-workspace.test.tsx` 各有一个用例在整包运行时触发 10s 超时；用 `git stash`
+在未修改的基线上复现了 shadowing 超时，单独重跑亦消失，最终 `pnpm check` 全量通过。判定为
+本机负载相关的既有不稳定项，未由本次变更引入，也未因此放宽断言。
 
 ## 2026-10-04 导航反馈与语音接入
 

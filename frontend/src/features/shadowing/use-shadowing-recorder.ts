@@ -1,7 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { assessShadowingAttempt, type ShadowingAssessment } from "@/lib/shadowing-assessment"
+import {
+  assessShadowingAttempt,
+  type ShadowingAssessment,
+  type ShadowingUtteranceRole,
+} from "@/lib/shadowing-assessment"
 
 export type ShadowingRecording = {
   audioUrl: string
@@ -12,6 +16,7 @@ export type ShadowingRecording = {
 type UseShadowingRecorderOptions = {
   expectedDurationSeconds: number
   onComplete: (recording: ShadowingRecording) => void
+  utteranceRole: ShadowingUtteranceRole
 }
 
 const waveformBarCount = 20
@@ -41,6 +46,7 @@ function createWaveform(samples: number[]) {
 export function useShadowingRecorder({
   expectedDurationSeconds,
   onComplete,
+  utteranceRole,
 }: UseShadowingRecorderOptions) {
   const [recording, setRecording] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -202,6 +208,7 @@ export function useShadowingRecorder({
           durationSeconds,
           expectedDurationSeconds,
           rmsSamples: rmsSamplesRef.current,
+          utteranceRole,
         }),
         waveform: createWaveform(rmsSamplesRef.current),
       }
@@ -212,6 +219,8 @@ export function useShadowingRecorder({
       onCompleteRef.current(recordingResult)
     }
 
+    // `onstop` is registered inside `start`, so it already closes over the role that was current when
+    // the take began. A role swap mid-recording therefore cannot rescore the take already in flight.
     startedAtRef.current = performance.now()
     recorder.start(250)
     captureLevel()
@@ -219,7 +228,7 @@ export function useShadowingRecorder({
       setElapsedSeconds((performance.now() - startedAtRef.current) / 1000)
     }, 100)
     setRecording(true)
-  }, [expectedDurationSeconds, reset])
+  }, [expectedDurationSeconds, reset, utteranceRole])
 
   const play = useCallback(
     async (recording = resultRef.current) => {

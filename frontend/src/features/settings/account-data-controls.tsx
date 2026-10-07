@@ -4,6 +4,7 @@ import { DownloadIcon, LoaderCircleIcon, ShieldAlertIcon, Trash2Icon } from "luc
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
+import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { isDemoMode } from "@/lib/runtime-mode"
+import { canOfferSignIn, isSignedIn } from "@/lib/auth-status"
 
 type AccountResponse = {
   data?: {
@@ -52,7 +53,13 @@ async function readErrorMessage(response: Response, fallback: string) {
 
 export function AccountDataControls() {
   const router = useRouter()
-  const cloudAccountAvailable = !isDemoMode()
+  const { status, requireSignIn } = useAuth()
+  // Account data lives in the cloud, so only a signed-in learner has any account data to manage.
+  // A demo or unconfigured deployment has no account at all, and an anonymous learner can sign in
+  // — those are different affordances, so the buttons reflect the distinction instead of gating on
+  // demo mode alone.
+  const signedIn = isSignedIn(status)
+  const hasCloudAccount = signedIn || canOfferSignIn(status)
   const [exporting, setExporting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [confirmation, setConfirmation] = useState("")
@@ -60,6 +67,9 @@ export function AccountDataControls() {
 
   async function handleExport() {
     if (exporting) {
+      return
+    }
+    if (!requireSignIn("导出账户数据")) {
       return
     }
     setExporting(true)
@@ -87,6 +97,9 @@ export function AccountDataControls() {
     if (!confirmation.trim() || deleting) {
       return
     }
+    if (!requireSignIn("删除账户")) {
+      return
+    }
     setDeleting(true)
     try {
       const response = await fetch("/api/account", {
@@ -108,6 +121,15 @@ export function AccountDataControls() {
     }
   }
 
+  function handleOpenDelete() {
+    // Deletion is irreversible, so the sign-in check happens before the confirmation dialog rather
+    // than after the learner has already typed their email.
+    if (!requireSignIn("删除账户")) {
+      return
+    }
+    setDeleteOpen(true)
+  }
+
   function handleOpenChange(open: boolean) {
     if (deleting) {
       return
@@ -127,8 +149,10 @@ export function AccountDataControls() {
             账户数据
           </CardTitle>
           <CardDescription>
-            {cloudAccountAvailable
-              ? "导出云端记录，或永久删除账户及关联学习数据。"
+            {hasCloudAccount
+              ? signedIn
+                ? "导出云端记录，或永久删除账户及关联学习数据。"
+                : "登录后可导出云端记录，或永久删除账户及关联学习数据。"
               : "本地演示模式没有可导出或删除的云端账户。"}
           </CardDescription>
         </CardHeader>
@@ -144,7 +168,7 @@ export function AccountDataControls() {
               type="button"
               variant="outline"
               className="self-start sm:self-auto"
-              disabled={exporting || !cloudAccountAvailable}
+              disabled={exporting || !hasCloudAccount}
               onClick={handleExport}
             >
               {exporting ? (
@@ -167,8 +191,8 @@ export function AccountDataControls() {
               type="button"
               variant="destructive"
               className="self-start sm:self-auto"
-              disabled={!cloudAccountAvailable}
-              onClick={() => setDeleteOpen(true)}
+              disabled={!hasCloudAccount}
+              onClick={handleOpenDelete}
             >
               <Trash2Icon data-icon="inline-start" />
               删除账户

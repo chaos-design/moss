@@ -65,6 +65,10 @@ vi.mock("@/features/shadowing/use-shadowing-recorder", () => ({
 
 beforeEach(() => {
   mocks.state = createEmptyLearningMemory(new Date("2026-08-29T08:00:00.000Z"))
+  // Match the real recorder: automatic turn advancement resets its current result.
+  mocks.reset.mockImplementation(() => {
+    mocks.recorder.result = null
+  })
 })
 
 afterEach(() => {
@@ -74,9 +78,94 @@ afterEach(() => {
   mocks.recordShadowingAttempt.mockReset()
   mocks.speakWithVoice.mockReset().mockResolvedValue(undefined)
   mocks.start.mockReset()
+  mocks.stop.mockReset()
+  mocks.reset.mockReset()
 })
 
 describe("ShadowingWorkspace", () => {
+  it("records on Space keydown and stops on keyup in the shadowing stage", () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // Hold-to-record keeps begin and end on one key, so a take never needs a pointer round trip.
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    })
+    expect(mocks.start).toHaveBeenCalledOnce()
+    expect(mocks.stop).not.toHaveBeenCalled()
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    })
+    expect(mocks.stop).toHaveBeenCalledOnce()
+  })
+
+  it("follows the active line inside the transcript without scrolling the whole page", () => {
+    const view = render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("switch", { name: "录完后自动播放对方台词" }))
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+    const container = view.container
+      .querySelector<HTMLDivElement>('[data-shadowing-line="coffee-4"]')
+      ?.closest<HTMLDivElement>(".overflow-y-auto")
+    const line = container?.querySelector<HTMLElement>('[data-shadowing-line="coffee-4"]')
+    expect(container).toBeTruthy()
+    expect(line).toBeTruthy()
+    if (!container || !line) {
+      return
+    }
+    container.getBoundingClientRect = () => ({ top: 100, bottom: 300, height: 200 }) as DOMRect
+    line.getBoundingClientRect = () => ({ top: 330, bottom: 370, height: 40 }) as DOMRect
+    container.scrollTop = 0
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "选择学习者台词：Iced, please, and could I have it to go?",
+      }),
+    )
+
+    expect(container.scrollTop).toBe(86)
+    expect(container.className).toContain("overflow-y-auto")
+  })
+
+  it("advertises the hold-Space shortcut next to the record button", () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // The button already said what it did; the key hint says how to do it without looking.
+    expect(screen.getByTitle("按住空格开始录音，松开停止").textContent).toContain("空格")
+  })
+
+  it("ignores the shortcut outside the shadowing stage", () => {
+    render(<ShadowingWorkspace />)
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "Space",
+          key: " ",
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    })
+
+    expect(mocks.start).not.toHaveBeenCalled()
+  })
+
   it("shows measured scores and saves the completed attempt", () => {
     const view = render(<ShadowingWorkspace />)
     fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
@@ -125,16 +214,55 @@ describe("ShadowingWorkspace", () => {
       }),
     )
 
-    // 自动接话把目标推进到本角色的下一句；回到该句仍可查看这次录音。
+    // 自动接话把目标推进到本角色的下一句，并 reset 当前录音；右侧仍须显示刚录完
+    // 的成绩和原台词，不能把它错标为下一句的评分。
     expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
       "Iced, please, and could I have it to go?",
     )
+    const feedback = screen.getByRole("region", { name: "跟读评分" })
+    expect(feedback.textContent).toContain("82")
+    expect(feedback.textContent).toContain("Could I get a latte with oat milk, please?")
+    expect(feedback.textContent).toContain("（上一句）")
+    expect(feedback.textContent).not.toContain("问句可辨识度")
+    expect(feedback.textContent).toContain("表达连贯")
     fireEvent.click(
       screen.getByRole("button", {
         name: "选择学习者台词：Could I get a latte with oat milk, please?",
       }),
     )
     expect(screen.getByRole("region", { name: "录音对比" }).textContent).toContain("本次录音")
+  })
+
+  it("attributes feedback to the recorded role when swapping roles", () => {
+    const assessment: ShadowingAssessment = {
+      overallScore: 82,
+      clarityScore: 84,
+      fluencyScore: 79,
+      rhythmScore: 83,
+      durationSeconds: 4.2,
+      voicedRatio: 0.68,
+    }
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("switch", { name: "录完后自动播放对方台词" }))
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+    act(() => {
+      mocks.onComplete?.({ assessment, audioUrl: "blob:learner", waveform: [] })
+    })
+    expect(screen.getByRole("region", { name: "跟读评分" }).textContent).toContain("表达连贯")
+
+    fireEvent.click(screen.getByRole("button", { name: "互换角色" }))
+    expect(screen.getByRole("region", { name: "跟读评分" }).textContent).not.toContain("82")
+    act(() => {
+      mocks.onComplete?.({
+        assessment: { ...assessment, overallScore: 65 },
+        audioUrl: "blob:partner",
+        waveform: [],
+      })
+    })
+    const feedback = screen.getByRole("region", { name: "跟读评分" })
+    expect(feedback.textContent).toContain("65")
+    expect(feedback.textContent).toContain("角色发声")
+    expect(feedback.textContent).not.toContain("表达连贯")
   })
 
   it("keeps takes of the same line comparable when auto partner turns are off", () => {

@@ -275,6 +275,7 @@ describe("conversation feedback", () => {
     )
     expect(wrapped.content).toBe("I agree. What would you like to order?")
     expect(wrapped.validation.issues[0]?.kind).toBe("grammar")
+    expect(wrapped.contractApplied).toBe(true)
 
     const malformed = parseProviderConversation(
       '{"reply":"unfinished","validation":{"status":"improve"',
@@ -284,6 +285,9 @@ describe("conversation feedback", () => {
       "I understand what you mean. Continue with the suggested expression below.",
     )
     expect(malformed.content).not.toContain('"validation"')
+    // Reported so the transcript can name the learner's prompt as the cause instead of presenting a
+    // degraded reply as a normal turn.
+    expect(malformed.contractApplied).toBe(false)
   })
 
   it("marks changed words for explicit visual highlighting", () => {

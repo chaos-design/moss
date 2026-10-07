@@ -1300,7 +1300,7 @@ describe("useVoiceConversation", () => {
     unmount()
   })
 
-  it("omits the prompt supplement from the request when none is configured", async () => {
+  it("omits the conversation prompt from the request when none is customized", async () => {
     const scene = getConversationScene("coffee")
     const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
 
@@ -1313,15 +1313,15 @@ describe("useVoiceConversation", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
-    expect(body).not.toHaveProperty("promptSupplement")
+    expect(body).not.toHaveProperty("conversationPrompt")
 
     unmount()
   })
 
-  it("sends the configured prompt supplement with the request", async () => {
+  it("sends the configured conversation prompt with the request", async () => {
     setConversationPrefs((current) => ({
       ...current,
-      promptSupplement: "每轮都纠正我的语法错误。",
+      conversationPrompt: "每轮都纠正我的语法错误。",
     }))
     const scene = getConversationScene("coffee")
     const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
@@ -1335,7 +1335,40 @@ describe("useVoiceConversation", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
-    expect(body.promptSupplement).toBe("每轮都纠正我的语法错误。")
+    expect(body.conversationPrompt).toBe("每轮都纠正我的语法错误。")
+
+    unmount()
+  })
+
+  it("marks a reply that missed the output contract so the transcript names the prompt", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            content: "I understand what you mean.",
+            translation: "",
+            recall: "",
+            contractApplied: false,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    )
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    act(() => {
+      result.current.setDraft("A latte, please.")
+    })
+    act(() => {
+      result.current.sendDraft()
+    })
+
+    await waitFor(() => {
+      expect(result.current.messages.at(-1)?.variant).toBe("prompt")
+    })
+    // A parsed reply is a normal turn, so nothing is flagged.
+    expect(result.current.messages.at(-1)?.variant).not.toBe("error")
 
     unmount()
   })

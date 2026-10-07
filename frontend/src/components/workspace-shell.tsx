@@ -8,6 +8,7 @@ import {
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { AppNavigation } from "@/components/app-navigation"
+import { AuthProvider } from "@/components/auth-provider"
 import {
   LearningMemoryProvider,
   useLearningMemory,
@@ -23,9 +24,11 @@ const sidebarPreferenceKey = "moss:sidebar:v1"
 
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   return (
-    <LearningMemoryProvider>
-      <WorkspaceShellContent>{children}</WorkspaceShellContent>
-    </LearningMemoryProvider>
+    <AuthProvider>
+      <LearningMemoryProvider>
+        <WorkspaceShellContent>{children}</WorkspaceShellContent>
+      </LearningMemoryProvider>
+    </AuthProvider>
   )
 }
 

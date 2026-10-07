@@ -42,6 +42,16 @@ vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowserClient: () => null,
 }))
 
+// Local toasts append an account-state suffix only for non-authenticated learners; these tests pin
+// the signed-in copy, so the hook is stubbed instead of standing up Supabase.
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    accountLabel: "学习账户",
+    requireSignIn: () => true,
+  }),
+}))
+
 const memoryMocks = vi.hoisted(() => ({
   recordExpressionStudy: vi.fn(),
   state: null as LearningMemoryState | null,

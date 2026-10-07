@@ -39,7 +39,7 @@ type ConversationTransportInput = {
   scene: ConversationScene
   memoryContext: ConversationMemoryContextItem[]
   messages: ConversationMessage[]
-  promptSupplement?: string
+  conversationPrompt?: string
   signal: AbortSignal
   tutorMode: TutorMode
 }
@@ -55,6 +55,15 @@ function readModelInferenceConfig() {
   }
   const stored = window.localStorage.getItem(modelConfigStorageKey)
   return getModelInferenceConfig(parseLocalModelConfig(stored))
+}
+
+/**
+ * Mirrors the translation route's own admission rule: a request is served when it either carries a
+ * signed-in session or a complete client-side model config. The route rejects with 401 only when
+ * both are missing, so the client must not demand sign-in in the case the route would have served.
+ */
+export function canRequestTranslation() {
+  return readModelInferenceConfig() !== null
 }
 
 /**
@@ -149,7 +158,7 @@ export async function requestConversationReply({
   scene,
   memoryContext,
   messages,
-  promptSupplement,
+  conversationPrompt,
   signal,
   tutorMode,
 }: ConversationTransportInput) {
@@ -161,7 +170,7 @@ export async function requestConversationReply({
     language: "auto" as const,
     tutorMode,
     // Only sent when non-empty, so the default request shape is unchanged.
-    ...(promptSupplement ? { promptSupplement } : {}),
+    ...(conversationPrompt ? { conversationPrompt } : {}),
     memory: {
       shortTerm: {
         sceneId: scene.id,

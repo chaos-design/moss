@@ -25,6 +25,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
 }))
 
+// TranscriptTurn consults the shared auth status before requesting a translation; these tests cover
+// the transcript itself, so the hook is stubbed onto the signed-in path.
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    accountLabel: "学习账户",
+    requireSignIn: () => true,
+  }),
+}))
+
 afterEach(cleanup)
 beforeEach(() => {
   Object.defineProperties(HTMLElement.prototype, {
@@ -112,6 +122,36 @@ describe("conversation feedback UI", () => {
     fireEvent.pointerUp(englishOption)
     fireEvent.click(englishOption)
     expect(onTutorModeSelect).toHaveBeenCalledWith("english")
+  })
+
+  it("blames the prompt when a reply missed the output contract", () => {
+    // The learner owns the whole system prompt, so a reply that did not match the contract is a
+    // configuration outcome they can act on. Presenting it as a normal turn would hide the cause.
+    const degradedReply: ConversationMessage = {
+      id: "assistant-unparsed",
+      role: "assistant",
+      content: "I understand what you mean.",
+      translation: "",
+      note: "",
+      timestamp: "00:04",
+      variant: "prompt",
+    }
+
+    render(
+      <TranscriptTurn
+        layout="stacked"
+        message={degradedReply}
+        onRetry={vi.fn()}
+        onSpeak={vi.fn()}
+        partnerName="Mia"
+      />,
+    )
+
+    expect(screen.getByText("未按输出契约返回")).toBeTruthy()
+    // The copy has to name the place the prompt can be fixed, not just report a symptom.
+    expect(screen.getByText(/设置 → 对话体验 → 对话 Prompt/)).toBeTruthy()
+    // A degraded reply is not a retryable transport failure, so it must not wear the error styling.
+    expect(screen.queryByText("临时错误")).toBeNull()
   })
 
   it("places retry on a separate row aligned with the message side", () => {
