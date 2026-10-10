@@ -112,7 +112,8 @@ export function WorkspaceHeader() {
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-3 bg-background px-4 md:px-5">
       <div className="w-auto shrink-0 sm:w-56">
-        <Brand href="/" />
+        {/* 窄于 380px 时只显示标记：品牌文字与右侧五个操作按钮合计会在 320–379px 溢出视口。 */}
+        <Brand href="/" className="max-[380px]:[&>span:last-child]:hidden" />
       </div>
 
       <GlobalSearchDialog />
