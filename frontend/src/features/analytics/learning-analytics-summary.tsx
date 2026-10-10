@@ -99,22 +99,24 @@ export function LearningNextAction({ state }: { state: LearningMemoryState }) {
   const plan = useMemo(() => createLearningPlan(state), [state])
 
   return (
-    <section className="rounded-lg border bg-foreground p-5 text-background md:p-6">
+    <section className="rounded-lg border border-primary/20 bg-accent p-5 text-foreground md:p-6">
       <div className="flex items-start gap-3">
-        <BrainCircuitIcon className="mt-1 size-5 shrink-0" aria-hidden="true" />
+        <BrainCircuitIcon className="mt-1 size-5 shrink-0 text-primary" aria-hidden="true" />
         <div>
-          <p className="font-mono text-[10px] opacity-60">NEXT BEST ACTION</p>
+          <p className="font-mono text-[10px] font-medium text-accent-foreground/80">
+            NEXT BEST ACTION
+          </p>
           <h2 className="mt-1 font-serif text-xl font-semibold">
             {plan ? plan.headline : "先完成一次真实场景对话"}
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 opacity-70">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-accent-foreground">
             {plan
               ? plan.reason
               : "当前没有可用于计算建议的学习记录，Moss 不会用模拟成绩填充分析。"}
           </p>
           <Link
             href={plan?.steps[0]?.href ?? "/workspace/scenes"}
-            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "mt-4")}
+            className={cn(buttonVariants({ variant: "default", size: "sm" }), "mt-4")}
           >
             {plan ? "开始建议练习" : "选择场景"}
           </Link>

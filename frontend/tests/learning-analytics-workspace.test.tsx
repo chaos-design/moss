@@ -82,4 +82,18 @@ describe("LearningAnalyticsWorkspace", () => {
       expect(within(weakPoints).getByText("当前周期没有重复失误。")).toBeTruthy()
     })
   })
+
+  it("styles the next-action banner with theme tokens instead of an inverted surface", () => {
+    render(<LearningAnalyticsWorkspace />)
+
+    const banner = screen.getByText("NEXT BEST ACTION").closest("section")
+    expect(banner).toBeTruthy()
+    expect(banner?.className).toContain("bg-accent")
+    expect(banner?.className).toContain("border-primary")
+    expect(banner?.className).not.toContain("bg-foreground")
+
+    // 行动按钮改用主色（琥珀），与主题色板保持一致，而不是反色卡片上的次级按钮。
+    const cta = banner?.querySelector("a")
+    expect(cta?.className).toContain("bg-primary")
+  })
 })
