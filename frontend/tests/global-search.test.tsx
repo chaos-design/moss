@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { GlobalSearchDialog } from "@/components/global-search-dialog"
 import { searchWorkspace } from "@/lib/global-search"
@@ -96,6 +96,18 @@ describe("global search", () => {
 
     expect(await screen.findByRole("option", { name: /偏好设置/ })).toBeTruthy()
     expect(screen.queryByRole("status")).toBeNull()
+  })
+
+  it("keeps the sticky group label flush with the results viewport", async () => {
+    render(<GlobalSearchDialog />)
+
+    fireEvent.click(screen.getAllByRole("button", { name: "打开全局搜索" })[0] as HTMLElement)
+    const results = await screen.findByRole("listbox", { name: "搜索结果" })
+
+    // 外层间距必须留在滚动容器之外，否则条目会从吸顶分组标签上方漏出。
+    expect(results.className).not.toContain("p-2")
+    expect(results.parentElement?.className).toContain("p-2")
+    expect(within(results).getByText("页面").className).toContain("sticky top-0")
   })
 
   it("filters complete results with horizontal category tabs", async () => {

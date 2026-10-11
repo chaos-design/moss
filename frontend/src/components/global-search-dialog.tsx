@@ -255,7 +255,8 @@ export function GlobalSearchDialog() {
               </TabsList>
             </div>
 
-            <TabsContent value={activeGroup} className="m-0 min-h-0 overflow-hidden">
+            {/* 间距必须留在滚动容器之外：滚动容器的上内边距会让掠过的条目从吸顶分组标签上方漏出。 */}
+            <TabsContent value={activeGroup} className="m-0 min-h-0 overflow-hidden p-2">
               <SearchResults
                 pending={indexPending}
                 results={visibleResults}
@@ -325,7 +326,7 @@ function SearchResults({
       id="global-search-results"
       role="listbox"
       aria-label="搜索结果"
-      className="h-full min-h-0 overflow-y-auto overscroll-contain p-2"
+      className="h-full min-h-0 overflow-y-auto overscroll-contain"
     >
       {groups.map((group) => {
         const groupResults = results.filter((result) => result.group === group)
