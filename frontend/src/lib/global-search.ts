@@ -20,7 +20,24 @@ function normalizeSearchText(value: string) {
   return value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim()
 }
 
-function createSearchResults(memoryItems: LearningMemoryItem[]): GlobalSearchResult[] {
+// 匹配字段的归一化只在建索引时做一次；按键路径只做 includes，不再对全目录重跑 NFKC 与小写化。
+type PreparedSearchResult = {
+  result: GlobalSearchResult
+  normalizedTitle: string
+  normalizedDescription: string
+  normalizedSearchable: string
+}
+
+function prepareResult(result: GlobalSearchResult): PreparedSearchResult {
+  return {
+    result,
+    normalizedTitle: normalizeSearchText(result.title),
+    normalizedDescription: normalizeSearchText(result.description),
+    normalizedSearchable: normalizeSearchText(`${result.keywords} ${result.description}`),
+  }
+}
+
+function createPageAndSceneResults(): GlobalSearchResult[] {
   const pages = navigationSections.flatMap((section) =>
     section.items.map((item) => ({
       id: `page:${item.href}`,
@@ -57,9 +74,14 @@ function createSearchResults(memoryItems: LearningMemoryItem[]): GlobalSearchRes
       ]) ?? []),
     ].join(" "),
   }))
-  const memories = memoryItems.map((item) => ({
+
+  return [...pages, ...scenes]
+}
+
+function createMemoryResult(item: LearningMemoryItem): GlobalSearchResult {
+  return {
     id: `memory:${item.id}`,
-    group: "学习记忆" as const,
+    group: "学习记忆",
     title: item.answer,
     description: `${item.label} · ${item.sourceSceneTitle}`,
     href: "/workspace/notebook",
@@ -72,31 +94,29 @@ function createSearchResults(memoryItems: LearningMemoryItem[]): GlobalSearchRes
       item.sourceSceneTitle,
       ...item.transferTargets.flatMap((target) => [target.sceneTitle, target.reason]),
     ].join(" "),
-  }))
-
-  return [...pages, ...scenes, ...memories]
+  }
 }
 
-function getSearchScore(result: GlobalSearchResult, query: string) {
-  const title = normalizeSearchText(result.title)
-  const description = normalizeSearchText(result.description)
-  const searchable = normalizeSearchText(`${result.keywords} ${result.description}`)
-  const terms = normalizeSearchText(query).split(" ").filter(Boolean)
-  if (terms.length === 0 || !terms.every((term) => searchable.includes(term))) {
-    return 0
-  }
+// 页面与场景目录不随学习记忆变化，静态部分只构建并归一化一次。
+let preparedCatalog: PreparedSearchResult[] | null = null
 
+function getPreparedCatalog() {
+  preparedCatalog ??= createPageAndSceneResults().map(prepareResult)
+  return preparedCatalog
+}
+
+function scorePreparedResult(entry: PreparedSearchResult, terms: string[]) {
   return terms.reduce((score, term) => {
-    if (title === term) {
+    if (entry.normalizedTitle === term) {
       return score + 100
     }
-    if (title.startsWith(term)) {
+    if (entry.normalizedTitle.startsWith(term)) {
       return score + 60
     }
-    if (title.includes(term)) {
+    if (entry.normalizedTitle.includes(term)) {
       return score + 40
     }
-    if (description.includes(term)) {
+    if (entry.normalizedDescription.includes(term)) {
       return score + 20
     }
     return score + 10
@@ -104,17 +124,22 @@ function getSearchScore(result: GlobalSearchResult, query: string) {
 }
 
 export function searchWorkspace(memoryItems: LearningMemoryItem[], query: string) {
-  const results = createSearchResults(memoryItems)
+  const prepared = [
+    ...getPreparedCatalog(),
+    ...memoryItems.map((item) => prepareResult(createMemoryResult(item))),
+  ]
   if (!query.trim()) {
-    return results
+    return prepared.map((entry) => entry.result)
   }
 
-  return results
-    .map((result) => ({ result, score: getSearchScore(result, query) }))
-    .filter((item) => item.score > 0)
+  const terms = normalizeSearchText(query).split(" ").filter(Boolean)
+  return prepared
+    .filter((entry) => terms.every((term) => entry.normalizedSearchable.includes(term)))
+    .map((entry) => ({ entry, score: scorePreparedResult(entry, terms) }))
     .sort(
       (left, right) =>
-        right.score - left.score || left.result.title.localeCompare(right.result.title),
+        right.score - left.score ||
+        left.entry.result.title.localeCompare(right.entry.result.title),
     )
-    .map((item) => item.result)
+    .map((item) => item.entry.result)
 }

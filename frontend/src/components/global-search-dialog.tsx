@@ -2,7 +2,15 @@
 
 import { ArrowRightIcon, CommandIcon, LoaderCircleIcon, SearchIcon, XIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useDeferredValue, useEffect, useMemo, useState } from "react"
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { Button } from "@/components/ui/button"
 import {
@@ -61,6 +69,9 @@ export function GlobalSearchDialog() {
   const [activeIndex, setActiveIndex] = useState(0)
   const [searchIndex, setSearchIndex] = useState<GlobalSearchIndex | null>(null)
   const deferredQuery = useDeferredValue(query)
+  // 只有键盘移动才把活动行滚回可视区；悬停带来的活动变化不滚动，否则滚轮滚动时
+  // 指针停在半可见行上会触发"滚动 → 悬停 → 再滚动"的拉扯。
+  const keyboardNavigationRef = useRef(false)
   // Indexing the scene catalog on every memory write or keystroke blocks the main thread for no
   // visible gain, so results only exist while the dialog is open and the index is resident.
   const results = useMemo(
@@ -116,40 +127,52 @@ export function GlobalSearchDialog() {
   }, [])
 
   useEffect(() => {
+    keyboardNavigationRef.current = true
     setActiveIndex(0)
   }, [activeGroup, deferredQuery])
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !keyboardNavigationRef.current) {
       return
     }
+    keyboardNavigationRef.current = false
     document
       .getElementById(visibleResults[activeIndex]?.id ?? "")
       ?.scrollIntoView?.({ block: "nearest" })
   }, [activeIndex, open, visibleResults])
 
-  function handleOpenChange(nextOpen: boolean) {
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
     setOpen(nextOpen)
     if (!nextOpen) {
       setQuery("")
       setActiveGroup("all")
       setActiveIndex(0)
     }
-  }
+  }, [])
 
-  function openResult(result: GlobalSearchResult) {
-    handleOpenChange(false)
-    router.push(result.href)
-  }
+  const openResult = useCallback(
+    (result: GlobalSearchResult) => {
+      handleOpenChange(false)
+      router.push(result.href)
+    },
+    [handleOpenChange, router],
+  )
+
+  // 传给 memo 化结果行的回调必须稳定，否则悬停一次就会让整列表跟着重渲染。
+  const handleActiveIndexChange = useCallback((index: number) => {
+    setActiveIndex(index)
+  }, [])
 
   function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault()
+      keyboardNavigationRef.current = true
       setActiveIndex((current) => Math.min(current + 1, Math.max(visibleResults.length - 1, 0)))
       return
     }
     if (event.key === "ArrowUp") {
       event.preventDefault()
+      keyboardNavigationRef.current = true
       setActiveIndex((current) => Math.max(current - 1, 0))
       return
     }
@@ -255,12 +278,13 @@ export function GlobalSearchDialog() {
               </TabsList>
             </div>
 
-            <TabsContent value={activeGroup} className="m-0 min-h-0 overflow-hidden">
+            {/* 间距必须留在滚动容器之外：滚动容器的上内边距会让掠过的条目从吸顶分组标签上方漏出。 */}
+            <TabsContent value={activeGroup} className="m-0 min-h-0 overflow-hidden p-2">
               <SearchResults
                 pending={indexPending}
                 results={visibleResults}
                 activeIndex={activeIndex}
-                onActiveIndexChange={setActiveIndex}
+                onActiveIndexChange={handleActiveIndexChange}
                 onOpenResult={openResult}
                 showGroups={activeGroup === "all"}
               />
@@ -272,7 +296,7 @@ export function GlobalSearchDialog() {
   )
 }
 
-function SearchResults({
+const SearchResults = memo(function SearchResults({
   activeIndex,
   onActiveIndexChange,
   onOpenResult,
@@ -287,6 +311,21 @@ function SearchResults({
   results: GlobalSearchResult[]
   showGroups: boolean
 }) {
+  // 分组与行下标只随结果列表变化；悬停或键盘移动活动行时不需要重新切分。
+  const groups = useMemo(() => {
+    const groupsInResults = showGroups
+      ? groupOrder
+      : ([results[0]?.group].filter(Boolean) as GlobalSearchGroup[])
+    return groupsInResults
+      .map((group) => ({
+        group,
+        entries: results
+          .map((result, index) => ({ result, index }))
+          .filter((entry) => entry.result.group === group),
+      }))
+      .filter((section) => section.entries.length > 0)
+  }, [results, showGroups])
+
   if (pending) {
     return (
       <div
@@ -316,62 +355,74 @@ function SearchResults({
     )
   }
 
-  const groups: readonly GlobalSearchGroup[] = showGroups
-    ? groupOrder
-    : ([results[0]?.group].filter(Boolean) as GlobalSearchGroup[])
-
   return (
     <div
       id="global-search-results"
       role="listbox"
       aria-label="搜索结果"
-      className="h-full min-h-0 overflow-y-auto overscroll-contain p-2"
+      className="h-full min-h-0 overflow-y-auto overscroll-contain"
     >
-      {groups.map((group) => {
-        const groupResults = results.filter((result) => result.group === group)
-        return groupResults.length > 0 ? (
-          <section key={group} aria-label={group} className="flex flex-col gap-1 py-1">
-            {showGroups ? (
-              <h2 className="sticky top-0 bg-popover px-2 py-1 font-mono text-[10px] font-medium text-muted-foreground">
-                {group}
-              </h2>
-            ) : null}
-            {groupResults.map((result) => {
-              const index = results.indexOf(result)
-              const Icon = result.icon
-              return (
-                <button
-                  key={result.id}
-                  id={result.id}
-                  type="button"
-                  role="option"
-                  aria-selected={index === activeIndex}
-                  className={cn(
-                    "flex min-h-12 w-full min-w-0 items-center gap-3 rounded-md px-2.5 py-2 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
-                    index === activeIndex && "bg-muted",
-                  )}
-                  onMouseEnter={() => onActiveIndexChange(index)}
-                  onClick={() => onOpenResult(result)}
-                >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-secondary text-primary">
-                    <Icon className="size-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{result.title}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {result.description}
-                    </span>
-                  </span>
-                  <ArrowRightIcon
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                </button>
-              )
-            })}
-          </section>
-        ) : null
-      })}
+      {groups.map(({ group, entries }) => (
+        <section key={group} aria-label={group} className="flex flex-col gap-1 py-1">
+          {showGroups ? (
+            <h2 className="sticky top-0 bg-popover px-2 py-1 font-mono text-[10px] font-medium text-muted-foreground">
+              {group}
+            </h2>
+          ) : null}
+          {entries.map(({ result, index }) => (
+            <SearchResultOption
+              key={result.id}
+              result={result}
+              index={index}
+              active={index === activeIndex}
+              onActivate={onActiveIndexChange}
+              onOpen={onOpenResult}
+            />
+          ))}
+        </section>
+      ))}
     </div>
   )
-}
+})
+
+// 单行 memo 化后，悬停或键盘移动只重渲染新旧两行，而不是整列表。
+const SearchResultOption = memo(function SearchResultOption({
+  active,
+  index,
+  onActivate,
+  onOpen,
+  result,
+}: {
+  active: boolean
+  index: number
+  onActivate: (index: number) => void
+  onOpen: (result: GlobalSearchResult) => void
+  result: GlobalSearchResult
+}) {
+  const Icon = result.icon
+  return (
+    <button
+      id={result.id}
+      type="button"
+      role="option"
+      aria-selected={active}
+      className={cn(
+        "flex min-h-12 w-full min-w-0 items-center gap-3 rounded-md px-2.5 py-2 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+        active && "bg-muted",
+      )}
+      onMouseEnter={() => onActivate(index)}
+      onClick={() => onOpen(result)}
+    >
+      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-secondary text-primary">
+        <Icon className="size-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{result.title}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {result.description}
+        </span>
+      </span>
+      <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
+  )
+})

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { GlobalSearchDialog } from "@/components/global-search-dialog"
 import { searchWorkspace } from "@/lib/global-search"
@@ -23,6 +23,37 @@ afterEach(() => {
 })
 
 describe("global search", () => {
+  it("reuses the prepared static catalog across searches", () => {
+    const first = searchWorkspace([], "")
+    const second = searchWorkspace([], "")
+
+    expect(first.length).toBeGreaterThan(0)
+    expect(second[0]).toBe(first[0])
+    expect(second.find((result) => result.group === "学习场景")).toBe(
+      first.find((result) => result.group === "学习场景"),
+    )
+  })
+
+  it("moves the active option on hover and arrow keys", async () => {
+    render(<GlobalSearchDialog />)
+
+    fireEvent.click(screen.getAllByRole("button", { name: "打开全局搜索" })[0] as HTMLElement)
+    const options = await screen.findAllByRole("option")
+    expect(options[0]?.getAttribute("aria-selected")).toBe("true")
+
+    // 悬停改变活动行，且不会像键盘移动那样把行滚回可视区。
+    fireEvent.mouseEnter(options[2] as HTMLElement)
+    expect(options[2].getAttribute("aria-selected")).toBe("true")
+    expect(options[0].getAttribute("aria-selected")).toBe("false")
+
+    const input = screen.getByRole("combobox", { name: "搜索页面、场景或学习记忆" })
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    expect(screen.getAllByRole("option")[3]?.getAttribute("aria-selected")).toBe("true")
+
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    expect(screen.getAllByRole("option")[2]?.getAttribute("aria-selected")).toBe("true")
+  })
+
   it("indexes pages, available scenes, and learning memory", () => {
     expect(searchWorkspace(memory.items, "设置")[0]).toMatchObject({
       group: "页面",
@@ -96,6 +127,18 @@ describe("global search", () => {
 
     expect(await screen.findByRole("option", { name: /偏好设置/ })).toBeTruthy()
     expect(screen.queryByRole("status")).toBeNull()
+  })
+
+  it("keeps the sticky group label flush with the results viewport", async () => {
+    render(<GlobalSearchDialog />)
+
+    fireEvent.click(screen.getAllByRole("button", { name: "打开全局搜索" })[0] as HTMLElement)
+    const results = await screen.findByRole("listbox", { name: "搜索结果" })
+
+    // 外层间距必须留在滚动容器之外，否则条目会从吸顶分组标签上方漏出。
+    expect(results.className).not.toContain("p-2")
+    expect(results.parentElement?.className).toContain("p-2")
+    expect(within(results).getByText("页面").className).toContain("sticky top-0")
   })
 
   it("filters complete results with horizontal category tabs", async () => {
