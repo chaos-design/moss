@@ -65,7 +65,34 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
 - Fish Audio：`speed` 对外接受 `0.5`–`2`，与上游 `prosody.speed` 范围一致，直接转发。
 - Fish Audio 实时性档位 `latency` 取 `low`/`normal`/`balanced`，会话场景默认 `balanced`。
 
-## 4. 通用限制与安全规则
+## 4. 配置字段规范
+
+设置页与对话设置共用的字段规范声明在 `frontend/src/lib/speech-config.ts` 的
+`speechFieldPolicies`，决定每种「服务 × 接入方式」展示并校验哪些字段：
+
+| 服务 | 接入方式 | endpoint | model | apiKey | voice | engine |
+| --- | --- | --- | --- | --- | --- | --- |
+| ASR | 本机服务 (`local`) | 可选（留空用默认 5580） | — | — | — | 可选（Qwen3-ASR / SenseVoice / FunASR） |
+| ASR | HTTP API (`api`) | 必填 | 可选 | 可选 | — | — |
+| ASR | 浏览器引擎 (`browser`) | — | — | — | — | — |
+| TTS | 本机服务 (`local`) | 可选（留空用默认 5578） | — | — | 可选（Kokoro / Audio8 / CosyVoice 音色） | — |
+| TTS | HTTP API (`api`) | 必填 | 可选 | 可选 | 可选（留空 `alloy`，Fish Audio 填 reference_id） | — |
+| TTS | 浏览器引擎 (`browser`) | — | — | — | — | — |
+
+统一语义：
+
+- **模型按服务而定**：OpenAI 等云端服务需要模型（占位符 `tts-1` / `whisper-1` 来自规则表
+  `models.remoteApi`）；本机 5583/5584 适配器与自建网关可留空，网关对空模型按契约**省略
+  字段转发**，由服务端默认模型接管。除非显式设置 `NEXT_PUBLIC_*_API_MODEL`，浏览器不再
+  替学习者填充默认模型。
+- **音色同规则**：`/api/speech/tts` 对空音色省略字段；5583 回退 George，5584 回退内置默认
+  音色。TTS 的 `voice` 字段（`moss:speech-config:v1`）在设置页与对话页共享。
+- **本机接入的引擎/音色**是本机服务自己的配置（`moss:asr-config:v1`、`moss:tts-config:v2`），
+  与 HTTP API 的 `model`/`voice` 字段无关；设置页与对话页读写同一份。
+- 两个 HTTP API 接入都可先在设置页验证连通性：「测试识别接口」（内置 0.2s WAV 测试音，
+  `lib/asr-test-audio.ts`）与「测试合成接口」。
+
+## 5. 通用限制与安全规则
 
 | 规则 | 值 |
 | --- | --- |
@@ -85,7 +112,7 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
   `MOSS_ELEVENLABS_ACCESS_TOKEN` / `MOSS_FISHAUDIO_ACCESS_TOKEN`，且不会转发给上游。
 - 音频只在请求生命周期内存在，不落盘、不写入学习记忆。
 
-## 5. 配置优先级
+## 6. 配置优先级
 
 本机适配器启动时按以下顺序合并（越靠后优先级越高）：
 
@@ -97,7 +124,7 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
 前端 `NEXT_PUBLIC_*` 由 `frontend/next.config.ts` 在构建期内联；浏览器本地覆盖保存在
 `moss:speech-config:v1`。
 
-## 6. 测试合成规则
+## 7. 测试合成规则
 
 `/api/speech/tts/test` 与本机适配器 `/v1/audio/speech/test` 共用以下默认参数：
 
@@ -115,7 +142,7 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
 `pnpm elevenlabs:test` / `pnpm fishaudio:test`（不联网的单元测试）。
 5584 的音色别名（含共享默认值 `alloy`）映射为空串后由内置默认音色发声。
 
-## 7. 消费方对照
+## 8. 消费方对照
 
 | 文件 | 用途 |
 | --- | --- |

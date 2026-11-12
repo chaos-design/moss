@@ -70,22 +70,13 @@ def _parse_text(payload: dict[str, object], settings: FishAudioSettings) -> str:
     return text
 
 
-def _parse_string(
-    payload: dict[str, object],
-    key: str,
-    fallback: str,
-    maximum: int,
-    code: str,
-) -> str:
-    raw = payload.get(key, fallback)
-    if raw is None:
-        raw = fallback
-    if not isinstance(raw, str):
-        raise _error(400, code, f"{key} 必须是字符串。")
-    value = raw.strip()
-    if not value or len(value) > maximum:
-        raise _error(400, code, f"{key} 必须为 1 到 {maximum} 个字符。")
-    return value
+def _parse_model(payload: dict[str, object], default: str) -> str:
+    """模型是否必填由上游决定：空值按原样省略语义回退到服务端默认模型。"""
+    raw = payload.get("model")
+    value = raw.strip() if isinstance(raw, str) else ""
+    if len(value) > 120:
+        raise _error(400, "invalid_model", "model 过长。")
+    return value or default
 
 
 def _parse_speed(payload: dict[str, object]) -> float:
@@ -201,13 +192,7 @@ def create_app(
         voice = voice.strip() if isinstance(voice, str) else ""
         if len(voice) > 120:
             raise _error(400, "invalid_voice", "voice 过长。")
-        model = _parse_string(
-            payload,
-            "model",
-            resolved_settings.tts_model,
-            120,
-            "invalid_model",
-        )
+        model = _parse_model(payload, resolved_settings.tts_model)
         response_format = payload.get("response_format")
         response_format = (
             response_format.strip() if isinstance(response_format, str) else ""
@@ -273,9 +258,7 @@ def create_app(
         voice = voice_raw.strip() if isinstance(voice_raw, str) else ""
         if len(voice) > 120:
             raise _error(400, "invalid_voice", "voice 过长。")
-        model = _parse_string(
-            merged, "model", resolved_settings.tts_model, 120, "invalid_model"
-        )
+        model = _parse_model(merged, resolved_settings.tts_model)
         response_format = merged.get("response_format")
         response_format = (
             response_format.strip() if isinstance(response_format, str) else ""

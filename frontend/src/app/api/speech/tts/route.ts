@@ -51,10 +51,8 @@ export async function POST(request: Request) {
     return errorResponse("invalid_request", "合成文本为空或超出长度限制。", 400)
   }
 
+  // 音色按服务而定：OpenAI 兼容云端通常必填；本机适配器与自建网关可留空，由服务端默认音色接管。
   const voice = typeof candidate.voice === "string" ? candidate.voice.trim().slice(0, 120) : ""
-  if (!voice) {
-    return errorResponse("invalid_request", "请选择要使用的音色。", 400)
-  }
 
   const speed =
     typeof candidate.speed === "number" && Number.isFinite(candidate.speed)

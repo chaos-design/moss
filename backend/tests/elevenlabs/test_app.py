@@ -76,6 +76,18 @@ class ElevenLabsAppTest(unittest.TestCase):
         self.assertEqual(request.status_code, 503)
         self.assertEqual(request.json()["error"]["code"], "not_configured")
 
+    def test_falls_back_to_server_defaults_for_empty_model_and_voice(self) -> None:
+        # 网关按契约省略空字段；显式空串也按同样的语义回退到服务端默认值。
+        with TestClient(self.app) as client:
+            response = client.post(
+                "/v1/audio/speech",
+                json={"input": "Hello.", "model": "", "voice": ""},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.synthesis[0]["model"], "eleven_v4")
+        self.assertEqual(self.client.synthesis[0]["voice"], "JBFqnCBsd6RMkjVDRZzb")
+
     def test_synthesizes_with_defaults_and_returns_audio(self) -> None:
         with TestClient(self.app) as client:
             response = client.post(
@@ -106,7 +118,6 @@ class ElevenLabsAppTest(unittest.TestCase):
             ({"input": ""}, "invalid_text"),
             ({"input": "Hello.", "speed": True}, "invalid_speed"),
             ({"input": "Hello.", "speed": 3}, "invalid_speed"),
-            ({"input": "Hello.", "voice": ""}, "invalid_voice"),
             ({"input": "Hello.", "response_format": "aac"}, "unsupported_format"),
         ]
         with TestClient(self.app) as client:
@@ -116,6 +127,8 @@ class ElevenLabsAppTest(unittest.TestCase):
                     self.assertEqual(response.status_code, 400)
                     self.assertEqual(response.json()["error"]["code"], code)
         self.assertEqual(self.client.synthesis, [])
+        # 空模型/空音色不再拒绝：统一语义是回退到服务端默认值，见
+        # test_falls_back_to_server_defaults_for_empty_model_and_voice。
 
     def test_transcribes_uploaded_audio(self) -> None:
         with TestClient(self.app) as client:

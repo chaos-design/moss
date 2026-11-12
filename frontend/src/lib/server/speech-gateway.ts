@@ -77,11 +77,12 @@ export function parseSpeechApiEndpoint(value: unknown): SpeechApiEndpoint | null
   }
   const endpoint = candidate.endpoint.trim()
   const apiKey = candidate.apiKey.trim()
+  // 模型是否必填由服务端决定：本机适配器与多数自建网关有自己的默认模型，
+  // 空模型按原样转发（字段省略），由上游给出明确的"需要模型"错误。
   const model = candidate.model.trim()
   if (
     endpoint.length > maximumSpeechEndpointLength ||
     apiKey.length > maximumSpeechApiKeyLength ||
-    model.length === 0 ||
     model.length > maximumSpeechModelLength ||
     !isAllowedBrowserSpeechEndpoint(endpoint)
   ) {
@@ -120,7 +121,10 @@ export async function transcribeSpeechAudio(input: {
     new Blob([input.audio], { type: input.mimeType || "audio/webm" }),
     "speech.webm",
   )
-  form.append("model", input.endpoint.model)
+  // 空模型按契约省略，由上游适配器/服务选择自己的默认模型。
+  if (input.endpoint.model) {
+    form.append("model", input.endpoint.model)
+  }
   form.append("response_format", "json")
   if (input.language) {
     form.append("language", input.language)
@@ -178,9 +182,9 @@ export async function synthesizeSpeechAudio(input: {
       method: "POST",
       headers: buildHeaders(input.endpoint.apiKey, { "Content-Type": "application/json" }),
       body: JSON.stringify({
-        model: input.endpoint.model,
+        ...(input.endpoint.model ? { model: input.endpoint.model } : {}),
         input: input.text,
-        voice: input.voice,
+        ...(input.voice ? { voice: input.voice } : {}),
         speed: input.speed,
         response_format: input.format ?? "mp3",
       }),

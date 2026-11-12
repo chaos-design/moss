@@ -7,6 +7,7 @@ import {
   getDefaultLocalApiModel,
   getDefaultLocalEndpoint,
   getSelectedApiVoiceValue,
+  getSpeechFieldPolicy,
   getSpeechRequestUrl,
   isLoopbackSpeechEndpoint,
   isValidSpeechEndpoint,
@@ -15,6 +16,7 @@ import {
   resolveSpeechConfig,
   type SpeechConfig,
   speechConfigStorageKey,
+  speechModelFieldHint,
 } from "@/lib/speech-config"
 
 function createConfig(overrides: Partial<SpeechConfig> = {}): SpeechConfig {
@@ -98,11 +100,42 @@ describe("speech configuration", () => {
     )
 
     expect(resolved.asr.endpoint).toBe(getDefaultApiEndpoint("asr"))
-    expect(resolved.asr.model).toBe("whisper-1")
+    // 模型是否必填由服务端决定：未显式配置环境模型时保持为空，交由上游默认模型接管。
+    expect(resolved.asr.model).toBe("")
     // The local transport keeps an empty endpoint so the client falls back to its environment URL.
     expect(resolved.tts.endpoint).toBe("")
     expect(getDefaultLocalEndpoint("asr")).toContain("ws://")
     expect(getDefaultLocalEndpoint("tts")).toContain("http://")
+  })
+
+  it("uses the environment model for the API transport only when explicitly set", () => {
+    vi.stubEnv("NEXT_PUBLIC_ASR_API_MODEL", "whisper-large-v3")
+    const resolved = resolveSpeechConfig(
+      parseSpeechConfig(
+        JSON.stringify({
+          version: 1,
+          asr: { transport: "api", endpoint: "", apiKey: "", model: "" },
+          tts: { transport: "local", endpoint: "", apiKey: "", model: "" },
+        }),
+      ),
+    )
+    expect(resolved.asr.model).toBe("whisper-large-v3")
+  })
+
+  it("declares the unified field policy per service and transport", () => {
+    expect(getSpeechFieldPolicy("asr", "api")).toEqual({
+      endpoint: "required",
+      model: "optional",
+      apiKey: "optional",
+      voice: "hidden",
+      engine: "hidden",
+    })
+    expect(getSpeechFieldPolicy("tts", "api").voice).toBe("optional")
+    expect(getSpeechFieldPolicy("asr", "local").engine).toBe("optional")
+    expect(getSpeechFieldPolicy("asr", "local").model).toBe("hidden")
+    expect(getSpeechFieldPolicy("tts", "browser").endpoint).toBe("hidden")
+    // 模型语义统一说明：是否必填由服务端决定。
+    expect(speechModelFieldHint).toContain("留空")
   })
 
   it("builds OpenAI-compatible request URLs without duplicating paths", () => {

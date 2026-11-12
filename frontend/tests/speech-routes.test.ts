@@ -119,17 +119,32 @@ describe("POST /api/speech/asr", () => {
     expect(insecure.status).toBe(400)
     expect((await insecure.json()).error.code).toBe("invalid_speech_endpoint")
 
-    const noModel = await asrPost(
+    const emptyAudio = await asrPost(asrRequest({ audioBase64: "", endpoint: validEndpoint }))
+    expect(emptyAudio.status).toBe(400)
+    expect((await emptyAudio.json()).error.code).toBe("invalid_audio")
+  })
+
+  it("forwards requests without a model so the service can apply its own default", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ text: "hi" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await asrPost(
       asrRequest({
         audioBase64: base64("audio"),
         endpoint: { ...validEndpoint, model: "" },
       }),
     )
-    expect(noModel.status).toBe(400)
 
-    const emptyAudio = await asrPost(asrRequest({ audioBase64: "", endpoint: validEndpoint }))
-    expect(emptyAudio.status).toBe(400)
-    expect((await emptyAudio.json()).error.code).toBe("invalid_audio")
+    expect(response.status).toBe(200)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe("https://speech.example.com/v1/audio/transcriptions")
+    // 空模型按契约省略字段，而不是替学习者填一个默认值。
+    expect((init.body as FormData).has("model")).toBe(false)
   })
 
   it("rejects oversized payloads before contacting the provider", async () => {
@@ -216,14 +231,11 @@ describe("POST /api/speech/asr", () => {
 })
 
 describe("POST /api/speech/tts", () => {
-  it("validates text, voice, and endpoint before any upstream call", async () => {
+  it("validates text and endpoint before any upstream call", async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
 
     expect((await ttsPost(ttsRequest({ endpoint: validEndpoint, text: "  " }))).status).toBe(
-      400,
-    )
-    expect((await ttsPost(ttsRequest({ endpoint: validEndpoint, text: "hi" }))).status).toBe(
       400,
     )
     expect(
@@ -273,6 +285,27 @@ describe("POST /api/speech/tts", () => {
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toBe("audio/mpeg")
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+  })
+
+  it("forwards synthesis without a voice so the service can apply its own default", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "Content-Type": "audio/mpeg" },
+      }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await ttsPost(
+      ttsRequest({ endpoint: validEndpoint, text: "Hello", voice: "" }),
+    )
+
+    expect(response.status).toBe(200)
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>
+    // 空音色按契约省略字段；Fish Audio 等服务据此使用内置默认音色。
+    expect(body).not.toHaveProperty("voice")
+    expect(body).toHaveProperty("input", "Hello")
   })
 
   it("rejects non-audio provider responses", async () => {

@@ -140,7 +140,8 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 `NEXT_PUBLIC_TTS_SERVICE_URL`。`local` 连接失败时，前端在当前会话内自动回退到浏览器引擎并提示
 一次，不改写用户已保存的接入方式。`api` 接入的默认根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与
 `NEXT_PUBLIC_TTS_API_URL`，模型来自 `NEXT_PUBLIC_ASR_API_MODEL` 与
-`NEXT_PUBLIC_TTS_API_MODEL`；`tts.voice` 留空时使用 `alloy`。
+`NEXT_PUBLIC_TTS_API_MODEL`；环境模型未设置时模型字段保持为空，由服务端默认模型接管；
+`tts.voice` 留空时使用 `alloy`。
 
 ### 本机 local 接口
 
@@ -250,11 +251,13 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
   `api.anthropic.com`）；回环主机 `localhost`、`127.0.0.1`、`::1` 内置允许，用于本机 local
   接口，在生产构建下同样可用。非回环私网主机、URL 内嵌用户名或密码一律拒绝。
 - 解码后的音频不超过 8 MB，请求体不超过 12 MB，`language` 可省略。
-- 上游使用 `multipart/form-data`：`file`、`model`、`response_format=json`、可选 `language`。
+- 上游使用 `multipart/form-data`：`file`、`model`（配置为空时省略，由服务端默认模型接管）、
+  `response_format=json`、可选 `language`。
 - 上游 30 秒未响应视为不可用。错误码：`invalid_json`、`invalid_request`、
   `invalid_speech_endpoint`、`invalid_audio`、`request_too_large`、`rate_limited`、
   `speech_endpoint_unreachable`、`speech_upstream_error`、`speech_invalid_response`、`asr_failed`。
 - 服务端只返回规范化文案，不回传上游响应正文；密钥仅用于当次转发，不落盘、不记录。
+- 设置页「测试识别接口」用内置 0.2 秒 WAV 测试音走同一链路，可在开始语音对话前验证配置。
 
 ## POST `/api/speech/tts`
 
@@ -274,8 +277,11 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
 }
 ```
 
-- `text` 去除首尾空白后长度为 1–2000 字符，`voice` 必填且不超过 120 字符，`speed` 收敛到
+- `text` 去除首尾空白后长度为 1–2000 字符，`voice` 可选且不超过 120 字符，`speed` 收敛到
   `0.5`–`2`，`format` 取 `mp3`、`opus`、`aac`、`flac`、`wav`、`pcm` 之一，默认 `mp3`。
+- 模型与音色是否必填由服务端决定：空值按契约省略字段转发，本机适配器与自建网关使用自己的
+  默认模型/音色；强制要求模型的云端服务会返回明确的上游错误。字段规范见
+  [语音服务通用规则配置](./speech-rules.md#配置字段规范)。
 - 端点策略、限流（240 次/分钟/endpoint）与错误码语义同 `/api/speech/asr`。
 - 上游返回非 `audio/*` 内容时记为 `speech_invalid_response`，浏览器据此回退到系统语音。
 

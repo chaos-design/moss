@@ -88,6 +88,15 @@ def _parse_string(
     return value
 
 
+def _parse_model(payload: dict[str, object], default: str) -> str:
+    """模型是否必填由上游决定：空值按原样省略语义回退到服务端默认模型。"""
+    raw = payload.get("model")
+    value = raw.strip() if isinstance(raw, str) else ""
+    if len(value) > 120:
+        raise _error(400, "invalid_model", "model 过长。")
+    return value or default
+
+
 def _parse_speed(payload: dict[str, object]) -> float:
     raw = payload.get("speed", DEFAULT_SPEECH_SPEED)
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
@@ -196,20 +205,13 @@ def create_app(
             raise _error(400, "invalid_request", "语音合成请求必须是 JSON 对象。")
 
         text = _parse_text(payload, resolved_settings)
-        voice = _parse_string(
-            payload,
-            "voice",
-            resolved_settings.default_voice,
-            120,
-            "invalid_voice",
-        )
-        model = _parse_string(
-            payload,
-            "model",
-            resolved_settings.tts_model,
-            120,
-            "invalid_model",
-        )
+        voice_raw = payload.get("voice")
+        voice = voice_raw.strip() if isinstance(voice_raw, str) else ""
+        if len(voice) > 120:
+            raise _error(400, "invalid_voice", "voice 过长。")
+        # 音色是否必填由上游决定：空值回退到服务端默认音色（与 Fish Audio 适配器一致）。
+        voice = voice or resolved_settings.default_voice
+        model = _parse_model(payload, resolved_settings.tts_model)
         response_format = _parse_string(
             payload,
             "response_format",
@@ -273,8 +275,12 @@ def create_app(
             merged["input"] = payload["text"]
 
         text = _parse_text(merged, resolved_settings)
-        voice = _parse_string(merged, "voice", TEST_SYNTHESIS_VOICE, 120, "invalid_voice")
-        model = _parse_string(merged, "model", resolved_settings.tts_model, 120, "invalid_model")
+        voice_raw = merged.get("voice")
+        voice = voice_raw.strip() if isinstance(voice_raw, str) else ""
+        if len(voice) > 120:
+            raise _error(400, "invalid_voice", "voice 过长。")
+        voice = voice or resolved_settings.default_voice
+        model = _parse_model(merged, resolved_settings.tts_model)
         response_format = _parse_string(
             merged,
             "response_format",

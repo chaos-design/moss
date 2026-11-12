@@ -115,6 +115,15 @@ class SpeechEndpointTest(unittest.TestCase):
             "9a9cf47702da476aa4629e2506d4a857",
         )
 
+    def test_falls_back_to_server_defaults_for_empty_model_and_voice(self) -> None:
+        # 网关按契约省略空字段；显式空串也按同样的语义回退到服务端默认值
+        # （空音色 = Fish Audio 内置默认音色，由客户端省略 reference_id）。
+        response = self.request({"input": "Hello.", "model": "", "voice": ""})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.synthesis[0]["model"], "s2.1-pro-free")
+        self.assertEqual(self.client.synthesis[0]["voice"], "")
+
     def test_rejects_an_unsupported_format_without_calling_the_provider(self) -> None:
         response = self.request(
             {"input": "Hello.", "response_format": "flac"}

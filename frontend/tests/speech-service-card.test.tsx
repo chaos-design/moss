@@ -43,8 +43,11 @@ describe("SpeechServiceCard", () => {
   it("starts on the local transports and names the address in use", () => {
     render(<SpeechServiceCard />)
 
-    expect(screen.getByText("本机 ASR 服务 · ws://127.0.0.1:5580/v1/asr/stream")).toBeTruthy()
-    expect(screen.getByText("本机 TTS 服务 · http://127.0.0.1:5578")).toBeTruthy()
+    // 本机接入会把当前引擎/音色附在生效配置后，与对话页共享同一份配置。
+    expect(
+      screen.getByText("本机 ASR 服务 · ws://127.0.0.1:5580/v1/asr/stream · 引擎 SenseVoice"),
+    ).toBeTruthy()
+    expect(screen.getByText("本机 TTS 服务 · http://127.0.0.1:5578 · 音色 Heart")).toBeTruthy()
     expect((screen.getByLabelText("语音识别本机服务地址") as HTMLInputElement).value).toBe("")
     expect(screen.queryByLabelText("语音识别API 密钥")).toBeNull()
   })
@@ -110,6 +113,73 @@ describe("SpeechServiceCard", () => {
     expect(stored.asr.model).toBe("transcribe-1-pro")
     expect(stored.tts.model).toBe("s2.1-pro-free")
     expect(screen.getAllByText(/（本机接口）/)).toHaveLength(2)
+  })
+
+  it("persists the API synthesis voice declared by the unified field policy", () => {
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.change(screen.getByLabelText("语音合成音色"), {
+      target: { value: " 9a9cf47702da476aa4629e2506d4a857 " },
+    })
+
+    expect(storedConfig().tts.voice).toBe("9a9cf47702da476aa4629e2506d4a857")
+    expect(screen.getByText(/音色 9a9cf47702da476aa4629e2506d4a857/)).toBeTruthy()
+  })
+
+  it("configures the local ASR engine from the same field policy as the conversation page", () => {
+    render(<SpeechServiceCard />)
+
+    const combo = screen.getByRole("combobox", { name: "选择语音识别引擎" })
+    fireEvent.click(combo)
+    const option = screen.getByRole("option", { name: "Qwen3-ASR" })
+    fireEvent.pointerDown(option, { pointerType: "mouse" })
+    fireEvent.click(option)
+
+    const stored = JSON.parse(window.localStorage.getItem("moss:asr-config:v1") ?? "{}") as {
+      engine?: string
+    }
+    expect(stored.engine).toBe("qwen3-asr")
+    expect(screen.getByText(/引擎 Qwen3-ASR/)).toBeTruthy()
+  })
+
+  it("tests the recognition endpoint with the built-in tone before the learner speaks", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: { text: "Could I get a latte?" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.click(screen.getByRole("button", { name: "测试识别接口" }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/语音识别接口可用，返回文本：「Could I get a latte\?」。/),
+      ).toBeTruthy(),
+    )
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(path).toBe("/api/speech/asr")
+    const body = JSON.parse(String(init.body)) as { audioBase64: string; mimeType: string }
+    expect(body.mimeType).toBe("audio/wav")
+    // 内置测试音频必须是合法 WAV 容器（RIFF 魔数），避免把坏请求当成服务故障。
+    expect(atob(body.audioBase64).slice(0, 4)).toBe("RIFF")
+  })
+
+  it("reports an unreachable recognition endpoint without breaking the form", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 502 })))
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.click(screen.getByRole("button", { name: "测试识别接口" }))
+
+    await waitFor(() =>
+      expect(screen.getByText("语音识别接口不可用：接口返回 502")).toBeTruthy(),
+    )
+    expect(screen.getByLabelText("语音识别接入方式")).toBeTruthy()
   })
 
   it("warns when an API endpoint is not reachable over a public HTTPS address", () => {
