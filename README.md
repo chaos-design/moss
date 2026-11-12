@@ -113,6 +113,18 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 `NEXT_PUBLIC_*_LOCAL_API_URL` 改为其他本地服务。详见
 [API 文档](docs/api.md#本机-local-接口)与[适配器文档](backend/services/elevenlabs/README.md)。
 
+需要本机验证 Fish Audio 时，可启动同构的 OpenAI 兼容适配器（免费模型 `s2.1-pro-free`）：
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+```
+
+适配器监听 `127.0.0.1:5584`，在设置里点各自的“使用 Fish Audio”即可填入
+`http://127.0.0.1:5584/v1` 与 `transcribe-1-pro` / `s2.1-pro-free`；音色填 Fish Audio
+voice model ID（reference_id），留空使用内置默认音色。详见
+[API 文档](docs/api.md#本机-local-接口)与[适配器文档](backend/services/fishaudio/README.md)。
+
 ## 云端配置
 
 1. 创建 Supabase 项目并配置 Email/OAuth。
@@ -136,6 +148,9 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 | `pnpm asr:test` | ASR 单元与协议测试 |
 | `pnpm tts:test` | TTS 网关与 sidecar 单元测试 |
 | `pnpm elevenlabs:test` | ElevenLabs 适配器单元测试 |
+| `pnpm elevenlabs:test:synthesis` | 探测本机语音服务的测试合成接口 |
+| `pnpm fishaudio:test` | Fish Audio 适配器单元测试 |
+| `pnpm fishaudio:test:synthesis` | 探测 Fish Audio 适配器的测试合成接口 |
 | `pnpm db:test` | 校验全量与增量 SQL 契约 |
 | `pnpm expressions:generate` | 使用服务端模型配置重新生成内置表达数据 |
 
@@ -146,13 +161,14 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 | 分组 | 变量前缀 | 运行位置 |
 | --- | --- | --- |
 | 浏览器公开配置 | `NEXT_PUBLIC_*` | 浏览器与 Next.js |
-| 本机语音接口预设 | `NEXT_PUBLIC_*_LOCAL_API_URL`、`NEXT_PUBLIC_*_LOCAL_API_MODEL` | 浏览器与 Next.js（构建期内联） |
+| 本机语音接口预设 | `NEXT_PUBLIC_*_LOCAL_API_URL`、`NEXT_PUBLIC_*_LOCAL_API_MODEL`、`NEXT_PUBLIC_*_FISH_AUDIO_URL`、`NEXT_PUBLIC_*_FISH_AUDIO_MODEL` | 浏览器与 Next.js（构建期内联） |
 | AI provider | `AI_*` | Next.js 服务端 |
 | 模型配置信封 | `MODEL_CONFIG_*` | Next.js 服务端 |
 | ASR | `MOSS_ASR_*`, `MOSS_SENSEVOICE_*` | Python ASR |
 | TTS gateway | `MOSS_TTS_*`, `MOSS_KOKORO_*` | Python TTS |
 | TTS sidecar | `MOSS_AUDIO8_*`, `MOSS_COSYVOICE_*` | 独立 Python 运行时 |
 | ElevenLabs adapter | `ELEVENLABS_API_KEY`, `MOSS_ELEVENLABS_*` | 可选本机 Python 适配器 |
+| Fish Audio adapter | `FISH_API_KEY`, `MOSS_FISHAUDIO_*` | 可选本机 Python 适配器 |
 
 ## 文档
 
@@ -163,6 +179,7 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 | [学习记忆与 RAG](docs/memory-rag-design.md) | 记忆模型、同步、向量检索和 Prompt |
 | [双语对话设计](docs/bilingual-conversation-design.md) | 输入识别、反馈决策与语音交互 |
 | [API 契约](docs/api.md) | HTTP、WebSocket 与 Supabase RPC |
+| [语音服务通用规则](docs/speech-rules.md) | 语音端口、本地模型、格式、限制与测试合成默认值 |
 | [界面规范](docs/ui-guidelines.md) | 视觉、组件、响应式和可访问性 |
 | [开发手册](docs/development.md) | 本地运行、前后端开发、测试与故障排查 |
 | [部署指南](docs/deployment.md) | 环境、拓扑、发布和回滚 |

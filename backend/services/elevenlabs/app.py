@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import re
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -17,6 +19,16 @@ from .client import (
 )
 from .config import ElevenLabsSettings
 from .errors import ElevenLabsServiceError
+from .rules import (
+    DEFAULT_SPEECH_SPEED,
+    MAX_SPEECH_SPEED,
+    MIN_SPEECH_SPEED,
+    TEST_SYNTHESIS_FORMAT,
+    TEST_SYNTHESIS_MIN_AUDIO_BYTES,
+    TEST_SYNTHESIS_SPEED,
+    TEST_SYNTHESIS_TEXT,
+    TEST_SYNTHESIS_VOICE,
+)
 
 MAX_SPEECH_REQUEST_BYTES = 64_000
 ALLOWED_AUDIO_CONTENT_TYPES = {"application/octet-stream", "video/webm"}
@@ -77,12 +89,16 @@ def _parse_string(
 
 
 def _parse_speed(payload: dict[str, object]) -> float:
-    raw = payload.get("speed", 1)
+    raw = payload.get("speed", DEFAULT_SPEECH_SPEED)
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise _error(400, "invalid_speed", "speed 必须是数字。")
     speed = float(raw)
-    if speed < 0.5 or speed > 2:
-        raise _error(400, "invalid_speed", "speed 必须在 0.5 到 2 之间。")
+    if speed < MIN_SPEECH_SPEED or speed > MAX_SPEECH_SPEED:
+        raise _error(
+            400,
+            "invalid_speed",
+            f"speed 必须在 {MIN_SPEECH_SPEED} 到 {MAX_SPEECH_SPEED} 之间。",
+        )
     return speed
 
 
@@ -197,7 +213,7 @@ def create_app(
         response_format = _parse_string(
             payload,
             "response_format",
-            "mp3",
+            resolved_settings.default_response_format,
             16,
             "invalid_format",
         )
@@ -220,6 +236,84 @@ def create_app(
                 "Cache-Control": "no-store",
                 "X-ElevenLabs-Model": model,
             },
+        )
+
+    @app.post("/v1/audio/speech/test")
+    async def test_speech(request: Request) -> JSONResponse:
+        """本机适配器自检：用通用规则默认值真实合成一次，只返回诊断，不回传音频。
+
+        这是 5583 服务专用探针。浏览器侧的 `/api/speech/tts/test` 仍走标准的
+        `/audio/speech`，以便对任意 OpenAI 兼容端点都可用。
+        """
+        _ensure_authorized(request, resolved_settings)
+        _ensure_configured(resolved_settings)
+        raw = await request.body()
+        if raw:
+            try:
+                payload = json.loads(raw)
+            except ValueError as error:
+                raise _error(400, "invalid_json", "请求体必须是有效 JSON。") from error
+            if not isinstance(payload, dict):
+                raise _error(400, "invalid_request", "请求体必须是 JSON 对象。")
+        else:
+            payload = {}
+
+        defaults: dict[str, object] = {
+            "input": TEST_SYNTHESIS_TEXT,
+            "voice": TEST_SYNTHESIS_VOICE,
+            "model": resolved_settings.tts_model,
+            "response_format": resolved_settings.default_response_format or TEST_SYNTHESIS_FORMAT,
+            "speed": TEST_SYNTHESIS_SPEED,
+        }
+        merged = {
+            **defaults,
+            **{key: value for key, value in payload.items() if value is not None},
+        }
+        if "input" not in payload and "text" in payload:
+            merged["input"] = payload["text"]
+
+        text = _parse_text(merged, resolved_settings)
+        voice = _parse_string(merged, "voice", TEST_SYNTHESIS_VOICE, 120, "invalid_voice")
+        model = _parse_string(merged, "model", resolved_settings.tts_model, 120, "invalid_model")
+        response_format = _parse_string(
+            merged,
+            "response_format",
+            resolved_settings.default_response_format,
+            16,
+            "invalid_format",
+        )
+        if response_format not in SUPPORTED_RESPONSE_FORMATS:
+            resolve_output_format(response_format)
+        speed = _parse_speed(merged)
+
+        started = time.perf_counter()
+        audio, content_type = await asyncio.to_thread(
+            resolved_client.synthesize,
+            text=text,
+            voice=voice,
+            model=model,
+            response_format=response_format,
+            speed=speed,
+        )
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        checks = {
+            "audioContentType": content_type.startswith("audio/"),
+            "minimumBytes": len(audio) >= TEST_SYNTHESIS_MIN_AUDIO_BYTES,
+        }
+        return JSONResponse(
+            content={
+                "ok": all(checks.values()),
+                "service": "moss-elevenlabs",
+                "provider": "elevenlabs",
+                "model": model,
+                "voice": voice,
+                "format": response_format,
+                "contentType": content_type,
+                "bytes": len(audio),
+                "elapsedMs": elapsed_ms,
+                "checks": checks,
+            },
+            headers={"Cache-Control": "no-store"},
         )
 
     @app.post("/v1/audio/transcriptions")

@@ -8,30 +8,14 @@ import httpx
 
 from .config import ElevenLabsSettings
 from .errors import ElevenLabsServiceError
-
-# The app's HTTP API transport speaks the OpenAI speech contract. These mappings translate the
-# subset Moss uses into ElevenLabs request parameters. AAC and FLAC are rejected instead of being
-# relabeled because the ElevenLabs API cannot emit them without an extra transcoding step.
-SUPPORTED_RESPONSE_FORMATS = {
-    "mp3": ("mp3_44100_128", "audio/mpeg"),
-    "opus": ("opus_48000_128", "audio/ogg"),
-    "pcm": ("pcm_16000", "audio/pcm"),
-    "wav": ("wav_44100", "audio/wav"),
-}
-
-# The conversation API transport exposes OpenAI voice names. Mapping the six presets keeps the
-# shadowing two-role flow usable. Any other value is treated as a real ElevenLabs voice ID.
-VOICE_ALIASES = {
-    "alloy": "JBFqnCBsd6RMkjVDRZzb",
-    "echo": "onwK4e9ZLuTAKqWW03F9",
-    "fable": "EXAVITQu4vr4xnSDxMaL",
-    "onyx": "pNInz6obpgDQGcFmaJgB",
-    "nova": "21m00Tcm4TlvDq8ikWAM",
-    "shimmer": "AZnzlk1XvdvUeBnXmlld",
-}
-
-MIN_VOICE_SPEED = 0.7
-MAX_VOICE_SPEED = 1.2
+# Re-exported so existing imports from ``client`` keep working; the values now live in the
+# shared rule module alongside the test-synthesis defaults.
+from .rules import (
+    MAX_VOICE_SPEED,
+    MIN_VOICE_SPEED,
+    SUPPORTED_RESPONSE_FORMATS,
+    VOICE_ALIASES,
+)
 
 
 def resolve_output_format(value: str) -> tuple[str, str]:

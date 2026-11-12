@@ -196,6 +196,15 @@
   非回环私网与 URL 凭据仍被拒绝，`local` 接入的 WS/HTTP sidecar 回环限制不变。新增 8 个
   前端断言覆盖配置、策略与 ASR/TTS 两条代理链路；`pnpm check` 与 `pnpm build` 通过。
   未验证真实麦克风、真实上游、进程级端到端联调和 390px 视觉复验。
+- T-321：新增同构的 Fish Audio 本机适配器（`backend/services/fishaudio`，`127.0.0.1:5584`），
+  把 Fish Audio TTS/ASR 翻译为同一套 OpenAI 兼容语音契约；规则表新增 `services.fishAudio`、
+  `models.fishAudio`、`formats.fishAudioSupported` 与 `fishAudio` 提供商段（音色别名映射为
+  内置默认音色、speed 直接转发、latency 默认 balanced），设置页新增“使用 Fish Audio”一键
+  填入，文档与 `.env.example` 同步。47 个 Python 单测 + 前端规则/预设断言通过；本地假上游
+  完成 5584 端到端冒烟（health、探针、OpenAI TTS、ASR），浏览器经 demo 实例验证预设与
+  「测试合成接口」链路。未配置真实 `FISH_API_KEY`，真实音质、延迟与配额未验收。对话输入框
+  同步优化：草稿自动增高、Escape 收起、空草稿失焦收起、桌面自动聚焦与生成期间“停止生成
+  回复”按钮，新增 4 个交互断言；桌面与 390px 视口无横向溢出。
 
 ## 验证规则
 

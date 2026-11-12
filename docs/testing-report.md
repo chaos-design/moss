@@ -24,7 +24,7 @@ flowchart LR
 | `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 77 文件，543 测试通过；本机默认 10s 上限下有 1 个重型用例偶发超时，放宽到 30s 全通过 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
-| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由与上游映射 | 23 测试通过 |
+| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 37 测试通过 |
 | `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 15 测试通过 |
 | `pnpm memory:test` | 评估集校验、召回排序、参数网格和学习指标 | 6 测试通过 |
 | `pnpm test:coverage` | 核心学习算法 | 语句/函数/行 100%，分支 94.73% |
@@ -326,8 +326,8 @@ TTS/ASR 翻译为 Moss 已支持的 OpenAI 兼容语音契约。`5578` TTS 网�
   `tests/shadowing-workspace.test.tsx > shows measured scores and saves the completed
   attempt` 在本机耗时 10.2–11.9s 而超时；以 `--testTimeout=30000` 复跑全部通过，说明是本机
   负载导致的既有重型用例超时，不是本次后端变更引入的行为回归。
-- `pnpm tts:test` 15、`pnpm asr:test` 35、`pnpm elevenlabs:test` 23、`pnpm db:test` 15、
-  `pnpm memory:test` 6：全部通过。
+- `pnpm tts:test` 15、`pnpm asr:test` 35、`pnpm elevenlabs:test` 37、`pnpm db:test` 15、
+  `pnpm memory:test` 6：全部通过（ElevenLabs 新增规则一致性与测试合成探针用例）。
 - `pnpm build`：通过，Next.js 16.3.3 完成 28 个页面/路由的静态生成与类型检查。
 
 真实进程冒烟：以本地假上游监听 `127.0.0.1:5598`，启动适配器进程并验证
@@ -337,6 +337,12 @@ voice ID、把 `speed: 1.5` 收敛为 `1.2`、以 `mp3_44100_128` 请求并原�
 `{"text":"mock transcript"}`；`aac` 返回 `400 unsupported_format`，非白名单 Origin
 返回 `403`。本机 macOS 系统代理会拦截回环请求，冒烟时需设置
 `NO_PROXY=127.0.0.1,localhost`；这只影响本地假上游测试，不影响默认 HTTPS 上游。
+
+后续补充的测试合成探针同样以本地假上游（不消耗额度）复跑：`pnpm elevenlabs:start` 在
+未显式设置模型/音色/格式时，由 `frontend/src/lib/speech-rules.json` 注入默认值，
+`GET /health` 返回 `eleven_v4` / `scribe_v2`；`POST /v1/audio/speech/test` 与
+`pnpm elevenlabs:test:synthesis` 均返回 `ok: true`，含 `audio/mpeg`、字节数、耗时与
+模型/音色/格式诊断，每次探测各调用上游一次。
 
 未验证：本环境没有 `ELEVENLABS_API_KEY`，因此未调用真实 ElevenLabs 服务，未验证真实音色
 质量、端到端延迟、账户配额、计费与保留策略。上述冒烟只证明协议翻译、进程启动和错误映射，
@@ -487,3 +493,30 @@ ASR 与 TTS 各提供“使用本机接口”一键填入，并让回环端点�
 
 未执行：真实麦克风录音、真实 ElevenLabs 上游调用、本机服务进程级端到端联调、桌面与
 390px 视口截图复验。Vercel 等无本机服务的运行环境不在本次验证范围内。
+
+## 2026-11-12 Fish Audio 本机适配器与对话输入框交互
+
+新增 Fish Audio 本机适配器（`backend/services/fishaudio`，loopback `5584`），把 Fish Audio
+的 TTS/ASR 翻译为 Moss 的 OpenAI 兼容语音契约，与 5583 ElevenLabs 适配器同构：`/health`、
+`/v1/audio/speech`、`/v1/audio/speech/test`（自检探针）、`/v1/audio/transcriptions`，
+共享 `frontend/src/lib/speech-rules.json` 规则表（`services.fishAudio`、`models.fishAudio`、
+`formats.fishAudioSupported`、`fishAudio` 提供商段）。设置页新增“使用 Fish Audio”一键
+填入；音色别名（含共享测试合成默认值 `alloy`）映射为空串 = Fish Audio 内置默认音色，
+`speed` 直接转发（上游接受 0.5–2），实时性档位默认 `balanced`。对话输入框同步优化：
+内容自动增高（上限约 5 行）、Escape 收起、空草稿失焦收起、桌面端自动聚焦，以及生成期间
+的“停止生成回复”按钮（草稿为空时唯一的打断入口）。
+
+自动化结果：
+
+- `pnpm fishaudio:test`：47 个用例通过（规则表一致性、`httpx.MockTransport` 客户端翻译、
+  FastAPI TestClient 端点契约与探针）。
+- 前端 Vitest 相关文件（conversation-workspace、speech-service-card、speech-rules、
+  speech-config）共 57 个用例通过，含新增的停止按钮、Escape 收起、Fish Audio 预设与
+  规则一致性断言。
+- `pnpm check`：通过（Biome、TypeScript、前端 Vitest、TTS/ASR/ElevenLabs/FishAudio 单测、
+  SQL 契约与记忆评估测试）。
+- `pnpm build`：通过（Next.js 编译成功，29 个静态页生成）。
+
+未执行：真实 Fish Audio 上游调用（当前环境未配置 `FISH_API_KEY`，探针仅通过本地假上游
+验证）、真实麦克风录音、桌面与 390px 视口截图复验。付费模型在账户未充值时会返回
+`fishaudio_payment_required`，需要在配置真实密钥后单独验收。

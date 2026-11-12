@@ -27,6 +27,8 @@
 | `POST /v1/tts/synthesize` | loopback + Origin | 文本长度与服务资源限制 | 文本与 WAV |
 | `POST http://127.0.0.1:5583/v1/audio/speech` | 可选本机 Bearer token | 2000 字符、上游配额 | 文本与音频 |
 | `POST http://127.0.0.1:5583/v1/audio/transcriptions` | 可选本机 Bearer token | 8 MB、上游配额 | 音频与转写 |
+| `POST http://127.0.0.1:5584/v1/audio/speech` | 可选本机 Bearer token | 2000 字符、上游配额 | 文本与音频 |
+| `POST http://127.0.0.1:5584/v1/audio/transcriptions` | 可选本机 Bearer token | 8 MB、上游配额 | 音频与转写 |
 
 Next.js API 成功响应使用 `{ "data": ... }`，失败响应使用
 `{ "error": { "code": "...", "message": "..." } }`。Provider 原始错误、响应正文和凭据
@@ -143,7 +145,7 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 ### 本机 local 接口
 
 `api` 接入也可以指向运行在本机的 OpenAI 兼容语音服务。设置卡片为 ASR 与 TTS 各提供
-“使用本机接口”一键填入，根地址与模型来自：
+“使用本机接口”（5583）与“使用 Fish Audio”（5584）一键填入，根地址与模型来自：
 
 | 变量 | 默认值 |
 | --- | --- |
@@ -151,8 +153,14 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 | `NEXT_PUBLIC_ASR_LOCAL_API_MODEL` | `scribe_v2` |
 | `NEXT_PUBLIC_TTS_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
 | `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | `eleven_v4` |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL` | `transcribe-1-pro` |
+| `NEXT_PUBLIC_TTS_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
+| `NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL` | `s2.1-pro-free` |
 
-这些值在构建期内联，只含公开地址与模型名，不含密钥。若本机服务配置了访问令牌（例如
+这些值在构建期内联，只含公开地址与模型名，不含密钥。所有跨服务默认值（端口、本地模型、
+音色、格式、限制、测试合成参数）统一登记在 `frontend/src/lib/speech-rules.json`，归纳说明见
+[语音服务通用规则配置](./speech-rules.md)。若本机服务配置了访问令牌（例如
 `MOSS_ELEVENLABS_ACCESS_TOKEN`），把同一个值填进设置的“API 密钥”，代理会以
 `Authorization: Bearer ...` 转发。请求始终经同源 `/api/speech/asr` 与 `/api/speech/tts`
 转发，浏览器不直连本机端口；根地址会自动追加 `/audio/transcriptions` 或 `/audio/speech`。
@@ -187,6 +195,29 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 `http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_v4`）。`/api/speech/*` 允许回环地址，
 因此本机开发与同机自托管的生产构建都可用；Vercel 等无本机服务的运行环境仍无法访问该端口。
 选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和计费策略。
+
+### 可选：Fish Audio 本机适配服务
+
+`backend/services/fishaudio` 是与 ElevenLabs 适配器同构的本机适配器，把 Fish Audio 的
+TTS 与 ASR 翻译为 OpenAI 兼容的 `/audio/speech` 与 `/audio/transcriptions`。它监听
+`127.0.0.1:5584`，不修改 `5577`–`5583` 或默认接入方式；只有把两种语音来源都切到 `api`
+并填写 `http://127.0.0.1:5584/v1`（或直接点“使用 Fish Audio”）时才生效。
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+```
+
+默认模型为 `s2.1-pro-free`（TTS，免费开发者档）与 `transcribe-1-pro`（ASR）。音色为
+Fish Audio voice model ID（reference_id），可留空使用内置默认音色；`alloy` 等六个 OpenAI
+别名统一映射为内置默认音色。`speed` 直接转发（上游接受 `0.5`–`2`），实时性档位默认
+`balanced`。付费模型在账户未充值时上游返回 402，适配器归一化为
+`fishaudio_payment_required` 并提示改用免费模型。协议、隐私边界和全部环境变量见
+[适配服务 README](../backend/services/fishaudio/README.md)。
+
+把两种语音来源都切到 `api` 后，可直接用设置的“使用 Fish Audio”一键填入（默认值即
+`http://127.0.0.1:5584/v1`、`transcribe-1-pro`、`s2.1-pro-free`）。选择该接入后，文本与
+录音会发送到 Fish Audio，适用其账户的日志、保留和计费策略。
 
 ## POST `/api/speech/asr`
 
@@ -247,6 +278,45 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
   `0.5`–`2`，`format` 取 `mp3`、`opus`、`aac`、`flac`、`wav`、`pcm` 之一，默认 `mp3`。
 - 端点策略、限流（240 次/分钟/endpoint）与错误码语义同 `/api/speech/asr`。
 - 上游返回非 `audio/*` 内容时记为 `speech_invalid_response`，浏览器据此回退到系统语音。
+
+## POST `/api/speech/tts/test`
+
+设置页「测试合成接口」使用的诊断端点。它复用 `/api/speech/tts` 的端点策略、Bearer 注入与
+合成链路，因此**对任意 OpenAI 兼容端点都可用**（包括本机 5583 接口）；区别是只回传结构化
+诊断，**不回传音频本体**，并额外校验 `Content-Type`、最小字节数与已知容器魔数
+（ID3 / RIFF / OggS，裸 PCM 只校验长度）。
+
+请求体与 `/api/speech/tts` 相同，但 `text`、`voice`、`speed`、`format` 可省略，缺省值来自
+通用规则配置（`Moss 语音接口测试成功。`、`alloy`、`1`、`mp3`）：
+
+```json
+{ "endpoint": { "endpoint": "http://127.0.0.1:5583/v1", "apiKey": "", "model": "eleven_v4" } }
+```
+
+成功响应（HTTP 200）：
+
+```json
+{
+  "ok": true,
+  "status": 200,
+  "contentType": "audio/mpeg",
+  "bytes": 10240,
+  "durationMs": 321,
+  "model": "eleven_v4",
+  "voice": "alloy",
+  "format": "mp3",
+  "checks": { "audioContentType": true, "plausiblePayload": true }
+}
+```
+
+上游不可达、返回非音频内容或音频不完整时，仍返回 HTTP 200 但带有 `ok: false` 与
+`error: { code, message }`，便于设置页直接展示原因；只有本地参数校验与限流失败才返回标准
+4xx。限流按 `speech-tts-test:<endpoint>` 单独计数，验证操作不会占满正常合成配额。
+
+本机 5583 / 5584 适配器另提供专用自检探针 `POST /v1/audio/speech/test`（同样只返回诊断），
+可用 `pnpm elevenlabs:test:synthesis` 或 `pnpm fishaudio:test:synthesis` 复跑；详见
+[ElevenLabs 适配服务 README](../backend/services/elevenlabs/README.md) 与
+[Fish Audio 适配服务 README](../backend/services/fishaudio/README.md)。
 
 ## POST `/api/conversation`
 

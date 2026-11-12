@@ -35,12 +35,19 @@ flowchart LR
 
 ```bash
 pnpm elevenlabs:setup
-ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+cp backend/services/elevenlabs/.env.local.example backend/services/elevenlabs/.env.local
+# 在 .env.local 中填入 ELEVENLABS_API_KEY
+pnpm elevenlabs:start
 curl http://127.0.0.1:5583/health
 ```
 
 `elevenlabs:setup` 创建独立 `.venv`，不读取也不修改 TTS/ASR 的虚拟环境。
 `elevenlabs:start` 只启动本适配器；`pnpm dev:offline` 不会自动启动它。
+
+本机实例配置放在同目录 `.env.local`（gitignore），可提交模板为 `.env.local.example`，
+其中包含当前服务实际使用的本地模型 `eleven_v4` / `scribe_v2`、默认音色与默认输出格式。
+未显式设置的项由 `start.mjs` 从 `frontend/src/lib/speech-rules.json` 注入，优先级为
+**规则表 < `.env.local` < shell 环境变量**；跨服务规则总结见 `docs/speech-rules.md`。
 
 未设置 `ELEVENLABS_API_KEY` 时服务仍会启动，`/health` 返回 `503`，语音请求返回
 `error.code = "not_configured"`，方便先验证端口和部署。
@@ -102,6 +109,31 @@ POST /v1/text-to-speech/{voice_id}?output_format=...
 { "text": ..., "model_id": ..., "voice_settings": { "speed": ... } }
 ```
 
+### `POST /v1/audio/speech/test`
+
+本机适配器自检探针。用通用规则配置的默认参数真实合成一次，**只返回结构化诊断，不回传
+音频本体**，便于在不解码音频的情况下确认模型、音色、格式与上游连通性。请求体可为空，也可以
+用 `text`（或 `input`）、`voice`、`model`、`response_format`、`speed` 覆盖默认值。
+
+```json
+{
+  "ok": true,
+  "service": "moss-elevenlabs",
+  "provider": "elevenlabs",
+  "model": "eleven_v4",
+  "voice": "alloy",
+  "format": "mp3",
+  "contentType": "audio/mpeg",
+  "bytes": 10240,
+  "elapsedMs": 321,
+  "checks": { "audioContentType": true, "minimumBytes": true }
+}
+```
+
+鉴权、密钥与错误语义与 `/v1/audio/speech` 一致。这是 5583 专用端点：设置页的
+「测试合成接口」走的是 `/api/speech/tts/test`，它仍调用标准 `/audio/speech`，因此对任何
+OpenAI 兼容端点都可用。
+
 ### `POST /v1/audio/transcriptions`
 
 `multipart/form-data`：
@@ -133,6 +165,7 @@ POST /v1/text-to-speech/{voice_id}?output_format=...
 | `MOSS_ELEVENLABS_TTS_MODEL` | `eleven_v4` | 默认 TTS 模型 |
 | `MOSS_ELEVENLABS_ASR_MODEL` | `scribe_v2` | 默认 ASR 模型 |
 | `MOSS_ELEVENLABS_DEFAULT_VOICE` | `JBFqnCBsd6RMkjVDRZzb` | 快速入门使用的 George |
+| `MOSS_ELEVENLABS_DEFAULT_RESPONSE_FORMAT` | `mp3` | 默认输出格式，仅接受 `mp3`/`opus`/`pcm`/`wav` |
 | `MOSS_ELEVENLABS_TIMEOUT_SECONDS` | `45` | 上游超时 |
 | `MOSS_ELEVENLABS_MAX_AUDIO_BYTES` | `8000000` | 单段音频上限 |
 | `MOSS_ELEVENLABS_MAX_TEXT_LENGTH` | `2000` | 单次合成文本上限 |
@@ -157,8 +190,11 @@ POST /v1/text-to-speech/{voice_id}?output_format=...
 ## 测试
 
 ```bash
-pnpm elevenlabs:test
+pnpm elevenlabs:test               # 单元测试：httpx.MockTransport + FastAPI TestClient
+pnpm elevenlabs:test:synthesis     # 探测已启动服务的 /v1/audio/speech/test
 ```
 
-测试使用 `httpx.MockTransport` 与 FastAPI `TestClient`，不访问 ElevenLabs、不消耗额度。
-真实音色、延迟、配额和账户保留策略需要在配置密钥后单独验收。
+单元测试不访问 ElevenLabs、不消耗额度，并断言 `rules.py` 与通用规则 JSON 保持一致。
+`test:synthesis` 会真实合成一次（用 `--url`、`--text`、`--model` 等参数可覆盖默认），
+只打印诊断信息；把 `MOSS_ELEVENLABS_BASE_URL` 指向本机假上游即可在不消耗额度的情况
+下复跑。真实音色、延迟、配额和账户保留策略需要在配置真实密钥后单独验收。

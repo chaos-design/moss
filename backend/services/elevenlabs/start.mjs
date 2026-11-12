@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const projectRoot = dirname(dirname(dirname(scriptDir)))
+const rulesFile = join(projectRoot, "frontend", "src", "lib", "speech-rules.json")
 const python =
   process.platform === "win32"
     ? join(scriptDir, ".venv", "Scripts", "python.exe")
@@ -44,7 +45,33 @@ function loadLocalEnv() {
   return values
 }
 
-const env = { ...loadLocalEnv(), ...process.env }
+// 通用规则配置（frontend/src/lib/speech-rules.json）是本机模型、音色、格式与限制的唯一
+// 默认值来源。优先级：规则表 < 本目录 .env.local < shell 环境变量。
+// 规则表缺失时静默退回 Python 代码里的兜底默认值，不影响已有部署。
+function loadRuleDefaults() {
+  if (!existsSync(rulesFile)) {
+    return {}
+  }
+  try {
+    const rules = JSON.parse(readFileSync(rulesFile, "utf8"))
+    return {
+      MOSS_ELEVENLABS_HOST: rules.loopbackHosts[0],
+      MOSS_ELEVENLABS_PORT: String(rules.services.localApi.port),
+      MOSS_ELEVENLABS_TTS_MODEL: rules.models.localApi.tts,
+      MOSS_ELEVENLABS_ASR_MODEL: rules.models.localApi.asr,
+      MOSS_ELEVENLABS_DEFAULT_VOICE: rules.voice.default,
+      MOSS_ELEVENLABS_DEFAULT_RESPONSE_FORMAT: rules.formats.default,
+      MOSS_ELEVENLABS_TIMEOUT_SECONDS: String(rules.limits.adapterTimeoutSeconds),
+      MOSS_ELEVENLABS_MAX_AUDIO_BYTES: String(rules.limits.maxAsrAudioBytes),
+      MOSS_ELEVENLABS_MAX_TEXT_LENGTH: String(rules.limits.maxTtsTextLength),
+    }
+  } catch (error) {
+    console.warn("[elevenlabs] 通用规则配置读取失败，改用服务内置默认值。", error)
+    return {}
+  }
+}
+
+const env = { ...loadRuleDefaults(), ...loadLocalEnv(), ...process.env }
 
 if (!env.ELEVENLABS_API_KEY) {
   console.warn(

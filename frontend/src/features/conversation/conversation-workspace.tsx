@@ -23,6 +23,7 @@ import {
   RotateCcwIcon,
   SendIcon,
   SettingsIcon,
+  SquareIcon,
   Trash2Icon,
   Volume2Icon,
   VolumeXIcon,
@@ -347,6 +348,7 @@ export function ConversationWorkspace({
     selectVoice,
     sendDraft,
     setDraft,
+    stopReply,
     speakerEnabled,
     speechPlaybackState,
     speechRecognitionAvailable,
@@ -376,6 +378,7 @@ export function ConversationWorkspace({
   }, [messages])
   // Collapsed keeps the floating composer as a slim pill; expanded reveals the full textarea.
   const [composerExpanded, setComposerExpanded] = useState(false)
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null)
   // Track the floating panel height so the transcript can reserve matching bottom padding
   // and the last turn never hides behind the overlay.
   const [composerHeight, setComposerHeight] = useState(0)
@@ -408,6 +411,29 @@ export function ConversationWorkspace({
     }
   }, [callActive])
 
+  // Auto-grow the draft with its content so longer messages stay fully visible, capped to keep
+  // the floating panel from covering the transcript. Collapsed stays a one-row pill.
+  useEffect(() => {
+    const node = composerTextareaRef.current
+    if (!node) {
+      return
+    }
+    node.style.height = "auto"
+    const nextHeight = Math.min(node.scrollHeight, composerExpanded ? 152 : 56)
+    node.style.height = `${nextHeight}px`
+  }, [composerExpanded, draft])
+
+  // Desktop learners can start typing right away; touch devices keep the keyboard closed until
+  // the composer is actually tapped.
+  useEffect(() => {
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: fine)").matches
+    ) {
+      composerTextareaRef.current?.focus()
+    }
+  }, [])
+
   useEffect(() => {
     const transcript = transcriptRef.current
     if (!transcript) {
@@ -428,6 +454,12 @@ export function ConversationWorkspace({
       if (draft.trim()) {
         sendDraft()
       }
+      return
+    }
+    // Escape 收起展开的输入框，把屏幕还给转写内容；草稿保留在输入框里。
+    if (event.key === "Escape" && composerExpanded) {
+      event.preventDefault()
+      setComposerExpanded(false)
     }
   }
 
@@ -659,12 +691,20 @@ export function ConversationWorkspace({
                   )}
                 >
                   <InputGroupTextarea
+                    ref={composerTextareaRef}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={handleDraftKeyDown}
                     onFocus={() => setComposerExpanded(true)}
-                    rows={composerExpanded ? 2 : 1}
-                    placeholder="输入中文或英文消息…"
+                    onBlur={() => {
+                      // 失焦只收起空输入框：正在写的草稿保持展开，避免打断输入。
+                      if (!draft.trim()) {
+                        setComposerExpanded(false)
+                      }
+                    }}
+                    placeholder={
+                      pending ? "对方正在回应，可以先继续输入…" : "输入中文或英文消息…"
+                    }
                     aria-label="输入对话内容"
                     className={cn(
                       "py-1 transition-[min-height] duration-300 ease-out",
@@ -712,6 +752,18 @@ export function ConversationWorkspace({
                       <MicIcon data-icon="inline-start" />
                       语音
                     </Button>
+                    {pending ? (
+                      <InputGroupButton
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label="停止生成回复"
+                        title="停止生成回复"
+                        onClick={stopReply}
+                      >
+                        <SquareIcon aria-hidden="true" />
+                      </InputGroupButton>
+                    ) : null}
                     <InputGroupButton
                       type="submit"
                       size="icon-sm"

@@ -6,6 +6,7 @@ import {
   maximumSpeechModelLength,
   type SpeechService,
 } from "@/lib/speech-config"
+import { speechRules } from "@/lib/speech-rules"
 
 export type SpeechApiEndpoint = {
   endpoint: string
@@ -13,18 +14,16 @@ export type SpeechApiEndpoint = {
   model: string
 }
 
-export const maximumAsrAudioBytes = 8_000_000
-export const maximumTtsTextLength = 2_000
-export const speechRequestTimeoutMs = 30_000
+export const maximumAsrAudioBytes = speechRules.limits.maxAsrAudioBytes
+export const maximumTtsTextLength = speechRules.limits.maxTtsTextLength
+export const speechRequestTimeoutMs = speechRules.limits.speechRequestTimeoutMs
 
 // Loopback hosts are built into the production allowlist so /api/speech/* can proxy to a speech
 // gateway running beside the app server. Non-loopback private-network hosts stay blocked.
 const allowedBrowserSpeechHosts = [
   "api.openai.com",
   "api.anthropic.com",
-  "localhost",
-  "127.0.0.1",
-  "::1",
+  ...speechRules.loopbackHosts,
 ]
 
 export class SpeechGatewayError extends Error {

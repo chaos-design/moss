@@ -33,6 +33,8 @@ import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import {
   describeSpeechTransport,
   getDefaultApiEndpoint,
+  getDefaultFishAudioEndpoint,
+  getDefaultFishAudioModel,
   getDefaultLocalApiEndpoint,
   getDefaultLocalApiModel,
   getDefaultLocalEndpoint,
@@ -44,6 +46,7 @@ import {
   speechTransportLabels,
   speechTransports,
 } from "@/lib/speech-config"
+import { testSynthesisDefaults } from "@/lib/speech-rules"
 import { cn } from "@/lib/utils"
 
 const transportItems = speechTransports.map((transport) => ({
@@ -66,6 +69,21 @@ const serviceTransportHints: Record<SpeechTransport, string> = {
 
 type TestStatus = "idle" | "testing" | "success" | "error"
 
+type TestDiagnostic = {
+  ok?: boolean
+  contentType?: string
+  bytes?: number
+  durationMs?: number
+  error?: { code?: string; message?: string }
+}
+
+function describeAudioSize(bytes: number | undefined) {
+  if (typeof bytes !== "number" || bytes < 0) {
+    return "0 B"
+  }
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
+}
+
 export function SpeechServiceCard() {
   const { config, resolved, setEndpoint } = useSpeechConfig()
   const [testStatus, setTestStatus] = useState<TestStatus>("idle")
@@ -84,20 +102,32 @@ export function SpeechServiceCard() {
     setTestStatus("testing")
     setTestMessage("正在请求语音合成接口…")
     try {
-      const response = await fetch("/api/speech/tts", {
+      const response = await fetch("/api/speech/tts/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           endpoint: { apiKey: tts.apiKey, endpoint: tts.endpoint, model: tts.model },
-          text: "Moss 语音接口测试成功。",
-          voice: "alloy",
+          text: testSynthesisDefaults.text,
+          voice: testSynthesisDefaults.voice,
         }),
       })
-      if (!response.ok) {
-        throw new Error(`接口返回 ${response.status}`)
+      // 诊断端点始终回 JSON；非 JSON 响应按 HTTP 状态兜底，保证错误可读。
+      let diagnostic: TestDiagnostic = {}
+      try {
+        diagnostic = (await response.json()) as TestDiagnostic
+      } catch {
+        // 保留空诊断，下面用 HTTP 状态描述失败。
+      }
+      if (!response.ok || !diagnostic.ok) {
+        const reason = diagnostic.error?.message ?? `接口返回 ${response.status}`
+        const code = diagnostic.error?.code
+        throw new Error(code ? `${reason}（${code}）` : reason)
       }
       setTestStatus("success")
-      setTestMessage("语音合成接口可用，音频已正常返回。")
+      setTestMessage(
+        `语音合成接口可用，音频已正常返回。${diagnostic.contentType ?? "audio"} · ` +
+          `${describeAudioSize(diagnostic.bytes)} · ${diagnostic.durationMs ?? 0} ms`,
+      )
     } catch (error) {
       setTestStatus("error")
       setTestMessage(
@@ -275,13 +305,27 @@ function SpeechEndpointFields({
             >
               使用本机接口
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`填入${serviceLabels[service]}Fish Audio 接口`}
+              onClick={() =>
+                onChange({
+                  endpoint: getDefaultFishAudioEndpoint(service),
+                  model: getDefaultFishAudioModel(service),
+                })
+              }
+            >
+              使用 Fish Audio
+            </Button>
             <span className="min-w-0 break-all text-xs text-muted-foreground">
-              {getDefaultLocalApiEndpoint(service)}
+              {getDefaultLocalApiEndpoint(service)} · {getDefaultFishAudioEndpoint(service)}
             </span>
           </div>
           <FieldDescription>
             填写服务根地址，系统会追加 /audio/{service === "asr" ? "transcriptions" : "speech"}
-            ；「使用本机接口」可一键填入本机 local 服务地址与模型。
+            ；「使用本机接口」「使用 Fish Audio」可一键填入对应本机适配器地址与模型。
           </FieldDescription>
         </Field>
       ) : (

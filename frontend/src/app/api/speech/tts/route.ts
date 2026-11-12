@@ -6,9 +6,10 @@ import {
   SpeechGatewayError,
   synthesizeSpeechAudio,
 } from "@/lib/server/speech-gateway"
+import { speechRules } from "@/lib/speech-rules"
 
-const maximumRequestBytes = 64_000
-const allowedFormats = new Set(["mp3", "opus", "aac", "flac", "wav", "pcm"])
+const maximumRequestBytes = speechRules.limits.maxSpeechRequestBytes
+const allowedFormats = new Set(speechRules.formats.routeAllowed)
 
 type SynthesisRequest = {
   endpoint: unknown
@@ -57,17 +58,17 @@ export async function POST(request: Request) {
 
   const speed =
     typeof candidate.speed === "number" && Number.isFinite(candidate.speed)
-      ? Math.min(2, Math.max(0.5, candidate.speed))
-      : 1
+      ? Math.min(speechRules.speed.max, Math.max(speechRules.speed.min, candidate.speed))
+      : speechRules.speed.default
   const format =
     typeof candidate.format === "string" && allowedFormats.has(candidate.format)
       ? candidate.format
-      : "mp3"
+      : speechRules.formats.default
 
   if (
     isRateLimited({
       key: `speech-tts:${endpoint.endpoint}`,
-      limit: 240,
+      limit: speechRules.limits.ttsRateLimitPerMinute,
       windowMs: 60_000,
     })
   ) {

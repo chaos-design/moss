@@ -23,6 +23,8 @@ flowchart LR
     Moss -->|HTTPS, 服务端调用| AI[AI Provider]
     Moss -->|loopback, HTTP API 接入| ElevenLabs[ElevenLabs Adapter :5583]
     ElevenLabs -->|HTTPS| ElevenLabsApi[ElevenLabs API]
+    Moss -->|loopback, HTTP API 接入| FishAudio[Fish Audio Adapter :5584]
+    FishAudio -->|HTTPS| FishAudioApi[Fish Audio API]
     Learner -->|PCM over WebSocket| ASR[本地 ASR 服务]
     Learner -->|HTTP audio/wav| TTS[本地 TTS 网关]
     TTS --> Kokoro[Kokoro]
@@ -75,6 +77,7 @@ flowchart TB
         Audio8[Audio8 :5582]
         CosyVoice[CosyVoice :5581]
         ElevenLabs[ElevenLabs Adapter :5583]
+        FishAudio[Fish Audio Adapter :5584]
         Gateway --> Audio8
         Gateway --> CosyVoice
     end
@@ -89,6 +92,8 @@ flowchart TB
     Routes -->|语音转发| VoiceAPI[OpenAI 兼容语音接口]
     Routes -->|可选语音转发| ElevenLabs
     ElevenLabs -->|HTTPS| ElevenLabsApi[ElevenLabs API]
+    Routes -->|可选语音转发| FishAudio
+    FishAudio -->|HTTPS| FishAudioApi[Fish Audio API]
     Speech -->|WebSocket| ASR
     Speech -->|HTTP| Gateway
     Speech -->|浏览器引擎| WebSpeech[系统 SpeechRecognition / speechSynthesis]
@@ -106,6 +111,7 @@ flowchart TB
 | ASR | PCM 分段和中英识别 | 对话推理、音频保存 |
 | TTS Gateway | 统一合成协议、缓存、引擎路由 | 学习状态 |
 | ElevenLabs Adapter | OpenAI 兼容语音契约到 ElevenLabs 的翻译、密钥隔离 | 默认启动、学习状态、音频保存 |
+| Fish Audio Adapter | OpenAI 兼容语音契约到 Fish Audio 的翻译、密钥隔离 | 默认启动、学习状态、音频保存 |
 
 ## 4. 代码依赖方向
 
@@ -254,6 +260,7 @@ flowchart LR
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
 | 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase；本机接口预设的地址与模型来自构建期内联的 `NEXT_PUBLIC_*_LOCAL_API_*`，不含密钥 |
 | ElevenLabs 请求内容 | 仅本机适配器进程内存 | 发送到 ElevenLabs API | 不落盘；文本、录音与保留策略由上游账户决定 |
+| Fish Audio 请求内容 | 仅本机适配器进程内存 | 发送到 Fish Audio API | 不落盘；文本、录音与保留策略由上游账户决定 |
 | 跟读评分 | 学习记忆事件 | Supabase 快照与 `shadowing_attempts` | 保存声学分数，不保存录音 |
 | 长期向量记忆 | Supabase `learning_memory_documents` | 对话、复习、跟读、表达学习经服务端写入；旧快照由管理员 CLI 幂等回填；RPC 召回 | RLS 用户隔离；`source_type` 是本地 `LearningActivityType` 的真子集，回想尝试无可检索内容故不入库 |
 | 账户删除审计 | Supabase `account_deletion_audits` | 仅 server-only 管理员客户端写入 | 只保留 HMAC 用户指纹和聚合计数，不保留邮箱或学习内容 |
@@ -279,6 +286,10 @@ flowchart LR
   `::1` 内置允许，用于本机 local 接口（应用与语音服务同机的自托管场景），非回环私网仍拒绝。
   浏览器传入的语音密钥只在当次转发中使用，不落盘、不记录、不返回客户端。
   上游请求 30 秒超时且不跟随重定向。
+- 语音链路的端口、本地模型、音色别名、格式映射、长度/超时限制与测试合成默认值统一由
+  `frontend/src/lib/speech-rules.json` 提供，前端规则封装与本机适配器启动脚本共用；
+  规则归纳与消费方见 `docs/speech-rules.md`。`/api/speech/tts/test` 与本机适配器
+  `/v1/audio/speech/test` 只回传诊断，不回传音频本体。
 - 认证 API 通过 Supabase `check_rate_limit` 按 `auth.uid()` 和固定 bucket 执行跨实例原子
   限流；额度与窗口由数据库决定，底层表不授予应用用户权限。RPC 不可用时，公共服务端
   模型请求拒绝继续；演示模式与携带加密 BYOK 配置的推理请求使用容量有界的进程内限流。
@@ -297,6 +308,7 @@ flowchart LR
 | TTS 网关或 API 不可达 | 回退浏览器 `speechSynthesis` |
 | 可选 TTS sidecar 缺失 | 其他已安装引擎继续工作 |
 | 可选 ElevenLabs 适配器缺失或未配置密钥 | 保持当前接入方式失败并提示；不影响 `5578`/`5580` 与浏览器语音 |
+| 可选 Fish Audio 适配器缺失或未配置密钥 | 保持当前接入方式失败并提示；不影响 `5578`/`5580` 与浏览器语音 |
 
 ## 9. 部署拓扑
 

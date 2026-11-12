@@ -17,6 +17,7 @@ import {
   TranscriptTurn,
   VoiceCallPanel,
 } from "@/features/conversation/conversation-workspace"
+import { setConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { asrEngineOptions } from "@/lib/asr-config"
 import type { StoredConversationMessage } from "@/lib/conversation-history"
 import { getConversationScene } from "@/lib/conversation-scenes"
@@ -35,7 +36,27 @@ vi.mock("@/components/auth-provider", () => ({
   }),
 }))
 
-afterEach(cleanup)
+// Composer tests submit a real turn, so TTS playback and the model-config envelope are stubbed
+// onto inert paths instead of reaching for browser audio or WebCrypto.
+vi.mock("@/features/speech/use-local-tts", () => ({
+  useLocalTts: () => ({
+    playbackState: "idle",
+    prepare: vi.fn().mockResolvedValue(undefined),
+    previewVoice: vi.fn().mockResolvedValue(undefined),
+    speak: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  }),
+}))
+
+vi.mock("@/lib/model-config-envelope", () => ({
+  createModelConfigEnvelope: vi.fn().mockResolvedValue({ signature: "test" }),
+  resetModelConfigPublicKey: vi.fn(),
+}))
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 beforeEach(() => {
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => true },
@@ -322,6 +343,128 @@ describe("conversation feedback UI", () => {
     expect(composerClasses).toContain("dark:has-disabled:bg-transparent")
     expect(composerClasses).not.toContain("has-disabled:opacity-50")
     expect(composerClasses).not.toContain("has-disabled:bg-input/50")
+  })
+
+  it("collapses the expanded composer on Escape and keeps the draft", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    expect(textarea.className).toContain("min-h-8")
+
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+    fireEvent.change(textarea, { target: { value: "Could I get a latte?" } })
+
+    fireEvent.keyDown(textarea, { key: "Escape" })
+    expect(textarea.className).toContain("min-h-8")
+    // 收起只是把屏幕还给转写内容，草稿必须原样保留。
+    expect(
+      (screen.getByRole("textbox", { name: "输入对话内容" }) as HTMLTextAreaElement).value,
+    ).toBe("Could I get a latte?")
+  })
+
+  it("collapses an empty composer on blur and keeps a draft expanded", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+
+    fireEvent.focus(textarea)
+    fireEvent.blur(textarea)
+    expect(textarea.className).toContain("min-h-8")
+
+    fireEvent.focus(textarea)
+    fireEvent.change(textarea, { target: { value: "Still typing here." } })
+    fireEvent.blur(textarea)
+    // 正在写的草稿不因失焦被收起，避免打断输入。
+    expect(textarea.className).toContain("min-h-14")
+  })
+
+  it("offers a stop control while a reply is pending and clears it when stopped", () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    const deferred: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve
+          }),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "I would like a latte, please." } })
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    // 生成期间提供独立的停止入口：草稿为空时这是唯一的打断方式。
+    expect(screen.getByRole("button", { name: "停止生成回复" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "停止生成回复" }))
+
+    expect(screen.queryByRole("button", { name: "停止生成回复" })).toBeNull()
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
+    // 被打断的提问保留在转写里，等待重发或删除。
+    expect(screen.getByText("I would like a latte, please.")).toBeTruthy()
+    deferred.resolve?.(null)
+  })
+
+  it("clears the pending state once the reply lands", async () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              content: "Certainly, one latte coming up.",
+              translation: "好的，一杯拿铁马上来。",
+              recall: "",
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "One latte, please." } })
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    expect(screen.getByRole("button", { name: "停止生成回复" })).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "停止生成回复" })).toBeNull(),
+    )
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
+    expect(screen.getByText("Certainly, one latte coming up.")).toBeTruthy()
   })
 
   it("gives the transcript its own breathing room below the session metrics bar", () => {

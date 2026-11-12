@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from .rules import DEFAULT_RESPONSE_FORMAT, SUPPORTED_RESPONSE_FORMATS
+
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 DEFAULT_API_BASE_URL = "https://api.elevenlabs.io"
 # George, the stock voice used by the ElevenLabs quickstart.
@@ -33,6 +35,16 @@ def _read_timeout(name: str, default: float) -> float:
     return value
 
 
+def _read_response_format(value: str | None) -> str:
+    resolved = (value or DEFAULT_RESPONSE_FORMAT).strip().lower()
+    if resolved not in SUPPORTED_RESPONSE_FORMATS:
+        supported = ", ".join(sorted(SUPPORTED_RESPONSE_FORMATS))
+        raise ValueError(
+            f"MOSS_ELEVENLABS_DEFAULT_RESPONSE_FORMAT must be one of: {supported}"
+        )
+    return resolved
+
+
 def _validate_base_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.username or parsed.password:
@@ -60,6 +72,7 @@ class ElevenLabsSettings:
     request_timeout_seconds: float = 45
     max_audio_bytes: int = 8_000_000
     max_text_length: int = 2_000
+    default_response_format: str = DEFAULT_RESPONSE_FORMAT
 
     @property
     def configured(self) -> bool:
@@ -100,5 +113,8 @@ class ElevenLabsSettings:
             ),
             max_text_length=_read_positive_int(
                 "MOSS_ELEVENLABS_MAX_TEXT_LENGTH", 2_000, 1, 10_000
+            ),
+            default_response_format=_read_response_format(
+                os.environ.get("MOSS_ELEVENLABS_DEFAULT_RESPONSE_FORMAT")
             ),
         )

@@ -141,6 +141,16 @@ NEXT_PUBLIC_TTS_LOCAL_API_MODEL=eleven_v4
 `moss:speech-config:v1`。回环主机在生产构建下也内置允许，因此同机自托管的
 `pnpm start` 可用；Vercel 等无本机服务的环境不可用该链路。
 
+设置卡片还提供“使用 Fish Audio”一键填入，对应下列变量（默认指向 5584 的 Fish Audio
+适配器）：
+
+```bash
+NEXT_PUBLIC_ASR_FISH_AUDIO_URL=http://127.0.0.1:5584/v1
+NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL=transcribe-1-pro
+NEXT_PUBLIC_TTS_FISH_AUDIO_URL=http://127.0.0.1:5584/v1
+NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL=s2.1-pro-free
+```
+
 生产环境对接**远程**语音主机时必须把允许的主机名写入白名单，否则 `/api/speech/*` 会拒绝
 转发：
 
@@ -190,6 +200,23 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 只存在于本机适配器进程，不得写入 `NEXT_PUBLIC_*` 或浏览器配置。该链路适用于本机开发与
 应用服务器同机部署语音服务的自托管生产环境；Vercel 上无法访问用户本机端口，仍应使用
 白名单内的远程语音端点。
+
+### 可选：Fish Audio 本机适配
+
+需要在本地验证 Fish Audio 音色或转录时，可启动独立适配器：
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+```
+
+适配器监听 `127.0.0.1:5584`，把 Fish Audio 翻译为 OpenAI 兼容语音契约；在“偏好设置 →
+语音服务接入”中把 ASR 与 TTS 切到 HTTP API，再点各自的“使用 Fish Audio”即可，无需手填
+地址。默认模型为免费档 `s2.1-pro-free`（TTS）与 `transcribe-1-pro`（ASR）；付费模型在
+账户未充值时上游返回 402，适配器归一化为 `fishaudio_payment_required`。它不影响
+`5578`/`5580`/`5583` 的默认路径，也不会随 `dev:offline` 启动。`FISH_API_KEY` 只存在于
+本机适配器进程，不得写入 `NEXT_PUBLIC_*` 或浏览器配置。适用环境限制与 ElevenLabs
+适配器相同。
 
 ## 实时 ASR 服务
 
@@ -520,6 +547,7 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 | `NEXT_PUBLIC_DEMO_MODE` | 构建期内联 | 部署环境必须为 `false` 或不设置 |
 | `NEXT_PUBLIC_TTS_SERVICE_URL`、`NEXT_PUBLIC_ASR_SERVICE_URL`、`NEXT_PUBLIC_FUNASR_SERVICE_URL` | 构建期内联 | 保持默认 loopback 值 |
 | `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_ASR_API_MODEL`、`NEXT_PUBLIC_TTS_API_URL`、`NEXT_PUBLIC_TTS_API_MODEL` | 构建期内联 | 使用远程 HTTP API 语音接入时必需 |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_URL`、`NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL`、`NEXT_PUBLIC_TTS_FISH_AUDIO_URL`、`NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL` | 构建期内联 | 使用 Fish Audio 本机接口预设时可选，缺省回落到 `127.0.0.1:5584/v1` |
 | `NEXT_PUBLIC_ASR_LOCAL_API_URL`、`NEXT_PUBLIC_ASR_LOCAL_API_MODEL`、`NEXT_PUBLIC_TTS_LOCAL_API_URL`、`NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | 构建期内联 | 使用本机 local 接口预设时可选，缺省回落到 `127.0.0.1:5583/v1` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_MODEL` | 构建期内联 | 仅旧部署兼容 |
 | `SUPABASE_SERVICE_ROLE_KEY`、`ACCOUNT_DELETION_AUDIT_SECRET` | 运行时服务端 | 账户删除与导出必需 |
@@ -529,6 +557,7 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 | `MODEL_CONFIG_PRIVATE_KEY_BASE64` | 运行时服务端 | 生产多实例必需 |
 | `MOSS_TTS_*`、`MOSS_ASR_*`、`MOSS_KOKORO_*` | 不适用 | Vercel 上不要配置 |
 | `MOSS_ELEVENLABS_*`、`ELEVENLABS_API_KEY` | 不适用 | 仅本机可选的 ElevenLabs 适配器；Vercel 上不要配置 |
+| `MOSS_FISHAUDIO_*`、`FISH_API_KEY` | 不适用 | 仅本机可选的 Fish Audio 适配器；Vercel 上不要配置 |
 
 前三行未配置时，`next build` 仍会成功，但登录、云同步与对话会在运行时报
 `service_not_configured`。构建通过不代表配置正确。

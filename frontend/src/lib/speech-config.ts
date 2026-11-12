@@ -1,4 +1,5 @@
 import { isValidModelEndpoint } from "@/lib/model-config"
+import { speechRules } from "@/lib/speech-rules"
 
 // Speech services support three transports so the workspace stays usable without the local
 // Python sidecars: the loopback WebSocket/HTTP services, an OpenAI-compatible HTTP API, or the
@@ -114,21 +115,26 @@ export function parseApiVoiceValue(value: string) {
 
 const defaultAsrApiEndpoint = "https://api.openai.com/v1"
 const defaultTtsApiEndpoint = "https://api.openai.com/v1"
-const defaultAsrApiModel = "whisper-1"
-const defaultTtsApiModel = "tts-1"
-// A loopback OpenAI-compatible gateway is a first-class local option. The defaults match the
-// optional ElevenLabs adapter; any other local speech server can be configured via env.
-const defaultAsrLocalApiEndpoint = "http://127.0.0.1:5583/v1"
-const defaultTtsLocalApiEndpoint = "http://127.0.0.1:5583/v1"
-const defaultAsrLocalApiModel = "scribe_v2"
-const defaultTtsLocalApiModel = "eleven_v4"
+const defaultAsrApiModel = speechRules.models.remoteApi.asr
+const defaultTtsApiModel = speechRules.models.remoteApi.tts
+// A loopback OpenAI-compatible gateway is a first-class local option. Its address, local models
+// and limits come from the shared rule table so the browser preset and the Python adapter agree.
+const defaultAsrLocalApiEndpoint = speechRules.services.localApi.baseUrl
+const defaultTtsLocalApiEndpoint = speechRules.services.localApi.baseUrl
+const defaultAsrLocalApiModel = speechRules.models.localApi.asr
+const defaultTtsLocalApiModel = speechRules.models.localApi.tts
+// The Fish Audio adapter follows the same pattern on its own loopback port (5584).
+const defaultAsrFishAudioEndpoint = speechRules.services.fishAudio.baseUrl
+const defaultTtsFishAudioEndpoint = speechRules.services.fishAudio.baseUrl
+const defaultAsrFishAudioModel = speechRules.models.fishAudio.asr
+const defaultTtsFishAudioModel = speechRules.models.fishAudio.tts
 
-const loopbackSpeechHosts = new Set(["localhost", "127.0.0.1", "::1"])
-const speechProtocols = new Set(["http:", "https:", "ws:", "wss:"])
+const loopbackSpeechHosts = new Set(speechRules.loopbackHosts)
+const speechProtocols = new Set(speechRules.allowedProtocols)
 
-export const maximumSpeechApiKeyLength = 400
-export const maximumSpeechEndpointLength = 300
-export const maximumSpeechModelLength = 120
+export const maximumSpeechApiKeyLength = speechRules.limits.maxApiKeyLength
+export const maximumSpeechEndpointLength = speechRules.limits.maxEndpointLength
+export const maximumSpeechModelLength = speechRules.limits.maxModelLength
 
 function isSpeechTransport(value: unknown): value is SpeechTransport {
   return typeof value === "string" && speechTransports.includes(value as SpeechTransport)
@@ -230,6 +236,30 @@ export function getDefaultLocalApiModel(service: SpeechService) {
   return (
     configured?.trim() ||
     (service === "asr" ? defaultAsrLocalApiModel : defaultTtsLocalApiModel)
+  )
+}
+
+// The base URL and default models of the local Fish Audio adapter, used by the "使用 Fish Audio
+// 接口" preset in settings. /api/speech/* appends /audio/transcriptions or /audio/speech.
+export function getDefaultFishAudioEndpoint(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_FISH_AUDIO_URL
+      : process.env.NEXT_PUBLIC_TTS_FISH_AUDIO_URL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrFishAudioEndpoint : defaultTtsFishAudioEndpoint)
+  ).replace(/\/+$/, "")
+}
+
+export function getDefaultFishAudioModel(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL
+      : process.env.NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrFishAudioModel : defaultTtsFishAudioModel)
   )
 }
 

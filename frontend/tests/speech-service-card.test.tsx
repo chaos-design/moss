@@ -6,6 +6,8 @@ import { SpeechServiceCard } from "@/features/settings/speech-service-card"
 import { setSpeechConfig } from "@/features/speech/use-speech-config"
 import {
   defaultSpeechConfig,
+  getDefaultFishAudioEndpoint,
+  getDefaultFishAudioModel,
   getDefaultLocalApiModel,
   isLoopbackSpeechEndpoint,
   speechConfigStorageKey,
@@ -92,6 +94,24 @@ describe("SpeechServiceCard", () => {
     expect(screen.getAllByText(/（本机接口）/)).toHaveLength(2)
   })
 
+  it("applies the Fish Audio preset with its own loopback address and models", () => {
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.click(screen.getByRole("button", { name: "填入语音识别Fish Audio 接口" }))
+    fireEvent.click(screen.getByRole("button", { name: "填入语音合成Fish Audio 接口" }))
+
+    const stored = storedConfig()
+    expect(stored.asr.endpoint).toBe(getDefaultFishAudioEndpoint("asr"))
+    expect(stored.tts.endpoint).toBe(getDefaultFishAudioEndpoint("tts"))
+    expect(stored.asr.endpoint).toBe("http://127.0.0.1:5584/v1")
+    expect(stored.asr.model).toBe(getDefaultFishAudioModel("asr"))
+    expect(stored.tts.model).toBe(getDefaultFishAudioModel("tts"))
+    expect(stored.asr.model).toBe("transcribe-1-pro")
+    expect(stored.tts.model).toBe("s2.1-pro-free")
+    expect(screen.getAllByText(/（本机接口）/)).toHaveLength(2)
+  })
+
   it("warns when an API endpoint is not reachable over a public HTTPS address", () => {
     render(<SpeechServiceCard />)
     selectApiTransportForBothServices()
@@ -119,12 +139,21 @@ describe("SpeechServiceCard", () => {
     )
   })
 
-  it("verifies the synthesis endpoint through the app speech route", async () => {
+  it("verifies the synthesis endpoint through the diagnostic route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(new Uint8Array([1, 2, 3]), {
-        status: 200,
-        headers: { "Content-Type": "audio/mpeg" },
-      }),
+      new Response(
+        JSON.stringify({
+          ok: true,
+          contentType: "audio/mpeg",
+          bytes: 2048,
+          durationMs: 321,
+          model: "tts-1",
+          voice: "alloy",
+          format: "mp3",
+          checks: { audioContentType: true, plausiblePayload: true },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     )
     vi.stubGlobal("fetch", fetchMock)
     render(<SpeechServiceCard />)
@@ -136,10 +165,12 @@ describe("SpeechServiceCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "测试合成接口" }))
 
     await waitFor(() =>
-      expect(screen.getByText("语音合成接口可用，音频已正常返回。")).toBeTruthy(),
+      expect(
+        screen.getByText(/语音合成接口可用，音频已正常返回。audio\/mpeg · 2.0 KB · 321 ms/),
+      ).toBeTruthy(),
     )
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(path).toBe("/api/speech/tts")
+    expect(path).toBe("/api/speech/tts/test")
     expect(JSON.parse(String(init.body)).text).toContain("Moss")
   })
 
@@ -154,5 +185,30 @@ describe("SpeechServiceCard", () => {
       expect(screen.getByText("语音合成接口不可用：接口返回 502")).toBeTruthy(),
     )
     expect(screen.getByLabelText("语音合成接入方式")).toBeTruthy()
+  })
+
+  it("surfaces the diagnostic error code when the synthesis fails upstream", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error: { code: "speech_upstream_error", message: "合成接口返回 401" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.click(screen.getByRole("button", { name: "测试合成接口" }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("语音合成接口不可用：合成接口返回 401（speech_upstream_error）"),
+      ).toBeTruthy(),
+    )
   })
 })
