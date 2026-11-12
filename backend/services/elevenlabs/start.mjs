@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -15,7 +15,38 @@ if (!existsSync(python)) {
   process.exit(1)
 }
 
-if (!process.env.ELEVENLABS_API_KEY) {
+// 读取本目录下的 .env.local（已被 gitignore，不会提交），让 `pnpm elevenlabs:start`
+// 无需每次内联传密钥。文件中的值不覆盖已有的 shell 环境变量，便于临时覆盖。
+function loadLocalEnv() {
+  const file = join(scriptDir, ".env.local")
+  if (!existsSync(file)) {
+    return {}
+  }
+  const values = {}
+  for (const rawLine of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith("#")) {
+      continue
+    }
+    const separator = line.indexOf("=")
+    if (separator <= 0) {
+      continue
+    }
+    const key = line.slice(0, separator).trim()
+    const value = line
+      .slice(separator + 1)
+      .trim()
+      .replace(/^"|"$/g, "")
+    if (key) {
+      values[key] = value
+    }
+  }
+  return values
+}
+
+const env = { ...loadLocalEnv(), ...process.env }
+
+if (!env.ELEVENLABS_API_KEY) {
   console.warn(
     "[elevenlabs] ELEVENLABS_API_KEY 未设置；服务会启动，但语音请求将返回 not_configured。",
   )
@@ -23,7 +54,7 @@ if (!process.env.ELEVENLABS_API_KEY) {
 
 const child = spawn(python, ["-u", "-m", "backend.services.elevenlabs.main"], {
   cwd: projectRoot,
-  env: process.env,
+  env,
   stdio: "inherit",
 })
 
