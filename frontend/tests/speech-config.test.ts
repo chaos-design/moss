@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   apiTtsVoiceOptions,
   describeSpeechTransport,
   getDefaultApiEndpoint,
+  getDefaultLocalApiEndpoint,
+  getDefaultLocalApiModel,
   getDefaultLocalEndpoint,
   getSelectedApiVoiceValue,
   getSpeechRequestUrl,
+  isLoopbackSpeechEndpoint,
   isValidSpeechEndpoint,
   parseApiVoiceValue,
   parseSpeechConfig,
@@ -18,7 +21,57 @@ function createConfig(overrides: Partial<SpeechConfig> = {}): SpeechConfig {
   return { version: 1, asr: { ...overrides.asr }, tts: { ...overrides.tts } } as SpeechConfig
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 describe("speech configuration", () => {
+  it("offers a configurable loopback interface preset for both ASR and TTS", () => {
+    expect(isLoopbackSpeechEndpoint(getDefaultLocalApiEndpoint("asr"))).toBe(true)
+    expect(isLoopbackSpeechEndpoint(getDefaultLocalApiEndpoint("tts"))).toBe(true)
+    expect(getDefaultLocalApiModel("asr")).toBeTruthy()
+    expect(getDefaultLocalApiModel("tts")).toBeTruthy()
+    // Both services reach the local gateway through the OpenAI-compatible proxy contract.
+    expect(getSpeechRequestUrl("asr", getDefaultLocalApiEndpoint("asr"))).toContain(
+      "/audio/transcriptions",
+    )
+    expect(getSpeechRequestUrl("tts", getDefaultLocalApiEndpoint("tts"))).toContain(
+      "/audio/speech",
+    )
+  })
+
+  it("reads local interface defaults from the public environment", () => {
+    vi.stubEnv("NEXT_PUBLIC_ASR_LOCAL_API_URL", "http://localhost:5599/v1/")
+    vi.stubEnv("NEXT_PUBLIC_ASR_LOCAL_API_MODEL", "local-asr")
+    vi.stubEnv("NEXT_PUBLIC_TTS_LOCAL_API_URL", "http://127.0.0.1:5599/v1")
+    vi.stubEnv("NEXT_PUBLIC_TTS_LOCAL_API_MODEL", "local-tts")
+
+    expect(getDefaultLocalApiEndpoint("asr")).toBe("http://localhost:5599/v1")
+    expect(getDefaultLocalApiModel("asr")).toBe("local-asr")
+    expect(getDefaultLocalApiEndpoint("tts")).toBe("http://127.0.0.1:5599/v1")
+    expect(getDefaultLocalApiModel("tts")).toBe("local-tts")
+  })
+
+  it("accepts loopback speech endpoints without opening private-network hosts", () => {
+    expect(isLoopbackSpeechEndpoint("http://127.0.0.1:5583/v1")).toBe(true)
+    expect(isLoopbackSpeechEndpoint("http://localhost:5583/v1")).toBe(true)
+    expect(isLoopbackSpeechEndpoint("ws://127.0.0.1:5580/v1/asr/stream")).toBe(true)
+    expect(isLoopbackSpeechEndpoint("http://[::1]:5583/v1")).toBe(true)
+    expect(isLoopbackSpeechEndpoint("http://192.168.1.5:5578")).toBe(false)
+    expect(isLoopbackSpeechEndpoint("http://user:pass@127.0.0.1:5583/v1")).toBe(false)
+
+    expect(isValidSpeechEndpoint("http://127.0.0.1:5583/v1")).toBe(true)
+    expect(isValidSpeechEndpoint("http://speech.example.com/v1")).toBe(false)
+    expect(isValidSpeechEndpoint("https://192.168.1.5/v1")).toBe(false)
+  })
+
+  it("keeps loopback endpoints valid in a production build", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    expect(isValidSpeechEndpoint("http://127.0.0.1:5583/v1")).toBe(true)
+    expect(isValidSpeechEndpoint("ws://127.0.0.1:5580/v1/asr/stream")).toBe(true)
+    expect(isValidSpeechEndpoint("http://speech.example.com/v1")).toBe(false)
+  })
+
   it("falls back to the local transports for missing or invalid storage", () => {
     expect(parseSpeechConfig(null)).toEqual({
       version: 1,

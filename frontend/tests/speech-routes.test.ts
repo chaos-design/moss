@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { POST as asrPost } from "@/app/api/speech/asr/route"
 import { POST as ttsPost } from "@/app/api/speech/tts/route"
 import { resetRateLimitStore } from "@/lib/server/rate-limit"
+import { isAllowedBrowserSpeechEndpoint } from "@/lib/server/speech-gateway"
 
 const validEndpoint = {
   endpoint: "https://speech.example.com/v1",
@@ -36,7 +37,70 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
+})
+
+describe("loopback speech endpoint policy", () => {
+  it("allows a local gateway in production while keeping the remote allowlist explicit", () => {
+    vi.stubEnv("NODE_ENV", "production")
+
+    expect(isAllowedBrowserSpeechEndpoint("http://127.0.0.1:5583/v1")).toBe(true)
+    expect(isAllowedBrowserSpeechEndpoint("http://localhost:5583/v1")).toBe(true)
+    expect(isAllowedBrowserSpeechEndpoint("http://[::1]:5583/v1")).toBe(true)
+    expect(isAllowedBrowserSpeechEndpoint("https://speech.example.com/v1")).toBe(false)
+    expect(isAllowedBrowserSpeechEndpoint("http://192.168.1.5:5583/v1")).toBe(false)
+    expect(isAllowedBrowserSpeechEndpoint("http://user:pass@127.0.0.1:5583/v1")).toBe(false)
+
+    vi.stubEnv("AI_ALLOWED_BROWSER_SPEECH_HOSTS", "speech.example.com")
+    expect(isAllowedBrowserSpeechEndpoint("https://speech.example.com/v1")).toBe(true)
+  })
+})
+
+describe("local ASR and TTS gateway", () => {
+  it("proxies both services to a loopback OpenAI-compatible interface", async () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith("/audio/transcriptions")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ text: "hello" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        )
+      }
+      return Promise.resolve(
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "audio/mpeg" },
+        }),
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const localEndpoint = {
+      endpoint: "http://127.0.0.1:5583/v1",
+      apiKey: "local-token",
+      model: "local-model",
+    }
+    const asr = await asrPost(
+      asrRequest({ audioBase64: base64("audio"), endpoint: localEndpoint }),
+    )
+    const tts = await ttsPost(
+      ttsRequest({ endpoint: localEndpoint, text: "Hello", voice: "alloy" }),
+    )
+
+    expect(asr.status).toBe(200)
+    expect(await asr.json()).toEqual({ data: { text: "hello" } })
+    expect(tts.status).toBe(200)
+    const [asrUrl] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const [ttsUrl, ttsInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(asrUrl).toBe("http://127.0.0.1:5583/v1/audio/transcriptions")
+    expect(ttsUrl).toBe("http://127.0.0.1:5583/v1/audio/speech")
+    expect(ttsInit.headers as Record<string, string>).toMatchObject({
+      Authorization: "Bearer local-token",
+    })
+  })
 })
 
 describe("POST /api/speech/asr", () => {

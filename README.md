@@ -94,7 +94,7 @@ pnpm tts:start
 | 接入方式 | 依赖 | 说明 |
 | --- | --- | --- |
 | 本机服务 | `pnpm asr:start` / `pnpm tts:gateway` | 默认；连接失败时当次会话自动回退浏览器语音 |
-| HTTP API | 任意 OpenAI 兼容 `/audio/transcriptions`、`/audio/speech` | 由本站 `/api/speech/*` 转发，默认地址可用 `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_TTS_API_URL` 提供 |
+| HTTP API | 任意 OpenAI 兼容 `/audio/transcriptions`、`/audio/speech`，含本机 local 接口 | 由本站 `/api/speech/*` 转发；远程默认值用 `NEXT_PUBLIC_*_API_URL`，本机接口用 `NEXT_PUBLIC_*_LOCAL_API_URL` 或在设置中点“使用本机接口” |
 | 浏览器引擎 | 浏览器 `SpeechRecognition` / `speechSynthesis` | 零服务即可语音对话与播报 |
 
 接入配置与密钥只保存在浏览器 `moss:speech-config:v1`，不进入学习记忆、日志或云端账户。
@@ -107,9 +107,11 @@ pnpm elevenlabs:setup
 ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 ```
 
-适配器监听 `127.0.0.1:5583`，不改变默认的 `5578`/`5580`。在 HTTP API 接入中填写
-`http://127.0.0.1:5583/v1`，ASR 模型用 `scribe_v2`，TTS 模型用 `eleven_v4`。详见
-[适配器文档](backend/services/elevenlabs/README.md)。
+适配器监听 `127.0.0.1:5583`，不改变默认的 `5578`/`5580`。把 ASR 与 TTS 切到 HTTP API 后，
+在设置里点各自的“使用本机接口”即可填入 `http://127.0.0.1:5583/v1` 与 `scribe_v2` /
+`eleven_v4`；若适配器设置了访问令牌，把同一个值填进“API 密钥”。本机接口地址可用
+`NEXT_PUBLIC_*_LOCAL_API_URL` 改为其他本地服务。详见
+[API 文档](docs/api.md#本机-local-接口)与[适配器文档](backend/services/elevenlabs/README.md)。
 
 ## 云端配置
 
@@ -144,6 +146,7 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 | 分组 | 变量前缀 | 运行位置 |
 | --- | --- | --- |
 | 浏览器公开配置 | `NEXT_PUBLIC_*` | 浏览器与 Next.js |
+| 本机语音接口预设 | `NEXT_PUBLIC_*_LOCAL_API_URL`、`NEXT_PUBLIC_*_LOCAL_API_MODEL` | 浏览器与 Next.js（构建期内联） |
 | AI provider | `AI_*` | Next.js 服务端 |
 | 模型配置信封 | `MODEL_CONFIG_*` | Next.js 服务端 |
 | ASR | `MOSS_ASR_*`, `MOSS_SENSEVOICE_*` | Python ASR |

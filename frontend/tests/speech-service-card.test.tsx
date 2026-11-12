@@ -4,7 +4,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { SpeechServiceCard } from "@/features/settings/speech-service-card"
 import { setSpeechConfig } from "@/features/speech/use-speech-config"
-import { defaultSpeechConfig, speechConfigStorageKey } from "@/lib/speech-config"
+import {
+  defaultSpeechConfig,
+  getDefaultLocalApiModel,
+  isLoopbackSpeechEndpoint,
+  speechConfigStorageKey,
+} from "@/lib/speech-config"
 
 function storedConfig() {
   return JSON.parse(window.localStorage.getItem(speechConfigStorageKey) ?? "{}")
@@ -64,6 +69,27 @@ describe("SpeechServiceCard", () => {
     expect(stored.tts.transport).toBe("api")
     // The credential lives in the speech config only, never in learning memory.
     expect(window.localStorage.getItem("moss:learning-memory:v1")).toBeNull()
+  })
+
+  it("applies the loopback interface preset to ASR and TTS without dropping the API key", () => {
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.change(screen.getByLabelText("语音识别API 密钥"), {
+      target: { value: "local-token" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "填入语音识别本机接口" }))
+    fireEvent.click(screen.getByRole("button", { name: "填入语音合成本机接口" }))
+
+    const stored = storedConfig()
+    expect(stored.asr.transport).toBe("api")
+    expect(stored.tts.transport).toBe("api")
+    expect(isLoopbackSpeechEndpoint(stored.asr.endpoint)).toBe(true)
+    expect(isLoopbackSpeechEndpoint(stored.tts.endpoint)).toBe(true)
+    expect(stored.asr.model).toBe(getDefaultLocalApiModel("asr"))
+    expect(stored.tts.model).toBe(getDefaultLocalApiModel("tts"))
+    expect(stored.asr.apiKey).toBe("local-token")
+    expect(screen.getAllByText(/（本机接口）/)).toHaveLength(2)
   })
 
   it("warns when an API endpoint is not reachable over a public HTTPS address", () => {

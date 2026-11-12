@@ -126,13 +126,30 @@ NEXT_PUBLIC_TTS_API_URL=https://api.openai.com/v1
 NEXT_PUBLIC_TTS_API_MODEL=tts-1
 ```
 
-生产环境必须把允许的语音主机名写入白名单，否则 `/api/speech/*` 会拒绝转发：
+HTTP API 接入也可以指向本机 local 接口。设置卡片里 ASR 与 TTS 各有“使用本机接口”按钮，
+一键填入下列变量提供的根地址与模型（默认指向可选的 ElevenLabs 适配器）：
+
+```bash
+NEXT_PUBLIC_ASR_LOCAL_API_URL=http://127.0.0.1:5583/v1
+NEXT_PUBLIC_ASR_LOCAL_API_MODEL=scribe_v2
+NEXT_PUBLIC_TTS_LOCAL_API_URL=http://127.0.0.1:5583/v1
+NEXT_PUBLIC_TTS_LOCAL_API_MODEL=eleven_v4
+```
+
+换成其他本机 OpenAI 兼容语音服务时只需改这四个值。若本机服务要求访问令牌，把令牌填进
+设置的“API 密钥”，由同源 `/api/speech/*` 以 Bearer 转发；密钥仍只保存在浏览器
+`moss:speech-config:v1`。回环主机在生产构建下也内置允许，因此同机自托管的
+`pnpm start` 可用；Vercel 等无本机服务的环境不可用该链路。
+
+生产环境对接**远程**语音主机时必须把允许的主机名写入白名单，否则 `/api/speech/*` 会拒绝
+转发：
 
 ```bash
 AI_ALLOWED_BROWSER_SPEECH_HOSTS=speech.example.com
 ```
 
-`api.openai.com` 与 `api.anthropic.com` 默认在白名单内。该白名单与模型服务使用的
+`api.openai.com`、`api.anthropic.com` 与回环主机 `localhost`、`127.0.0.1`、`::1` 默认在
+白名单内（回环用于本机 local 接口，无需额外配置）。该白名单与模型服务使用的
 `AI_ALLOWED_BROWSER_MODEL_HOSTS` 相互独立，两者都要配置才能同时支持远程推理与远程语音。
 浏览器语音引擎依赖操作系统与浏览器支持（Chrome、Edge、macOS Safari 可用，识别质量由浏览器
 实现决定）；不具备该能力的浏览器保持文字模式，并在对话中明确提示。
@@ -168,10 +185,11 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 ```
 
 适配器监听 `127.0.0.1:5583`，把 ElevenLabs 翻译为 OpenAI 兼容语音契约；在“偏好设置 →
-语音服务接入”中选择 HTTP API 并填写 `http://127.0.0.1:5583/v1` 即可。它不影响
-`5578`/`5580` 的默认路径，也不会随 `dev:offline` 启动。`ELEVENLABS_API_KEY` 只存在于
-本机适配器进程，不得写入 `NEXT_PUBLIC_*` 或浏览器配置。该服务不能部署到 Vercel，生产
-环境仍应使用白名单内的远程语音端点。
+语音服务接入”中把 ASR 与 TTS 切到 HTTP API，再点各自的“使用本机接口”即可，无需手填地址。
+它不影响 `5578`/`5580` 的默认路径，也不会随 `dev:offline` 启动。`ELEVENLABS_API_KEY`
+只存在于本机适配器进程，不得写入 `NEXT_PUBLIC_*` 或浏览器配置。该链路适用于本机开发与
+应用服务器同机部署语音服务的自托管生产环境；Vercel 上无法访问用户本机端口，仍应使用
+白名单内的远程语音端点。
 
 ## 实时 ASR 服务
 
@@ -501,7 +519,8 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 | `NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED` | 构建期内联 | 启用 Google 登录时必需 |
 | `NEXT_PUBLIC_DEMO_MODE` | 构建期内联 | 部署环境必须为 `false` 或不设置 |
 | `NEXT_PUBLIC_TTS_SERVICE_URL`、`NEXT_PUBLIC_ASR_SERVICE_URL`、`NEXT_PUBLIC_FUNASR_SERVICE_URL` | 构建期内联 | 保持默认 loopback 值 |
-| `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_ASR_API_MODEL`、`NEXT_PUBLIC_TTS_API_URL`、`NEXT_PUBLIC_TTS_API_MODEL` | 构建期内联 | 使用 HTTP API 语音接入时必需 |
+| `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_ASR_API_MODEL`、`NEXT_PUBLIC_TTS_API_URL`、`NEXT_PUBLIC_TTS_API_MODEL` | 构建期内联 | 使用远程 HTTP API 语音接入时必需 |
+| `NEXT_PUBLIC_ASR_LOCAL_API_URL`、`NEXT_PUBLIC_ASR_LOCAL_API_MODEL`、`NEXT_PUBLIC_TTS_LOCAL_API_URL`、`NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | 构建期内联 | 使用本机 local 接口预设时可选，缺省回落到 `127.0.0.1:5583/v1` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_MODEL` | 构建期内联 | 仅旧部署兼容 |
 | `SUPABASE_SERVICE_ROLE_KEY`、`ACCOUNT_DELETION_AUDIT_SECRET` | 运行时服务端 | 账户删除与导出必需 |
 | `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` | 运行时服务端 | 非演示模式必需 |
@@ -541,7 +560,8 @@ Vercel 部署后，本机语音服务一定不可用：
 - 连接失败时 TTS 回退到浏览器原生 `speechSynthesis`；ASR 若浏览器支持
   `SpeechRecognition`，当次会话自动回退到浏览器识别并提示一次，否则保持文字模式。
 - 云端语音能力应使用 `api` 接入：配置 OpenAI 兼容端点并把主机名写入
-  `AI_ALLOWED_BROWSER_SPEECH_HOSTS`，请求由本站 `/api/speech/*` 转发。
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS`，请求由本站 `/api/speech/*` 转发。回环地址虽在
+  白名单内置允许，但 Vercel 服务器上没有本机语音服务，该链路只在同机自托管时成立。
 
 若采用集中式自托管 ASR（自建 WebSocket 服务），前端仍按回环限制拒绝远程 `ws:` 地址，
 需要先扩展 `validateLocalWebSocketUrl` 的策略，并同时补齐令牌认证、Origin 白名单和租户配额。

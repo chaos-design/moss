@@ -17,7 +17,15 @@ export const maximumAsrAudioBytes = 8_000_000
 export const maximumTtsTextLength = 2_000
 export const speechRequestTimeoutMs = 30_000
 
-const allowedBrowserSpeechHosts = ["api.openai.com", "api.anthropic.com"]
+// Loopback hosts are built into the production allowlist so /api/speech/* can proxy to a speech
+// gateway running beside the app server. Non-loopback private-network hosts stay blocked.
+const allowedBrowserSpeechHosts = [
+  "api.openai.com",
+  "api.anthropic.com",
+  "localhost",
+  "127.0.0.1",
+  "::1",
+]
 
 export class SpeechGatewayError extends Error {
   readonly code: string
@@ -34,8 +42,9 @@ export class SpeechGatewayError extends Error {
 }
 
 // Browser-supplied endpoints reach the server as request payloads, so they follow the same policy
-// as browser-supplied inference endpoints: HTTPS remote hosts, loopback HTTP in development, and
-// an explicit production allowlist.
+// as browser-supplied inference endpoints: HTTPS remote hosts on the production allowlist, plus
+// loopback hosts for a local ASR/TTS gateway. Loopback works in production builds too, so a
+// self-hosted workspace can use `pnpm start` with the local speech service.
 export function isAllowedBrowserSpeechEndpoint(value: string) {
   if (!isValidSpeechEndpoint(value)) {
     return false
@@ -44,7 +53,7 @@ export function isAllowedBrowserSpeechEndpoint(value: string) {
     return true
   }
   try {
-    const hostname = new URL(value).hostname.toLowerCase()
+    const hostname = new URL(value).hostname.toLowerCase().replace(/^\[|\]$/g, "")
     const configured = (process.env.AI_ALLOWED_BROWSER_SPEECH_HOSTS ?? "")
       .split(",")
       .map((host) => host.trim().toLowerCase())

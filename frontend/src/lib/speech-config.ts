@@ -116,6 +116,15 @@ const defaultAsrApiEndpoint = "https://api.openai.com/v1"
 const defaultTtsApiEndpoint = "https://api.openai.com/v1"
 const defaultAsrApiModel = "whisper-1"
 const defaultTtsApiModel = "tts-1"
+// A loopback OpenAI-compatible gateway is a first-class local option. The defaults match the
+// optional ElevenLabs adapter; any other local speech server can be configured via env.
+const defaultAsrLocalApiEndpoint = "http://127.0.0.1:5583/v1"
+const defaultTtsLocalApiEndpoint = "http://127.0.0.1:5583/v1"
+const defaultAsrLocalApiModel = "scribe_v2"
+const defaultTtsLocalApiModel = "eleven_v4"
+
+const loopbackSpeechHosts = new Set(["localhost", "127.0.0.1", "::1"])
+const speechProtocols = new Set(["http:", "https:", "ws:", "wss:"])
 
 export const maximumSpeechApiKeyLength = 400
 export const maximumSpeechEndpointLength = 300
@@ -187,6 +196,8 @@ export function getDefaultApiEndpoint(service: SpeechService) {
   ).replace(/\/+$/, "")
 }
 
+// The loopback sidecar URLs used by the "本机服务" transport. These are protocol-specific
+// (WebSocket for ASR, HTTP for TTS) and are NOT OpenAI-compatible endpoints.
 export function getDefaultLocalEndpoint(service: SpeechService) {
   const configured =
     service === "asr"
@@ -195,6 +206,30 @@ export function getDefaultLocalEndpoint(service: SpeechService) {
   return (
     configured?.trim() ||
     (service === "asr" ? "ws://127.0.0.1:5580/v1/asr/stream" : "http://127.0.0.1:5578")
+  )
+}
+
+// The base URL of a local OpenAI-compatible speech gateway, used by the "本机接口" preset in
+// settings. /api/speech/* appends /audio/transcriptions or /audio/speech to this base URL.
+export function getDefaultLocalApiEndpoint(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_LOCAL_API_URL
+      : process.env.NEXT_PUBLIC_TTS_LOCAL_API_URL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrLocalApiEndpoint : defaultTtsLocalApiEndpoint)
+  ).replace(/\/+$/, "")
+}
+
+export function getDefaultLocalApiModel(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_LOCAL_API_MODEL
+      : process.env.NEXT_PUBLIC_TTS_LOCAL_API_MODEL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrLocalApiModel : defaultTtsLocalApiModel)
   )
 }
 
@@ -222,9 +257,26 @@ export function resolveSpeechConfig(config: SpeechConfig): SpeechConfig {
   }
 }
 
-// Reuses the inference endpoint policy: HTTPS for remote hosts, loopback HTTP in development.
+// A speech endpoint may target a service on the learner's own machine. Loopback is accepted in
+// every build because the browser's request still goes through the same-origin /api/speech/*
+// proxy (for HTTP API) or a browser-local WebSocket/HTTP sidecar. Credentials in the URL are
+// rejected, and non-loopback private-network hosts remain blocked by the inference policy.
+export function isLoopbackSpeechEndpoint(endpoint: string) {
+  try {
+    const url = new URL(endpoint)
+    if (url.username || url.password) {
+      return false
+    }
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
+    return loopbackSpeechHosts.has(hostname) && speechProtocols.has(url.protocol)
+  } catch {
+    return false
+  }
+}
+
+// Reuses the inference endpoint policy for remote hosts: HTTPS only, no embedded credentials.
 export function isValidSpeechEndpoint(endpoint: string) {
-  return isValidModelEndpoint(endpoint)
+  return isLoopbackSpeechEndpoint(endpoint) || isValidModelEndpoint(endpoint)
 }
 
 export function getSpeechRequestUrl(service: SpeechService, endpoint: string) {

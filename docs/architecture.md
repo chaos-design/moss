@@ -252,7 +252,7 @@ flowchart LR
 | 对话交互偏好 | `moss:conversation-prefs:v1` | 不同步；仅导师模式枚举随推理请求发送 | 导师模式、布局、快捷键、续接与合并/判句时限 |
 | 模型配置集合与当前启用项 | `moss:model-config:v1` | 仅当前启用配置以加密信封进入同源推理 API | 禁止写入数据库和日志 |
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
-| 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase |
+| 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase；本机接口预设的地址与模型来自构建期内联的 `NEXT_PUBLIC_*_LOCAL_API_*`，不含密钥 |
 | ElevenLabs 请求内容 | 仅本机适配器进程内存 | 发送到 ElevenLabs API | 不落盘；文本、录音与保留策略由上游账户决定 |
 | 跟读评分 | 学习记忆事件 | Supabase 快照与 `shadowing_attempts` | 保存声学分数，不保存录音 |
 | 长期向量记忆 | Supabase `learning_memory_documents` | 对话、复习、跟读、表达学习经服务端写入；旧快照由管理员 CLI 幂等回填；RPC 召回 | RLS 用户隔离；`source_type` 是本地 `LearningActivityType` 的真子集，回想尝试无可检索内容故不入库 |
@@ -271,8 +271,10 @@ flowchart LR
 - 推理 URL 只允许公网 HTTPS，开发环境额外允许 loopback；生产环境的浏览器自带模型主机
   受显式白名单约束，且 Provider 请求不跟随重定向。
 - `/api/speech/asr` 与 `/api/speech/tts` 沿用同一端点策略，生产环境额外受
-  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单约束；浏览器传入的语音密钥只在当次转发中使用，
-  不落盘、不记录、不返回客户端。上游请求 30 秒超时且不跟随重定向。
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单约束；回环主机 `localhost`、`127.0.0.1`、
+  `::1` 内置允许，用于本机 local 接口（应用与语音服务同机的自托管场景），非回环私网仍拒绝。
+  浏览器传入的语音密钥只在当次转发中使用，不落盘、不记录、不返回客户端。
+  上游请求 30 秒超时且不跟随重定向。
 - 认证 API 通过 Supabase `check_rate_limit` 按 `auth.uid()` 和固定 bucket 执行跨实例原子
   限流；额度与窗口由数据库决定，底层表不授予应用用户权限。RPC 不可用时，公共服务端
   模型请求拒绝继续；演示模式与携带加密 BYOK 配置的推理请求使用容量有界的进程内限流。

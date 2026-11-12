@@ -255,9 +255,13 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 curl http://127.0.0.1:5583/health
 ```
 
-在“偏好设置 → 语音服务接入”中把 ASR 与 TTS 都切到 HTTP API，接口地址填
-`http://127.0.0.1:5583/v1`，模型分别填 `scribe_v2` 与 `eleven_v4`。该服务不会改变
-`5578`/`5580`，也不会被 `dev:offline` 自动启动。测试使用 mock transport，不访问上游：
+在“偏好设置 → 语音服务接入”中把 ASR 与 TTS 都切到 HTTP API，再点各自的“使用本机接口”，
+即可填入 `http://127.0.0.1:5583/v1` 与 `scribe_v2` / `eleven_v4`；也可以手动填写，或用
+`NEXT_PUBLIC_*_LOCAL_API_URL`、`NEXT_PUBLIC_*_LOCAL_API_MODEL` 改指向本机其他 OpenAI 兼容
+服务。若设置了 `MOSS_ELEVENLABS_ACCESS_TOKEN`，把同一个令牌填进“API 密钥”，由同源
+`/api/speech/*` 转发。链路为：浏览器 → `/api/speech/asr|/tts` → `127.0.0.1:5583` →
+ElevenLabs。该服务不会改变 `5578`/`5580`，也不会被 `dev:offline` 自动启动。
+测试使用 mock transport，不访问上游：
 
 ```bash
 pnpm elevenlabs:test
@@ -275,6 +279,9 @@ pnpm elevenlabs:test
 - `NEXT_PUBLIC_TTS_SERVICE_URL` 只接受 loopback。
 - `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_TTS_API_URL` 只能提供公开地址与模型名；语音接口
   密钥只保存在浏览器 `moss:speech-config:v1`，随请求进入同源 `/api/speech/*`。
+- `NEXT_PUBLIC_*_LOCAL_API_URL` 与 `NEXT_PUBLIC_*_LOCAL_API_MODEL` 只提供本机回环地址和
+  模型名，供设置的“使用本机接口”预设使用；回环在生产构建下同样允许，但仅适用于应用与
+  语音服务同机的自托管部署。
 - 公网 ASR 必须使用 WSS、精确 Origin 白名单和 `MOSS_ASR_API_KEY`。
 - 生产环境必须显式关闭 demo 模式并配置稳定的模型信封私钥。
 

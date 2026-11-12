@@ -140,6 +140,28 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 `NEXT_PUBLIC_TTS_API_URL`，模型来自 `NEXT_PUBLIC_ASR_API_MODEL` 与
 `NEXT_PUBLIC_TTS_API_MODEL`；`tts.voice` 留空时使用 `alloy`。
 
+### 本机 local 接口
+
+`api` 接入也可以指向运行在本机的 OpenAI 兼容语音服务。设置卡片为 ASR 与 TTS 各提供
+“使用本机接口”一键填入，根地址与模型来自：
+
+| 变量 | 默认值 |
+| --- | --- |
+| `NEXT_PUBLIC_ASR_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
+| `NEXT_PUBLIC_ASR_LOCAL_API_MODEL` | `scribe_v2` |
+| `NEXT_PUBLIC_TTS_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
+| `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | `eleven_v4` |
+
+这些值在构建期内联，只含公开地址与模型名，不含密钥。若本机服务配置了访问令牌（例如
+`MOSS_ELEVENLABS_ACCESS_TOKEN`），把同一个值填进设置的“API 密钥”，代理会以
+`Authorization: Bearer ...` 转发。请求始终经同源 `/api/speech/asr` 与 `/api/speech/tts`
+转发，浏览器不直连本机端口；根地址会自动追加 `/audio/transcriptions` 或 `/audio/speech`。
+
+回环主机（`localhost`、`127.0.0.1`、`::1`）在所有构建环境下都允许，因此
+`pnpm build && pnpm start` 的同机自托管部署也能连本机服务。非回环私网主机仍被拒绝，
+`local` 接入的 WebSocket/HTTP sidecar 地址也仍只允许回环。Vercel 等无本机服务的运行环境
+无法使用该链路，应使用白名单内的远程语音端点。
+
 `api` 识别按段上传：接口没有中间结果和语音起点信号，因此该接入方式不提供实时字幕，也不支持用
 说话打断 AI 播报，需要打断时使用文字输入。`browser` 识别由浏览器实现决定行为，静默一段时间后
 浏览器会结束一次会话，前端会自动重新开始监听。识别引擎选择器（SenseVoice、Qwen3-ASR、
@@ -161,9 +183,10 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 `JBFqnCBsd6RMkjVDRZzb`。协议、音色别名、隐私边界和全部环境变量见
 [适配服务 README](../backend/services/elevenlabs/README.md)。
 
-该服务仅适用于本机开发或桌面运行：`/api/speech/*` 在生产环境拒绝回环地址，Vercel 也不能
-访问用户本机端口。选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和
-计费策略。
+把两种语音来源都切到 `api` 后，可直接用设置的“使用本机接口”一键填入（默认值即
+`http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_v4`）。`/api/speech/*` 允许回环地址，
+因此本机开发与同机自托管的生产构建都可用；Vercel 等无本机服务的运行环境仍无法访问该端口。
+选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和计费策略。
 
 ## POST `/api/speech/asr`
 
@@ -191,9 +214,10 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 
 约束与错误：
 
-- `endpoint` 必须通过与推理端点相同的策略：生产环境仅允许 HTTPS 公网主机，且主机名需在
-  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、`api.anthropic.com`）；
-  非生产环境额外允许回环地址。URL 不得携带用户名或密码。
+- `endpoint` 沿用推理端点策略：远程主机必须是 HTTPS 公网地址，且生产环境的主机名需在
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、
+  `api.anthropic.com`）；回环主机 `localhost`、`127.0.0.1`、`::1` 内置允许，用于本机 local
+  接口，在生产构建下同样可用。非回环私网主机、URL 内嵌用户名或密码一律拒绝。
 - 解码后的音频不超过 8 MB，请求体不超过 12 MB，`language` 可省略。
 - 上游使用 `multipart/form-data`：`file`、`model`、`response_format=json`、可选 `language`。
 - 上游 30 秒未响应视为不可用。错误码：`invalid_json`、`invalid_request`、

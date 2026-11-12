@@ -33,7 +33,10 @@ import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import {
   describeSpeechTransport,
   getDefaultApiEndpoint,
+  getDefaultLocalApiEndpoint,
+  getDefaultLocalApiModel,
   getDefaultLocalEndpoint,
+  isLoopbackSpeechEndpoint,
   isValidSpeechEndpoint,
   type SpeechEndpoint,
   type SpeechService,
@@ -50,7 +53,7 @@ const transportItems = speechTransports.map((transport) => ({
 
 const transportHints: Record<SpeechTransport, string> = {
   local: "使用本机 pnpm asr:start / pnpm tts:start 启动的服务；未启动时会自动回退。",
-  api: "对接任意 OpenAI 兼容的 HTTP 接口，请求由本站代理转发。",
+  api: "对接任意 OpenAI 兼容的 HTTP 接口（含本机 local 接口），请求由本站代理转发。",
   browser: "直接使用浏览器内置语音能力，无需任何本地服务。",
 }
 
@@ -58,7 +61,7 @@ const transportHints: Record<SpeechTransport, string> = {
 // promise barge-in or live partials when the HTTP API transport is selected.
 const serviceTransportHints: Record<SpeechTransport, string> = {
   ...transportHints,
-  api: "整段上传识别，不提供实时字幕与说话打断；请求由本站代理转发。",
+  api: "整段上传识别，不提供实时字幕与说话打断；可指向本机 local 接口，由本站代理转发。",
 }
 
 type TestStatus = "idle" | "testing" | "success" | "error"
@@ -113,7 +116,8 @@ export function SpeechServiceCard() {
           语音服务接入
         </CardTitle>
         <CardDescription>
-          本机 ASR / TTS 服务未启动时，仍可使用浏览器语音或任意 OpenAI 兼容接口。
+          可接入本机 ASR / TTS 服务、本机 local 接口或任意 OpenAI
+          兼容接口；未启动时回退到浏览器语音。
         </CardDescription>
         <CardAction>
           <Badge variant="outline">
@@ -256,9 +260,28 @@ function SpeechEndpointFields({
             placeholder={getDefaultApiEndpoint(service)}
             aria-invalid={endpointInvalid || undefined}
           />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`填入${serviceLabels[service]}本机接口`}
+              onClick={() =>
+                onChange({
+                  endpoint: getDefaultLocalApiEndpoint(service),
+                  model: getDefaultLocalApiModel(service),
+                })
+              }
+            >
+              使用本机接口
+            </Button>
+            <span className="min-w-0 break-all text-xs text-muted-foreground">
+              {getDefaultLocalApiEndpoint(service)}
+            </span>
+          </div>
           <FieldDescription>
             填写服务根地址，系统会追加 /audio/{service === "asr" ? "transcriptions" : "speech"}
-            。
+            ；「使用本机接口」可一键填入本机 local 服务地址与模型。
           </FieldDescription>
         </Field>
       ) : (
@@ -318,6 +341,9 @@ function SpeechEndpointFields({
           )}
         >
           {describeSpeechTransport(service, endpoint.transport)}
+          {endpoint.transport === "api" && isLoopbackSpeechEndpoint(endpoint.endpoint)
+            ? "（本机接口）"
+            : ""}
           {` · ${endpoint.endpoint || getDefaultLocalEndpoint(service)}`}
           {endpoint.transport === "api" && endpoint.model ? ` · ${endpoint.model}` : ""}
         </p>
