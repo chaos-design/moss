@@ -36,15 +36,27 @@ vi.mock("@/components/auth-provider", () => ({
   }),
 }))
 
-// Composer tests submit a real turn, so TTS playback and the model-config envelope are stubbed
-// onto inert paths instead of reaching for browser audio or WebCrypto.
+// Composer and transcript tests submit turns and exercise speech replay, so TTS playback is
+// stubbed with stable spies (vi.hoisted keeps them identical across renders — the runtime's
+// playback callbacks depend on their identity); `stop` mirrors the real hook by resetting state.
+const { ttsSpies } = vi.hoisted(() => ({
+  ttsSpies: {
+    playbackState: "idle" as "idle" | "loading" | "playing",
+    speak: vi.fn(async (_text: string, options?: { onStart?: () => void }) => {
+      options?.onStart?.()
+    }),
+    stop: vi.fn(() => {
+      ttsSpies.playbackState = "idle"
+    }),
+  },
+}))
 vi.mock("@/features/speech/use-local-tts", () => ({
   useLocalTts: () => ({
-    playbackState: "idle",
+    playbackState: ttsSpies.playbackState,
     prepare: vi.fn().mockResolvedValue(undefined),
     previewVoice: vi.fn().mockResolvedValue(undefined),
-    speak: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn(),
+    speak: ttsSpies.speak,
+    stop: ttsSpies.stop,
   }),
 }))
 
@@ -58,6 +70,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 beforeEach(() => {
+  ttsSpies.playbackState = "idle"
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => true },
     releasePointerCapture: { configurable: true, value: vi.fn() },
@@ -465,6 +478,27 @@ describe("conversation feedback UI", () => {
     )
     expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
     expect(screen.getByText("Certainly, one latte coming up.")).toBeTruthy()
+  })
+
+  it("tracks speech playback on the transcript replay button", async () => {
+    window.localStorage.clear()
+    const scene = getConversationScene("cafe-order")
+    ttsSpies.playbackState = "playing"
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 点击播放：朗读目标锁定这条回复，按钮变成停止控件。
+    fireEvent.click(screen.getByRole("button", { name: "播放本轮英语" }))
+    const stopButton = await waitFor(() => screen.getByRole("button", { name: "停止播放" }))
+    expect(stopButton.getAttribute("aria-pressed")).toBe("true")
+
+    // 再次点击停止：恢复播放入口，Agent 语音反馈状态由此可感知、可打断。
+    fireEvent.click(stopButton)
+    await waitFor(() => screen.getByRole("button", { name: "播放本轮英语" }))
+    expect(screen.queryByRole("button", { name: "停止播放" })).toBeNull()
   })
 
   it("gives the transcript its own breathing room below the session metrics bar", () => {

@@ -201,6 +201,26 @@ afterEach(() => {
 })
 
 describe("useVoiceConversation", () => {
+  it("tracks the spoken reply so the transcript can offer a stop control", async () => {
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    expect(result.current.speechTargetText).toBe("")
+    await act(async () => {
+      result.current.speak("Would you like it hot or iced?", true)
+    })
+    expect(result.current.speechTargetText).toBe("Would you like it hot or iced?")
+
+    act(() => {
+      result.current.stopSpeech()
+    })
+    expect(localTts.stop).toHaveBeenCalled()
+    // 停止朗读后目标文本一并清空，转写里的播放按钮随即恢复播放入口。
+    expect(result.current.speechTargetText).toBe("")
+    expect(result.current.speechPlaybackState).toBe("idle")
+    unmount()
+  })
+
   it("restores the latest session for the scene after a refresh", async () => {
     const scene = getConversationScene("coffee")
     const updatedAt = new Date(Date.now() - 5 * 60 * 1000).toISOString()

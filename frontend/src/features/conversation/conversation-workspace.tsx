@@ -82,6 +82,7 @@ import {
   useVoiceConversation,
 } from "@/features/conversation/use-voice-conversation"
 import { VoiceActivity } from "@/features/conversation/voice-activity"
+import type { LocalTtsPlaybackState } from "@/features/speech/use-local-tts"
 import type { AsrEngine, AsrEngineOption } from "@/lib/asr-config"
 import {
   formatCallDuration,
@@ -351,6 +352,8 @@ export function ConversationWorkspace({
     stopReply,
     speakerEnabled,
     speechPlaybackState,
+    speechTargetText,
+    stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     speak,
@@ -631,7 +634,10 @@ export function ConversationWorkspace({
                   partnerName={scene.partnerName}
                   onDelete={deleteMessage}
                   onSpeak={speak}
+                  onStopSpeech={stopSpeech}
                   onRetry={retryLastReply}
+                  speechState={speechPlaybackState}
+                  speechTargetText={speechTargetText}
                   layout={prefs.transcriptLayout}
                 />
               ))}
@@ -1160,6 +1166,9 @@ export const TranscriptTurn = memo(function TranscriptTurn({
   onDelete,
   onRetry,
   onSpeak,
+  onStopSpeech,
+  speechState = "idle",
+  speechTargetText = "",
   layout,
 }: {
   message: ConversationMessage
@@ -1167,6 +1176,9 @@ export const TranscriptTurn = memo(function TranscriptTurn({
   onDelete?: (messageId: string) => void
   onRetry: () => void
   onSpeak: (text: string, force?: boolean) => void
+  onStopSpeech?: () => void
+  speechState?: LocalTtsPlaybackState
+  speechTargetText?: string
   layout: TranscriptLayout
 }) {
   const assistant = message.role === "assistant"
@@ -1176,6 +1188,9 @@ export const TranscriptTurn = memo(function TranscriptTurn({
   const [translationVisible, setTranslationVisible] = useState(false)
   const [translation, setTranslation] = useState(message.translation)
   const [translating, setTranslating] = useState(false)
+  // 这条回复正在被朗读（或合成）时，播放按钮变成停止控件，Agent 语音反馈由此可感知。
+  const speechActive =
+    speechState !== "idle" && Boolean(speechTargetText) && speechTargetText === message.content
   // In split mode the learner's own turns hug the right edge like a chat thread. The
   // partner (assistant) always stays left so validation and examples have room to breathe.
   const alignRight = layout === "split" && !assistant
@@ -1266,11 +1281,24 @@ export const TranscriptTurn = memo(function TranscriptTurn({
               type="button"
               variant="ghost"
               size="icon-xs"
-              aria-label="播放本轮英语"
-              title="播放本轮英语"
-              onClick={() => onSpeak(message.content, true)}
+              aria-label={speechActive ? "停止播放" : "播放本轮英语"}
+              title={speechActive ? "停止播放" : "播放本轮英语"}
+              aria-pressed={speechActive || undefined}
+              onClick={() => {
+                if (speechActive) {
+                  onStopSpeech?.()
+                  return
+                }
+                onSpeak(message.content, true)
+              }}
             >
-              <Volume2Icon />
+              {speechActive && speechState === "loading" ? (
+                <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
+              ) : speechActive ? (
+                <SquareIcon aria-hidden="true" />
+              ) : (
+                <Volume2Icon />
+              )}
             </Button>
           ) : null}
         </div>

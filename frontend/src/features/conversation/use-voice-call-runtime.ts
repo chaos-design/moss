@@ -1,6 +1,13 @@
 "use client"
 
-import { type Dispatch, type MutableRefObject, useCallback, useEffect, useRef } from "react"
+import {
+  type Dispatch,
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { toast } from "sonner"
 import type {
   ConversationMessage,
@@ -181,10 +188,13 @@ export function useVoiceCallRuntime({
   const idleReminderCountRef = useRef(0)
   const lastVoiceActivityAtRef = useRef(Date.now())
   const previewingVoiceRef = useRef<string | null>(null)
+  // 正在朗读（或合成）的文本：转写里的播放按钮据此显示加载/停止状态。
+  const [speechTargetText, setSpeechTargetText] = useState("")
 
   const stopAssistantSpeech = useCallback(() => {
     speechRequestRef.current += 1
     speakingRef.current = false
+    setSpeechTargetText("")
     echoGuardUntilRef.current = Date.now() + playbackEchoGuardMs
     stopLocalSpeech()
   }, [stopLocalSpeech])
@@ -382,6 +392,7 @@ export function useVoiceCallRuntime({
       speechRequestRef.current = requestId
       speakingRef.current = true
       lastAssistantSpeechRef.current = text
+      setSpeechTargetText(text)
       echoGuardUntilRef.current = Number.POSITIVE_INFINITY
       resetVoiceTurn()
       stopRecognition()
@@ -704,6 +715,8 @@ export function useVoiceCallRuntime({
     speak,
     speakingRef,
     speechPlaybackState,
+    speechTargetText,
+    stopSpeech: stopAssistantSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     startCall,
