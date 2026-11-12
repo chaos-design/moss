@@ -120,8 +120,10 @@ export function LoginForm({
       }
 
       toast.success(mode === "login" ? "登录成功，正在进入学习空间" : "账户已创建")
-      router.replace(nextPath)
-      router.refresh()
+      // 仅用 replace 完成跳转。会话 cookie 已随 sign-in 写入，/workspace 的 proxy
+      // 守卫会据此放行。绝不能追加 refresh()：它会重新拉取当前 /login 路由并取消
+      // 尚未完成的 replace，造成"提示成功却停在登录页"。
+      await router.replace(nextPath)
     } catch (error) {
       toast.error(getAuthErrorMessage(error))
     } finally {

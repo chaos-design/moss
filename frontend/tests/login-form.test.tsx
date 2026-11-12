@@ -71,6 +71,28 @@ describe("login form", () => {
     })
   })
 
+  it("enters the workspace after a successful sign-in and does not re-refresh the login page", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1", email: "learner@example.com" } } },
+      error: null,
+    })
+    render(<LoginForm nextPath="/workspace" />)
+    fireEvent.change(screen.getByLabelText("邮箱"), {
+      target: { value: "learner@example.com" },
+    })
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "long-password" },
+    })
+    agreeToTerms()
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+
+    await waitFor(() => {
+      expect(mocks.replace).toHaveBeenCalledWith("/workspace")
+    })
+    // 回归断言：replace 之后不再调用 refresh()，否则会取消尚未完成的跳转、停在登录页。
+    expect(mocks.refresh).not.toHaveBeenCalled()
+  })
+
   it("hides Google login unless the provider is enabled", () => {
     render(<LoginForm nextPath="/workspace" />)
     expect(screen.queryByRole("button", { name: "使用 Google 继续" })).toBeNull()
