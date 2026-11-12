@@ -100,6 +100,17 @@ pnpm tts:start
 接入配置与密钥只保存在浏览器 `moss:speech-config:v1`，不进入学习记忆、日志或云端账户。
 契约见 [API 文档](docs/api.md#语音服务接入方式)。
 
+需要本机验证 ElevenLabs 时，可单独启动 OpenAI 兼容适配器：
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+```
+
+适配器监听 `127.0.0.1:5583`，不改变默认的 `5578`/`5580`。在 HTTP API 接入中填写
+`http://127.0.0.1:5583/v1`，ASR 模型用 `scribe_v2`，TTS 模型用 `eleven_v4`。详见
+[适配器文档](backend/services/elevenlabs/README.md)。
+
 ## 云端配置
 
 1. 创建 Supabase 项目并配置 Email/OAuth。
@@ -122,6 +133,7 @@ pnpm tts:start
 | `pnpm build` | Next.js 生产构建 |
 | `pnpm asr:test` | ASR 单元与协议测试 |
 | `pnpm tts:test` | TTS 网关与 sidecar 单元测试 |
+| `pnpm elevenlabs:test` | ElevenLabs 适配器单元测试 |
 | `pnpm db:test` | 校验全量与增量 SQL 契约 |
 | `pnpm expressions:generate` | 使用服务端模型配置重新生成内置表达数据 |
 
@@ -137,6 +149,7 @@ pnpm tts:start
 | ASR | `MOSS_ASR_*`, `MOSS_SENSEVOICE_*` | Python ASR |
 | TTS gateway | `MOSS_TTS_*`, `MOSS_KOKORO_*` | Python TTS |
 | TTS sidecar | `MOSS_AUDIO8_*`, `MOSS_COSYVOICE_*` | 独立 Python 运行时 |
+| ElevenLabs adapter | `ELEVENLABS_API_KEY`, `MOSS_ELEVENLABS_*` | 可选本机 Python 适配器 |
 
 ## 文档
 

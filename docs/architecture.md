@@ -21,6 +21,8 @@ flowchart LR
     Learner[学习者] -->|HTTPS| Moss[Moss Web 应用]
     Moss -->|Auth, RPC, Realtime| Supabase[(Supabase)]
     Moss -->|HTTPS, 服务端调用| AI[AI Provider]
+    Moss -->|loopback, HTTP API 接入| ElevenLabs[ElevenLabs Adapter :5583]
+    ElevenLabs -->|HTTPS| ElevenLabsApi[ElevenLabs API]
     Learner -->|PCM over WebSocket| ASR[本地 ASR 服务]
     Learner -->|HTTP audio/wav| TTS[本地 TTS 网关]
     TTS --> Kokoro[Kokoro]
@@ -72,6 +74,7 @@ flowchart TB
         Gateway[TTS Gateway :5578]
         Audio8[Audio8 :5582]
         CosyVoice[CosyVoice :5581]
+        ElevenLabs[ElevenLabs Adapter :5583]
         Gateway --> Audio8
         Gateway --> CosyVoice
     end
@@ -84,6 +87,8 @@ flowchart TB
     MemoryFacade --> Vector
     Routes -->|推理| AI[AI Provider]
     Routes -->|语音转发| VoiceAPI[OpenAI 兼容语音接口]
+    Routes -->|可选语音转发| ElevenLabs
+    ElevenLabs -->|HTTPS| ElevenLabsApi[ElevenLabs API]
     Speech -->|WebSocket| ASR
     Speech -->|HTTP| Gateway
     Speech -->|浏览器引擎| WebSpeech[系统 SpeechRecognition / speechSynthesis]
@@ -100,6 +105,7 @@ flowchart TB
 | Speech Gateway Facade | 校验语音端点、构造上游请求、归一化错误 | 学习状态、音频保存 |
 | ASR | PCM 分段和中英识别 | 对话推理、音频保存 |
 | TTS Gateway | 统一合成协议、缓存、引擎路由 | 学习状态 |
+| ElevenLabs Adapter | OpenAI 兼容语音契约到 ElevenLabs 的翻译、密钥隔离 | 默认启动、学习状态、音频保存 |
 
 ## 4. 代码依赖方向
 
@@ -247,6 +253,7 @@ flowchart LR
 | 模型配置集合与当前启用项 | `moss:model-config:v1` | 仅当前启用配置以加密信封进入同源推理 API | 禁止写入数据库和日志 |
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
 | 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase |
+| ElevenLabs 请求内容 | 仅本机适配器进程内存 | 发送到 ElevenLabs API | 不落盘；文本、录音与保留策略由上游账户决定 |
 | 跟读评分 | 学习记忆事件 | Supabase 快照与 `shadowing_attempts` | 保存声学分数，不保存录音 |
 | 长期向量记忆 | Supabase `learning_memory_documents` | 对话、复习、跟读、表达学习经服务端写入；旧快照由管理员 CLI 幂等回填；RPC 召回 | RLS 用户隔离；`source_type` 是本地 `LearningActivityType` 的真子集，回想尝试无可检索内容故不入库 |
 | 账户删除审计 | Supabase `account_deletion_audits` | 仅 server-only 管理员客户端写入 | 只保留 HMAC 用户指纹和聚合计数，不保留邮箱或学习内容 |
@@ -283,6 +290,7 @@ flowchart LR
 | ASR 不可用或授权拒绝 | 会话内自动回退浏览器语音识别；浏览器不支持时保持文字模式 |
 | TTS 网关或 API 不可达 | 回退浏览器 `speechSynthesis` |
 | 可选 TTS sidecar 缺失 | 其他已安装引擎继续工作 |
+| 可选 ElevenLabs 适配器缺失或未配置密钥 | 保持当前接入方式失败并提示；不影响 `5578`/`5580` 与浏览器语音 |
 
 ## 9. 部署拓扑
 

@@ -14,6 +14,9 @@
     "build": "pnpm --dir frontend build",
     "cosyvoice:setup": "node backend/services/tts/runtimes/cosyvoice/setup.mjs",
     "cosyvoice:start": "node backend/services/tts/runtimes/cosyvoice/start.mjs",
+    "elevenlabs:setup": "node backend/services/elevenlabs/setup.mjs",
+    "elevenlabs:start": "node backend/services/elevenlabs/start.mjs",
+    "elevenlabs:test": "node backend/services/elevenlabs/test.mjs",
     "start": "pnpm --dir frontend start",
     "tts:setup": "node backend/services/tts/setup.mjs",
     "tts:test": "node backend/services/tts/test.mjs",
@@ -35,7 +38,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "pnpm --dir frontend typecheck",
-    "test": "pnpm --dir frontend test && pnpm tts:test && pnpm asr:test && pnpm db:test && pnpm memory:test",
+    "test": "pnpm --dir frontend test && pnpm tts:test && pnpm asr:test && pnpm elevenlabs:test && pnpm db:test && pnpm memory:test",
     "test:coverage": "pnpm --dir frontend test:coverage",
     "check": "pnpm lint && pnpm typecheck && pnpm test"
   },

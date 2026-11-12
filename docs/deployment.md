@@ -158,6 +158,21 @@ pnpm tts:start
 Audio8 sidecar 监听 `127.0.0.1:5582`，自动选择 CUDA、Apple MPS 或 CPU。模型面向高质量
 中英文及多语言合成；低延迟优先时仍可在页面音色选择器中使用 Kokoro。
 
+### 可选：ElevenLabs 本机适配
+
+需要在本地验证 ElevenLabs 音色或转录时，可启动独立适配器：
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+```
+
+适配器监听 `127.0.0.1:5583`，把 ElevenLabs 翻译为 OpenAI 兼容语音契约；在“偏好设置 →
+语音服务接入”中选择 HTTP API 并填写 `http://127.0.0.1:5583/v1` 即可。它不影响
+`5578`/`5580` 的默认路径，也不会随 `dev:offline` 启动。`ELEVENLABS_API_KEY` 只存在于
+本机适配器进程，不得写入 `NEXT_PUBLIC_*` 或浏览器配置。该服务不能部署到 Vercel，生产
+环境仍应使用白名单内的远程语音端点。
+
 ## 实时 ASR 服务
 
 `backend/services/asr` 提供可切换的 Qwen3-ASR-1.7B 与 SenseVoiceSmall
@@ -494,6 +509,7 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 | `AI_ALLOWED_BROWSER_SPEECH_HOSTS` | 运行时服务端 | 生产环境使用远程语音接口时必需 |
 | `MODEL_CONFIG_PRIVATE_KEY_BASE64` | 运行时服务端 | 生产多实例必需 |
 | `MOSS_TTS_*`、`MOSS_ASR_*`、`MOSS_KOKORO_*` | 不适用 | Vercel 上不要配置 |
+| `MOSS_ELEVENLABS_*`、`ELEVENLABS_API_KEY` | 不适用 | 仅本机可选的 ElevenLabs 适配器；Vercel 上不要配置 |
 
 前三行未配置时，`next build` 仍会成功，但登录、云同步与对话会在运行时报
 `service_not_configured`。构建通过不代表配置正确。

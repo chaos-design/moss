@@ -12,7 +12,8 @@ flowchart LR
     Types --> Frontend[Vitest]
     Frontend --> TTS[Python TTS tests]
     TTS --> ASR[Python ASR tests]
-    ASR --> Database[Database contract tests]
+    ASR --> ElevenLabs[ElevenLabs adapter tests]
+    ElevenLabs --> Database[Database contract tests]
     Database --> Build[Next.js build]
 ```
 
@@ -20,10 +21,11 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 72 文件，444 测试通过 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 77 文件，543 测试通过；本机默认 10s 上限下有 1 个重型用例偶发超时，放宽到 30s 全通过 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
-| `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 14 测试通过 |
+| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由与上游映射 | 23 测试通过 |
+| `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 15 测试通过 |
 | `pnpm memory:test` | 评估集校验、召回排序、参数网格和学习指标 | 6 测试通过 |
 | `pnpm test:coverage` | 核心学习算法 | 语句/函数/行 100%，分支 94.73% |
 | `pnpm build` | Next.js 路由、打包和服务端边界 | 通过 |
@@ -308,6 +310,37 @@ Prompt 基础契约的修改只经单元测试覆盖，未经真实模型验证�
 - 浏览器对本机 TTS 的 health、CORS、prepare、synthesize 和音频播放。
 
 这些结果证明协议链路可运行，不代表所有目标硬件的质量、延迟或容量达标。
+
+## 2026-11-12 ElevenLabs 可选适配服务
+
+新增独立可选的 `backend/services/elevenlabs`，在本机 `127.0.0.1:5583` 把 ElevenLabs
+TTS/ASR 翻译为 Moss 已支持的 OpenAI 兼容语音契约。`5578` TTS 网关、`5580` ASR、前端默认
+接入与 `pnpm dev:offline` 均未改动；只有学习者把 ASR 与 TTS 都切到 HTTP API 并填写本服务
+地址时才会走 ElevenLabs。
+
+自动化结果：
+
+- `pnpm lint`：通过，263 个文件。
+- `pnpm typecheck`：通过。
+- `pnpm --dir frontend test`：77 文件、543 测试通过。默认 10s 上限下
+  `tests/shadowing-workspace.test.tsx > shows measured scores and saves the completed
+  attempt` 在本机耗时 10.2–11.9s 而超时；以 `--testTimeout=30000` 复跑全部通过，说明是本机
+  负载导致的既有重型用例超时，不是本次后端变更引入的行为回归。
+- `pnpm tts:test` 15、`pnpm asr:test` 35、`pnpm elevenlabs:test` 23、`pnpm db:test` 15、
+  `pnpm memory:test` 6：全部通过。
+- `pnpm build`：通过，Next.js 16.3.3 完成 28 个页面/路由的静态生成与类型检查。
+
+真实进程冒烟：以本地假上游监听 `127.0.0.1:5598`，启动适配器进程并验证
+`GET /health` 返回 `ready: true`；`POST /v1/audio/speech` 将 `alloy` 映射到 ElevenLabs
+voice ID、把 `speed: 1.5` 收敛为 `1.2`、以 `mp3_44100_128` 请求并原样返回
+`audio/mpeg`；`POST /v1/audio/transcriptions` 以 multipart 上传并返回
+`{"text":"mock transcript"}`；`aac` 返回 `400 unsupported_format`，非白名单 Origin
+返回 `403`。本机 macOS 系统代理会拦截回环请求，冒烟时需设置
+`NO_PROXY=127.0.0.1,localhost`；这只影响本地假上游测试，不影响默认 HTTPS 上游。
+
+未验证：本环境没有 `ELEVENLABS_API_KEY`，因此未调用真实 ElevenLabs 服务，未验证真实音色
+质量、端到端延迟、账户配额、计费与保留策略。上述冒烟只证明协议翻译、进程启动和错误映射，
+不能替代配置真实密钥后的验收。
 
 ## 2026-10-07 影子跟读自动跟随与角色反馈
 

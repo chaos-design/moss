@@ -34,6 +34,7 @@ cp .env.example .env.local
 | Web + 云服务 | Supabase 与 AI 变量 | `pnpm dev` | 登录、云同步、真实模型回复 |
 | 完整离线语音 | 已安装 ASR/TTS | `pnpm dev:offline` | Web、ASR、TTS 一起启动 |
 | 单独语音服务 | 对应模型已安装 | `pnpm asr:start` / `pnpm tts:start` | 独立调试协议与模型 |
+| 可选 ElevenLabs 适配 | 已配置 `ELEVENLABS_API_KEY` | `pnpm elevenlabs:start` | 本机 OpenAI 兼容 TTS/ASR |
 | 生产构建 | 生产环境变量 | `pnpm build && pnpm start` | 优化后的 Next.js 服务 |
 
 本地地址：
@@ -45,10 +46,11 @@ cp .env.example .env.local
 | ASR | `ws://127.0.0.1:5580/v1/asr/stream` | `backend/services/asr` |
 | CosyVoice | `http://127.0.0.1:5581` | TTS 私有 sidecar |
 | Audio8 | `http://127.0.0.1:5582` | TTS 私有 sidecar |
+| ElevenLabs Adapter | `http://127.0.0.1:5583` | `backend/services/elevenlabs`（可选） |
 
 `pnpm dev:offline` 由 `backend/dev.mjs` 管理子进程。Web、ASR 或必需的 TTS 网关退出时，
 父进程会终止其他子进程，避免遗留占用端口的服务。Audio8 和 CosyVoice 是可选服务，
-未安装时不影响 Kokoro 网关启动。
+未安装时不影响 Kokoro 网关启动；ElevenLabs 适配器也不由 `dev:offline` 启动。
 
 ## 3. 请求与数据流
 
@@ -241,6 +243,28 @@ pnpm tts:start
 5. 增加不加载大模型的单元测试。
 
 完整说明见 [`../backend/services/tts/README.md`](../backend/services/tts/README.md)。
+
+### 可选 ElevenLabs 适配服务
+
+`backend/services/elevenlabs` 独立实现 OpenAI 兼容的 `/audio/speech` 与
+`/audio/transcriptions`，在上游调用 ElevenLabs。它与 Kokoro/Audio8/CosyVoice 网关无关：
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+curl http://127.0.0.1:5583/health
+```
+
+在“偏好设置 → 语音服务接入”中把 ASR 与 TTS 都切到 HTTP API，接口地址填
+`http://127.0.0.1:5583/v1`，模型分别填 `scribe_v2` 与 `eleven_v4`。该服务不会改变
+`5578`/`5580`，也不会被 `dev:offline` 自动启动。测试使用 mock transport，不访问上游：
+
+```bash
+pnpm elevenlabs:test
+```
+
+完整契约、隐私边界和故障语义见
+[`../backend/services/elevenlabs/README.md`](../backend/services/elevenlabs/README.md)。
 
 ## 9. 环境变量与秘密
 

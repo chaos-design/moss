@@ -25,6 +25,8 @@
 | `WS /v1/asr/stream` | 可选部署 token | 连接数与消息大小限制 | PCM 与转写 |
 | FunASR 2-pass WebSocket | 由本地服务决定 | 由本地服务决定 | PCM 与转写 |
 | `POST /v1/tts/synthesize` | loopback + Origin | 文本长度与服务资源限制 | 文本与 WAV |
+| `POST http://127.0.0.1:5583/v1/audio/speech` | 可选本机 Bearer token | 2000 字符、上游配额 | 文本与音频 |
+| `POST http://127.0.0.1:5583/v1/audio/transcriptions` | 可选本机 Bearer token | 8 MB、上游配额 | 音频与转写 |
 
 Next.js API 成功响应使用 `{ "data": ... }`，失败响应使用
 `{ "error": { "code": "...", "message": "..." } }`。Provider 原始错误、响应正文和凭据
@@ -142,6 +144,26 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 说话打断 AI 播报，需要打断时使用文字输入。`browser` 识别由浏览器实现决定行为，静默一段时间后
 浏览器会结束一次会话，前端会自动重新开始监听。识别引擎选择器（SenseVoice、Qwen3-ASR、
 FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控件。
+
+### 可选：ElevenLabs 本机适配服务
+
+`backend/services/elevenlabs` 是一个独立的本机适配器，把 ElevenLabs 的 TTS 与 ASR 翻译为
+OpenAI 兼容的 `/audio/speech` 与 `/audio/transcriptions`。它监听 `127.0.0.1:5583`，
+不修改 `5578`、`5580` 或默认接入方式；只有把两种语音来源都切到 `api` 并填写
+`http://127.0.0.1:5583/v1` 时才生效。
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+```
+
+默认模型为 `eleven_v4`（TTS）与 `scribe_v2`（ASR），默认音色为快速入门使用的 George
+`JBFqnCBsd6RMkjVDRZzb`。协议、音色别名、隐私边界和全部环境变量见
+[适配服务 README](../backend/services/elevenlabs/README.md)。
+
+该服务仅适用于本机开发或桌面运行：`/api/speech/*` 在生产环境拒绝回环地址，Vercel 也不能
+访问用户本机端口。选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和
+计费策略。
 
 ## POST `/api/speech/asr`
 
