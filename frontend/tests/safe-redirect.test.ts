@@ -15,7 +15,16 @@ describe("getSafeRedirectPath", () => {
     "//evil.example/path",
     "/\\evil.example/path",
     "/workspace\nLocation: https://evil.example",
+    "/login",
+    "/login?next=/workspace",
+    "/login/callback",
   ])("falls back for unsafe redirect value %s", (value) => {
     expect(getSafeRedirectPath(value)).toBe("/workspace")
+  })
+
+  it("only rejects the login page as a path, not mentions of login in the query", () => {
+    expect(getSafeRedirectPath("/workspace/review?from=login#today")).toBe(
+      "/workspace/review?from=login#today",
+    )
   })
 })

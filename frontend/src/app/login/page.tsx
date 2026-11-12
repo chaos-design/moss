@@ -1,10 +1,13 @@
 import { AudioLinesIcon, CheckIcon, MessageCircleMoreIcon, RotateCcwIcon } from "lucide-react"
 import type { Metadata } from "next"
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { Brand } from "@/components/brand"
 import { LoginForm } from "@/features/auth/login-form"
 import { isDemoMode } from "@/lib/runtime-mode"
 import { getSafeRedirectPath } from "@/lib/safe-redirect"
+import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { hasUsableSession } from "@/lib/supabase/session"
 
 export const metadata: Metadata = {
   title: "登录",
@@ -38,6 +41,20 @@ export default async function LoginPage({
       ? requestedError
       : undefined
   const demoMode = isDemoMode()
+
+  // 恢复「已经登录成功、却还停在登录页」的状态：signInWithPassword 会先建立会话，
+  // 跳转失败后，内置浏览器里的账号密码仍然是预填的，会话也仍然有效。这里在服务端
+  // 直接把该会话送回目标页，既不需要清空凭证，也不需要用户重新输入或再次提交。
+  // 放在服务端还意味着即使内置浏览器仍持有旧的客户端 bundle，重定向依然生效。
+  // 带明确错误信息（如 OAuth 回调失败）时保留登录页，避免吞掉错误提示。
+  if (!demoMode && !initialError) {
+    // getSupabaseServerClient() 里的 cookies() 会把本路由标记为动态渲染，不能包进 try/catch。
+    // 与 proxy 共用同一套会话判定，避免两处结论不一致造成 /login <-> /workspace 来回重定向。
+    const supabase = await getSupabaseServerClient()
+    if (supabase && (await hasUsableSession(supabase))) {
+      redirect(nextPath)
+    }
+  }
 
   return (
     <main className="grid min-h-svh bg-background lg:grid-cols-[minmax(0,1.15fr)_minmax(440px,0.85fr)]">

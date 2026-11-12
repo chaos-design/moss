@@ -20,7 +20,13 @@ export function getSafeRedirectPath(value: string | null) {
 
   try {
     const target = new URL(value, validationOrigin)
-    if (target.origin !== validationOrigin) {
+    // 登录页不能作为「登录后目标页」：跳回 /login 视觉上等同于没有跳转，正是
+    // 「提示登录成功却停在登录页」的一种成因。统一兜底到工作区首页。
+    if (
+      target.origin !== validationOrigin ||
+      target.pathname === "/login" ||
+      target.pathname.startsWith("/login/")
+    ) {
       return fallbackPath
     }
 

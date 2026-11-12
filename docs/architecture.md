@@ -262,7 +262,11 @@ flowchart LR
 
 ## 7. 安全与资源边界
 
-- `/workspace/**` 在非演示模式下由 `proxy.ts` 刷新并验证 Supabase session。
+- `/workspace/**` 在非演示模式下由 `proxy.ts` 刷新并验证 Supabase session；登录页的服务端
+  已登录态判定复用同一 `hasUsableSession()`。正常情况用联网的 `getUser()` 严格校验，
+  仅当服务端连不上 Supabase Auth（如本机代理环境下 Node fetch 不走代理）时，才降级为只读
+  会话 cookie 的 `getSession()`，避免把已登录用户 307 弹回 `/login` 造成跳转空转；
+  无会话（400）和凭证无效（401）仍一律按未登录处理。
 - 用户表和向量表启用 RLS；RPC 使用 `auth.uid()`，调用者不能指定其他用户。
 - 账户导出使用当前用户 session 与 RLS；账户删除的 Admin API 仅在邮箱二次确认后调用，
   删除后必须逐表验证残留。service-role key 和审计 HMAC 密钥只存在服务端。
