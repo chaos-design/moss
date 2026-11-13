@@ -165,7 +165,8 @@ describe("POST /api/speech/tts/test", () => {
 
     expect(response.status).toBe(200)
     expect(result.ok).toBe(false)
-    expect(result.error.code).toBe("speech_upstream_error")
+    expect(result.status).toBe(503)
+    expect(result.error.code).toBe("speech_not_configured")
     expect(result.error.message).toContain("503")
     expect(result.error.message).toContain("not_configured")
     expect(result.error.message).toContain("尚未配置 FISH_API_KEY")

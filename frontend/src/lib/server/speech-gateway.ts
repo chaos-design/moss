@@ -135,15 +135,98 @@ async function extractUpstreamError(response: Response): Promise<{
   }
 }
 
+type UpstreamFailure = {
+  status: number
+  code: string
+  reason: string
+}
+
+/**
+ * 还原上游失败的本来含义。
+ *
+ * 本机 5583/5584 适配器把上游的凭据、余额、限流和超时都包成 502，如果网关再统一压成
+ * 502，学习者只会看到「接口返回 502」而无法判断该改密钥、充值还是等一会儿。这里按上游
+ * 状态码与错误码分流：诊断结果给出可执行的原因，客户端再按状态决定是否降级。
+ */
+function classifyUpstreamFailure(
+  service: SpeechService,
+  upstreamStatus: number,
+  upstreamCode: string,
+): UpstreamFailure {
+  const noun = service === "asr" ? "语音识别" : "语音合成"
+  const code = upstreamCode.toLowerCase()
+  if (upstreamStatus === 402 || code.includes("payment_required")) {
+    return {
+      status: 402,
+      code: "speech_payment_required",
+      reason: `${noun}服务的上游账户余额不足，请改用免费模型或先充值。`,
+    }
+  }
+  if (
+    upstreamStatus === 401 ||
+    upstreamStatus === 403 ||
+    /unauthor|invalid_api_key|authentication|invalid_token/.test(code)
+  ) {
+    return {
+      status: 401,
+      code: "speech_credentials_invalid",
+      reason: `${noun}服务的上游凭据无效，请检查服务端 API Key 是否完整有效。`,
+    }
+  }
+  if (code.includes("not_configured")) {
+    return {
+      status: 503,
+      code: "speech_not_configured",
+      reason: `${noun}服务尚未配置上游密钥。`,
+    }
+  }
+  if (upstreamStatus === 429 || code.includes("rate_limited")) {
+    return {
+      status: 429,
+      code: "speech_rate_limited",
+      reason: `${noun}服务请求过于频繁，请稍后重试。`,
+    }
+  }
+  if (upstreamStatus === 504 || code.includes("timeout")) {
+    return {
+      status: 504,
+      code: "speech_timeout",
+      reason: `${noun}服务响应超时，请稍后重试。`,
+    }
+  }
+  if (upstreamStatus === 503 || code.includes("unreachable")) {
+    return {
+      status: 503,
+      code: "speech_unavailable",
+      reason: `${noun}服务暂时不可用，请确认服务已启动且网络或代理可达。`,
+    }
+  }
+  if (
+    [400, 404, 409, 422].includes(upstreamStatus) ||
+    code.includes("request_rejected") ||
+    code.startsWith("invalid_") ||
+    code.includes("unsupported_")
+  ) {
+    return {
+      status: 400,
+      code: "speech_request_rejected",
+      reason: `${noun}服务拒绝了请求参数，请检查模型、音色与音频格式。`,
+    }
+  }
+  return {
+    status: 502,
+    code: "speech_upstream_error",
+    reason: `${noun}服务返回 ${upstreamStatus}，请检查接口地址与密钥。`,
+  }
+}
+
 async function describeUpstreamFailure(service: SpeechService, response: Response) {
-  const base =
-    service === "asr"
-      ? `语音识别接口返回 ${response.status}，请检查接口地址与密钥。`
-      : `语音合成接口返回 ${response.status}，请检查接口地址与密钥。`
   const upstream = await extractUpstreamError(response)
+  const failure = classifyUpstreamFailure(service, response.status, upstream.code ?? "")
+  // 上游状态码与错误码一起回传：设置页据此给出下一步动作，学习者仍看到完整可读的句子。
   const detail = [upstream.code ?? null, upstream.detail ?? null].filter(Boolean).join("，")
-  const message = detail ? `${base}（${detail}）` : base
-  return new SpeechGatewayError("speech_upstream_error", message, 502, true)
+  const message = `${failure.reason}（上游 ${response.status}${detail ? `，${detail}` : ""}）`
+  return new SpeechGatewayError(failure.code, message, failure.status, true)
 }
 
 export async function transcribeSpeechAudio(input: {

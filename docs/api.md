@@ -262,7 +262,13 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
   `response_format=json`、可选 `language`。
 - 上游 30 秒未响应视为不可用。错误码：`invalid_json`、`invalid_request`、
   `invalid_speech_endpoint`、`invalid_audio`、`request_too_large`、`rate_limited`、
-  `speech_endpoint_unreachable`、`speech_upstream_error`、`speech_invalid_response`、`asr_failed`。
+  `speech_endpoint_unreachable`、`speech_request_rejected`（400）、`speech_credentials_invalid`
+  （401）、`speech_payment_required`（402）、`speech_rate_limited`（429）、
+  `speech_unavailable` / `speech_not_configured`（503）、`speech_timeout`（504）、
+  `speech_upstream_error`（502）、`speech_invalid_response`、`asr_failed`。
+- 上游状态不再一律折算成 502：本机 5583/5584 适配器会把凭据、余额、限流与超时都包成 502，
+  网关按上游状态码与错误码还原成上表的状态，设置页据此提示「改密钥 / 充值 / 稍后重试」。
+  浏览器侧仍把 401、402 与 5xx 视为「该链路当前不可用」，当次会话回退系统语音或浏览器识别。
 - 服务端只返回规范化文案，不回传上游响应正文；密钥仅用于当次转发，不落盘、不记录。
 - 设置页「测试识别接口」用内置 0.2 秒 WAV 测试音走同一链路，可在开始语音对话前验证配置。
 

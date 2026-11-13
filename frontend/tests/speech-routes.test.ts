@@ -185,7 +185,7 @@ describe("POST /api/speech/asr", () => {
     expect(form.get("language")).toBe("zh")
   })
 
-  it("normalizes upstream failures into a degraded-service response", async () => {
+  it("keeps an unreachable endpoint as 502 while separating credential failures", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")))
     const unreachable = await asrPost(
       asrRequest({ audioBase64: base64("audio"), endpoint: validEndpoint }),
@@ -193,12 +193,16 @@ describe("POST /api/speech/asr", () => {
     expect(unreachable.status).toBe(502)
     expect((await unreachable.json()).error.code).toBe("speech_endpoint_unreachable")
 
+    // 上游 401 是凭据问题，不再压成 502；客户端按 401 决定降级并提示原因。
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 401 })))
     const rejected = await asrPost(
       asrRequest({ audioBase64: base64("audio"), endpoint: validEndpoint }),
     )
-    expect(rejected.status).toBe(502)
-    expect((await rejected.json()).error.message).toContain("401")
+    expect(rejected.status).toBe(401)
+    const rejectedBody = (await rejected.json()) as { error: { code: string; message: string } }
+    expect(rejectedBody.error.code).toBe("speech_credentials_invalid")
+    expect(rejectedBody.error.message).toContain("401")
+    expect(rejectedBody.error.message).toContain("凭据")
   })
 
   it("surfaces the upstream JSON error code and reason for recognition", async () => {
@@ -219,12 +223,33 @@ describe("POST /api/speech/asr", () => {
     const response = await asrPost(
       asrRequest({ audioBase64: base64("audio"), endpoint: validEndpoint }),
     )
-    expect(response.status).toBe(502)
+    expect(response.status).toBe(503)
     const body = (await response.json()) as { error: { code: string; message: string } }
-    expect(body.error.code).toBe("speech_upstream_error")
+    expect(body.error.code).toBe("speech_not_configured")
     expect(body.error.message).toContain("503")
     expect(body.error.message).toContain("not_configured")
     expect(body.error.message).toContain("尚未配置 FISH_API_KEY")
+  })
+
+  it("maps adapter quota failures to a payment-required response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: "fishaudio_payment_required", message: "余额不足" },
+          }),
+          { status: 502, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
+    const response = await asrPost(
+      asrRequest({ audioBase64: base64("audio"), endpoint: validEndpoint }),
+    )
+    expect(response.status).toBe(402)
+    const body = (await response.json()) as { error: { code: string; message: string } }
+    expect(body.error.code).toBe("speech_payment_required")
+    expect(body.error.message).toContain("fishaudio_payment_required")
   })
 
   it("rate limits repeated recognition requests per endpoint", async () => {

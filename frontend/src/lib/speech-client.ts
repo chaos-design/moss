@@ -19,8 +19,10 @@ async function readErrorMessage(response: Response, fallback: string) {
   }
 }
 
+// 401/402 与 5xx 一样属于「这条链路现在不可用」：凭据失效或余额不足时仍应回退浏览器识别，
+// 而不是把学习者挡在对话之外。诊断信息由设置页的测试入口负责展示。
 function isUnavailableStatus(status: number) {
-  return status === 502 || status === 503 || status === 504
+  return status === 401 || status === 402 || status === 502 || status === 503 || status === 504
 }
 
 async function blobToBase64(blob: Blob) {

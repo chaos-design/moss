@@ -270,6 +270,21 @@ pnpm elevenlabs:test
 完整契约、隐私边界和故障语义见
 [`../backend/services/elevenlabs/README.md`](../backend/services/elevenlabs/README.md)。
 
+### 可选 Fish Audio 适配服务
+
+`backend/services/fishaudio` 同样实现 OpenAI 兼容接口，监听 `127.0.0.1:5584`：
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+curl http://127.0.0.1:5584/health
+```
+
+设置页选择“Fish Audio 适配器”后使用 `http://127.0.0.1:5584/v1`、`transcribe-1-pro` /
+`s2.1-pro-free`。该适配器需要能访问 `api.fish.audio`：国内网络常需代理，`httpx` 会读取
+`HTTPS_PROXY`；若代理只转发部分域名，请在启动进程的环境里显式设置可用的出口，或把
+`MOSS_FISHAUDIO_BASE_URL` 指向可达的兼容服务。
+
 ## 9. 环境变量与秘密
 
 `.env.example` 是变量名称和默认路径的唯一清单。提交前检查：
@@ -346,6 +361,21 @@ Next.js，因为这些变量会在构建阶段内联。
 
 先请求 `GET http://127.0.0.1:5578/health`。网关完全不可达时允许回退；网关可达但模型文件
 缺失时应修复安装，不应把配置错误当成降级成功。
+
+### 5583 / 5584 一直返回 502
+
+先分清「端口没起来」和「上游拒绝」：`GET http://127.0.0.1:5583/health` 或 `:5584/health`
+返回 200 说明适配器在线，502 来自上游。设置页「测试合成接口」的诊断会给出还原后的状态：
+
+- `speech_credentials_invalid`（401）：适配器进程里的 `ELEVENLABS_API_KEY` / `FISH_API_KEY`
+  无效。ElevenLabs 只接受 `sk_` 开头、创建时展示一次的密钥，把 Key ID 填进环境变量会得到
+  `invalid_api_key`。
+- `speech_payment_required`（402）：Fish Audio 当前模型需要充值，可换 `s2.1-pro-free`。
+- `speech_unavailable`（503）：出口网络或代理无法访问上游域名。
+- `speech_request_rejected`（400）：模型、音色或输出格式不被上游接受。
+
+适配器改造后必须重启进程才会生效：`pnpm elevenlabs:start` / `pnpm fishaudio:start`。
+旧进程会继续用改造前的错误码，看起来就像「改了没作用」。
 
 ### ASR 能连接但没有 final
 
