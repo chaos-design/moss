@@ -137,13 +137,13 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 | `browser` | 浏览器 `SpeechRecognition` | 浏览器 `speechSynthesis` |
 
 `local` 接入的本机服务由设置中的下拉输入选择决定，选项与通用规则配置 `speech-rules.json`
-的 MOSS 本机服务可用项一致，不再接受手填地址；留空时使用 `NEXT_PUBLIC_ASR_SERVICE_URL` 与
-`NEXT_PUBLIC_TTS_SERVICE_URL`。识别引擎与本机语音音色按所选本机服务独立匹配并分别持久化，
-不沿用其他本机服务的取值。`local` 连接失败时，前端在当前会话内自动回退到浏览器引擎并提示
-一次，不改写用户已保存的接入方式。`api` 接入的默认根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与
-`NEXT_PUBLIC_TTS_API_URL`，模型来自 `NEXT_PUBLIC_ASR_API_MODEL` 与
-`NEXT_PUBLIC_TTS_API_MODEL`；环境模型未设置时模型字段保持为空，由服务端默认模型接管；
-`tts.voice` 留空时使用 `alloy`。
+的 MOSS 本机服务可用项一致，触发器和选项同时展示服务地址，不再接受手填地址；留空时使用
+`NEXT_PUBLIC_ASR_SERVICE_URL` 与 `NEXT_PUBLIC_TTS_SERVICE_URL`。识别引擎与本机语音音色按
+所选本机服务独立匹配并分别持久化，不沿用其他本机服务的取值。`local` 连接失败时，前端在
+当前会话内自动回退到浏览器引擎并提示一次，不改写用户已保存的接入方式。`api` 接入的默认
+根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与 `NEXT_PUBLIC_TTS_API_URL`，模型来自
+`NEXT_PUBLIC_ASR_API_MODEL` 与 `NEXT_PUBLIC_TTS_API_MODEL`；环境模型未设置时模型字段保持
+为空，由服务端默认模型接管；`tts.voice` 留空时使用 `alloy`。
 
 设置卡片为 ASR 与 TTS 各提供一个独立的「测试识别接口」「测试合成接口」按钮，分别验证本服务
 已配置地址与对应服务是否正常；两个按钮的结果、测试中状态与异常状态互不覆盖。本机服务下拉、

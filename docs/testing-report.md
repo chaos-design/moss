@@ -608,3 +608,35 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
 
 未执行：5583/5584 的真实端到端合成与识别（本机 ElevenLabs 密钥为 key ID、Fish Audio
 经当前代理不可达，均返回上游错误）；新下拉与测试按钮的浏览器手工点验。
+
+## 2026-11-13 语音服务卡片布局与 502 诊断
+
+按页面反馈调整语音服务卡片，并排查「测试接口 502」：
+
+1. **下拉展示地址**：本机服务下拉的触发器与每个选项都显示服务名和地址；触发器地址过长时
+   截断并用 `title` 保留完整值，选项内允许换行，避免长 WebSocket 地址撑破弹层。
+2. **测试按钮按分类吸底**：ASR 与 TTS 的测试按钮与结果文案分别移到各自栏目的卡片页脚，
+   页脚在字段区滚动时固定可见；未选 HTTP API 时按钮禁用并只显示一行原因，不再堆叠两条
+   长提示。
+3. **并排卡片等高**：模型服务/学习策略、对话方式/系统发音两组网格由 `items-start` 改为
+   `items-stretch`，卡片 `h-full`（表单内卡片 `flex-1`），短卡片拉伸到与相邻卡片底部对齐。
+4. **502 诊断**：ElevenLabs 用 `400 + detail.code=invalid_api_key` 表示密钥错误（本机填的是
+   key ID），适配器此前误归为「请求参数错误」；现按上游 `detail.code` 归为
+   `elevenlabs_unauthorized（invalid_api_key）`，只透传机器码不带上游自由文本。两个适配器
+   在连接建立失败（`ConnectError`，请求未送达）时重试一次，降低代理抖动导致的
+   `*_unreachable`。设置页对 `unauthorized` / `unreachable` / `payment_required` 追加
+   可执行的排查提示。
+
+自动化结果：
+
+- `pnpm check`：通过（lint、typecheck、前端 82 个测试文件 636 个用例；ElevenLabs 40 个、
+  Fish Audio 48 个 Python 用例）。
+- `pnpm build`：通过（独立 `NEXT_DIST_DIR`，29 条路由正常产出）。
+- 新增测试：下拉展示地址、测试按钮位于卡片页脚、502 鉴权提示；适配器新增 key ID 400 →
+  `elevenlabs_unauthorized` 与空音色回退默认音色的用例。
+
+实测结论：`/api/speech/tts/test` 对 5583 返回 `ok:false`、`status:502`，上游为
+`400 invalid_api_key`（`API key ID used as API key`）；5584 为 `401`。两者都是服务端凭据
+问题而非页面链路，修复后页面展示「上游凭据无效，请检查对应服务端的 API Key」。
+
+未执行：填入有效 `sk_` 密钥后的真实合成/识别；浏览器手工点验页脚吸底与等高效果。

@@ -59,6 +59,13 @@ class FishAudioClient:
     def close(self) -> None:
         self._client.close()
 
+    def _post(self, *args: Any, **kwargs: Any) -> httpx.Response:
+        """连接建立失败时重试一次：代理抖动会表现为 ConnectError，但请求并未送达上游。"""
+        try:
+            return self._client.post(*args, **kwargs)
+        except httpx.ConnectError:
+            return self._client.post(*args, **kwargs)
+
     def synthesize(
         self,
         *,
@@ -83,7 +90,7 @@ class FishAudioClient:
         if reference_id:
             payload["reference_id"] = reference_id
         try:
-            response = self._client.post(
+            response = self._post(
                 "/v1/tts",
                 headers={TTS_MODEL_HEADER: model},
                 json=payload,
@@ -140,7 +147,7 @@ class FishAudioClient:
         if language:
             data["language"] = language
         try:
-            response = self._client.post(
+            response = self._post(
                 "/v1/asr",
                 headers={TTS_MODEL_HEADER: model},
                 data=data,

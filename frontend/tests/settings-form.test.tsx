@@ -416,7 +416,7 @@ describe("settings model configs", () => {
 
     // The prompt editor spans the full first row because it carries two long text regions. The
     // three compact cards below occupy row 2 columns 1 and 2 plus a full-width row 3, so no two
-    // cards ever claim the same grid cell and nothing stretches to fill a taller neighbour.
+    // cards claim the same grid cell; the pair in row 2 stretches to one aligned height.
     expect(promptCard?.className).toContain("lg:col-span-2")
     expect(promptCard?.className).toContain("lg:row-start-1")
     expect(waysCard?.className).toContain("lg:col-start-1")
@@ -432,8 +432,10 @@ describe("settings model configs", () => {
     expect(timingCard?.className).toContain("order-4")
 
     const grid = promptCard?.parentElement
-    // `items-start` is what keeps a short card from being stretched into a tall empty block.
-    expect(grid?.className).toContain("items-start")
+    // 并排卡片等高：短卡片拉伸到与相邻卡片一致，底部对齐，而不是按自身内容截断。
+    expect(grid?.className).toContain("items-stretch")
+    expect(waysCard?.className).toContain("h-full")
+    expect(voiceCard?.className).toContain("h-full")
   })
 
   it("packs the two dialogue controls into one card and the timing fields into one row", () => {

@@ -69,6 +69,35 @@ class ElevenLabsClientTest(unittest.TestCase):
             },
         )
 
+    def test_falls_back_to_the_default_voice_when_the_voice_is_empty(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            return httpx.Response(
+                200,
+                content=b"ID3",
+                headers={"content-type": "audio/mpeg"},
+            )
+
+        client = ElevenLabsClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        client.synthesize(
+            text="Hello.",
+            voice="  ",
+            model="eleven_v4",
+            response_format="mp3",
+            speed=1.0,
+        )
+
+        self.assertEqual(
+            captured["url"],
+            "https://api.elevenlabs.io/v1/text-to-speech/"
+            "JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128",
+        )
+
     def test_maps_openai_voice_aliases_and_clamps_speed(self) -> None:
         captured: dict[str, object] = {}
 
@@ -255,6 +284,38 @@ class ElevenLabsClientTest(unittest.TestCase):
                 self.assertEqual(context.exception.code, expected_code)
                 self.assertNotIn("provider body", context.exception.message)
                 self.assertNotIn("test-key", context.exception.message)
+
+    def test_treats_a_key_id_400_as_unauthorized(self) -> None:
+        client = ElevenLabsClient(
+            create_settings(),
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    400,
+                    json={
+                        "detail": {
+                            "type": "authentication_error",
+                            "code": "invalid_api_key",
+                            "message": "API key ID used as API key",
+                        }
+                    },
+                )
+            ),
+        )
+        with self.assertRaises(ElevenLabsServiceError) as context:
+            client.synthesize(
+                text="Hello.",
+                voice="alloy",
+                model="eleven_v4",
+                response_format="mp3",
+                speed=1.0,
+            )
+
+        self.assertEqual(context.exception.status, 502)
+        self.assertEqual(context.exception.code, "elevenlabs_unauthorized")
+        # 只透传机器码，方便定位；不回传上游自由文本或密钥。
+        self.assertIn("invalid_api_key", context.exception.message)
+        self.assertNotIn("API key ID used as API key", context.exception.message)
+        self.assertNotIn("test-key", context.exception.message)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  AlertTriangleIcon,
-  CheckCircle2Icon,
-  EarIcon,
-  LoaderCircleIcon,
-  Volume2Icon,
-} from "lucide-react"
+import { EarIcon, LoaderCircleIcon, Volume2Icon } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,6 +9,7 @@ import {
   CardAction,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -110,6 +105,20 @@ function describeAudioSize(bytes: number | undefined) {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
 }
 
+// 502 多来自上游：把常见原因转成可执行的下一步，同时保留原始错误码。
+function describeSpeechFailureHint(message: string) {
+  if (/unauthorized|invalid_api_key|invalid token/i.test(message)) {
+    return " 上游凭据无效，请检查对应服务端的 API Key 是否完整有效。"
+  }
+  if (/unreachable|not_configured|ECONNREFUSED/i.test(message)) {
+    return " 上游服务不可达，请确认服务已启动，且网络或代理可访问。"
+  }
+  if (/payment_required/i.test(message)) {
+    return " 上游账户余额不足，请改用免费模型或先充值。"
+  }
+  return ""
+}
+
 export function SpeechServiceCard() {
   const { config, resolved, setEndpoint } = useSpeechConfig()
   // ASR 与 TTS 的测试链路各自持有状态，一个服务的测试与结果不影响另一个服务。
@@ -168,12 +177,10 @@ export function SpeechServiceCard() {
           `${describeAudioSize(diagnostic.bytes)} · ${diagnostic.durationMs ?? 0} ms`,
       })
     } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误"
       setTtsTest({
         status: "error",
-        message:
-          error instanceof Error
-            ? `语音合成接口不可用：${error.message}`
-            : "语音合成接口不可用。",
+        message: `语音合成接口不可用：${message}${describeSpeechFailureHint(message)}`,
       })
     }
   }
@@ -210,18 +217,19 @@ export function SpeechServiceCard() {
           : "语音识别接口可用，本次返回空文本。",
       })
     } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误"
       setAsrTest({
         status: "error",
-        message:
-          error instanceof Error
-            ? `语音识别接口不可用：${error.message}`
-            : "语音识别接口不可用。",
+        message: `语音识别接口不可用：${message}${describeSpeechFailureHint(message)}`,
       })
     }
   }
 
   return (
-    <Card size="sm" className={cn("w-full min-w-0 rounded-lg", settingsCardHeightClass)}>
+    <Card
+      size="sm"
+      className={cn("flex w-full min-w-0 flex-col rounded-lg", settingsCardHeightClass)}
+    >
       <CardHeader className="shrink-0">
         <CardTitle className="flex items-center gap-2 font-serif text-lg">
           <EarIcon className="size-4 text-primary" aria-hidden="true" />
@@ -239,7 +247,7 @@ export function SpeechServiceCard() {
         </CardAction>
       </CardHeader>
 
-      <CardContent className="min-h-0 overflow-y-auto overscroll-contain">
+      <CardContent className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="grid min-w-0 gap-5 lg:grid-cols-2">
           <SpeechEndpointFields
             idPrefix="asr"
@@ -256,82 +264,72 @@ export function SpeechServiceCard() {
             onChange={(patch) => updateEndpoint("tts", patch)}
           />
         </div>
-
-        <div className="mt-5 flex flex-col gap-2 border-t pt-4">
-          <p className="text-xs text-muted-foreground">
-            「测试识别接口」验证语音识别已配置地址与识别服务，「测试合成接口」验证语音合成
-            已配置地址与合成服务；两条测试结果相互独立。
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={asr.transport !== "api" || asrTest.status === "testing"}
-              onClick={handleAsrTest}
-            >
-              {asrTest.status === "testing" ? (
-                <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <EarIcon data-icon="inline-start" />
-              )}
-              测试识别接口
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={tts.transport !== "api" || ttsTest.status === "testing"}
-              onClick={handleTtsTest}
-            >
-              {ttsTest.status === "testing" ? (
-                <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <Volume2Icon data-icon="inline-start" />
-              )}
-              测试合成接口
-            </Button>
-          </div>
-          <TestStatusLine
-            state={asrTest}
-            idleHint={
-              asr.transport === "api"
-                ? "可先用测试识别接口验证当前配置。"
-                : "选择 HTTP API 接入后可在此验证识别接口。"
-            }
-          />
-          <TestStatusLine
-            state={ttsTest}
-            idleHint={
-              tts.transport === "api"
-                ? "可先用测试合成接口验证当前配置。"
-                : "选择 HTTP API 接入后可在此验证合成接口。"
-            }
-          />
-        </div>
       </CardContent>
+
+      {/* 测试按钮按服务分栏，固定在卡片底部：内容区滚动时仍可直接验证对应服务。 */}
+      <CardFooter className="grid shrink-0 items-start gap-4 max-lg:grid-cols-1 lg:grid-cols-2 lg:gap-5">
+        <SpeechTestControl
+          service="asr"
+          state={asrTest}
+          disabled={asr.transport !== "api"}
+          onTest={handleAsrTest}
+        />
+        <SpeechTestControl
+          service="tts"
+          state={ttsTest}
+          disabled={tts.transport !== "api"}
+          onTest={handleTtsTest}
+        />
+      </CardFooter>
     </Card>
   )
 }
 
-function TestStatusLine({ state, idleHint }: { state: TestState; idleHint: string }) {
+function SpeechTestControl({
+  disabled,
+  onTest,
+  service,
+  state,
+}: {
+  disabled: boolean
+  onTest: () => void
+  service: SpeechService
+  state: TestState
+}) {
+  const isTesting = state.status === "testing"
+  const idleHint = service === "asr" ? "验证当前配置的识别接口。" : "验证当前配置的合成接口。"
+
   return (
-    <p
-      className={cn(
-        "flex items-center gap-1.5 text-xs",
-        state.status === "error" && "text-destructive",
-        state.status === "success" && "text-[var(--success)]",
-        state.status !== "error" && state.status !== "success" && "text-muted-foreground",
-      )}
-      role="status"
-    >
-      {state.status === "success" ? (
-        <CheckCircle2Icon className="size-3.5" aria-hidden="true" />
-      ) : state.status === "error" ? (
-        <AlertTriangleIcon className="size-3.5" aria-hidden="true" />
-      ) : null}
-      {state.message || idleHint}
-    </p>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full justify-center"
+        disabled={disabled || isTesting}
+        onClick={onTest}
+      >
+        {isTesting ? (
+          <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+        ) : service === "asr" ? (
+          <EarIcon data-icon="inline-start" />
+        ) : (
+          <Volume2Icon data-icon="inline-start" />
+        )}
+        {service === "asr" ? "测试识别接口" : "测试合成接口"}
+      </Button>
+      <p
+        className={cn(
+          "min-h-4 text-xs leading-5",
+          state.status === "error" && "text-destructive",
+          state.status === "success" && "text-[var(--success)]",
+          state.status !== "error" && state.status !== "success" && "text-muted-foreground",
+        )}
+        role="status"
+      >
+        {state.message || (disabled ? "选择 HTTP API 接入后可验证。" : idleHint)}
+      </p>
+    </div>
   )
 }
 
@@ -644,22 +642,38 @@ function LocalServiceSelect({
         {serviceLabels[service]}本机服务地址
       </FieldLabel>
       <Select items={items} value={current.id} onValueChange={handleSelect}>
-        <SelectTrigger id={`${service}-local-service`} className="w-full">
-          <SelectValue />
+        <SelectTrigger
+          id={`${service}-local-service`}
+          className="h-auto w-full items-center py-1.5"
+        >
+          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
+            <span className="max-w-full truncate">{current.label}</span>
+            <span
+              className="max-w-full truncate font-mono text-[10px] text-muted-foreground"
+              title={current.endpoint}
+            >
+              {current.endpoint}
+            </span>
+          </span>
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false}>
           <SelectGroup>
             {options.map((option) => (
               <SelectItem key={option.id} value={option.id}>
-                {option.label}
+                <span className="flex min-w-0 flex-col items-start gap-0.5 whitespace-normal">
+                  <span className="truncate">{option.label}</span>
+                  <span className="break-all text-left font-mono text-[10px] text-muted-foreground">
+                    {option.endpoint}
+                  </span>
+                </span>
               </SelectItem>
             ))}
           </SelectGroup>
         </SelectContent>
       </Select>
       <FieldDescription>
-        下拉选项与 MOSS 本机服务可用项一致；选择本机适配器时自动对齐到 HTTP API 接入。
-        留空使用环境变量中的地址；服务未启动时会自动回退到浏览器语音。
+        下拉选项与 MOSS 本机服务可用项一致，并直接展示服务地址；选择本机适配器时自动对齐到 HTTP
+        API 接入。留空使用环境变量中的地址；服务未启动时会自动回退到浏览器语音。
       </FieldDescription>
     </Field>
   )

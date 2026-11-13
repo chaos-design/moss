@@ -28,7 +28,9 @@ function storedConfig() {
 
 function selectOption(label: string, optionName: string) {
   fireEvent.click(screen.getByRole("combobox", { name: label }))
-  const option = screen.getByRole("option", { name: optionName })
+  // 本机服务选项同时展示地址，按标签前缀匹配，避免把地址写进每个调用点。
+  const name = new RegExp(`^${optionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  const option = screen.getByRole("option", { name })
   fireEvent.pointerDown(option, { pointerType: "mouse" })
   fireEvent.click(option)
 }
@@ -339,15 +341,42 @@ describe("SpeechServiceCard", () => {
     )
   })
 
-  it("offers only the MOSS local services in the address dropdowns", () => {
+  it("turns a 502 with an auth failure into an actionable hint", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: "speech_upstream_error",
+              message:
+                "语音合成接口返回 502，请检查接口地址与密钥。（elevenlabs_unauthorized，ElevenLabs 凭据无效）",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.click(screen.getByRole("button", { name: "测试合成接口" }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/上游凭据无效，请检查对应服务端的 API Key/)).toBeTruthy(),
+    )
+  })
+
+  it("offers only the MOSS local services and shows each address", () => {
     render(<SpeechServiceCard />)
 
     fireEvent.click(screen.getByRole("combobox", { name: "语音识别本机服务地址" }))
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-      "本机 ASR 服务",
-      "FunASR（外部）",
-      "本机 local 接口（ElevenLabs 适配器）",
-      "Fish Audio 适配器",
+      "本机 ASR 服务ws://127.0.0.1:5580/v1/asr/stream",
+      "FunASR（外部）ws://127.0.0.1:10095",
+      "本机 local 接口（ElevenLabs 适配器）http://127.0.0.1:5583/v1",
+      "Fish Audio 适配器http://127.0.0.1:5584/v1",
     ])
     fireEvent.keyDown(screen.getByRole("combobox", { name: "语音识别本机服务地址" }), {
       key: "Escape",
@@ -355,10 +384,31 @@ describe("SpeechServiceCard", () => {
 
     fireEvent.click(screen.getByRole("combobox", { name: "语音合成本机服务地址" }))
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-      "本机 TTS 网关",
-      "本机 local 接口（ElevenLabs 适配器）",
-      "Fish Audio 适配器",
+      "本机 TTS 网关http://127.0.0.1:5578",
+      "本机 local 接口（ElevenLabs 适配器）http://127.0.0.1:5583/v1",
+      "Fish Audio 适配器http://127.0.0.1:5584/v1",
     ])
+  })
+
+  it("shows the selected service address in the dropdown trigger", () => {
+    render(<SpeechServiceCard />)
+
+    const asrTrigger = screen.getByRole("combobox", { name: "语音识别本机服务地址" })
+    expect(asrTrigger.textContent).toContain("本机 ASR 服务")
+    expect(asrTrigger.textContent).toContain("ws://127.0.0.1:5580/v1/asr/stream")
+    const ttsTrigger = screen.getByRole("combobox", { name: "语音合成本机服务地址" })
+    expect(ttsTrigger.textContent).toContain("本机 TTS 网关")
+    expect(ttsTrigger.textContent).toContain("http://127.0.0.1:5578")
+  })
+
+  it("keeps each test button in the pinned footer of its own service", () => {
+    render(<SpeechServiceCard />)
+
+    const footer = document.querySelector('[data-slot="card-footer"]')
+    expect(footer).toBeTruthy()
+    expect(footer?.contains(screen.getByRole("button", { name: "测试识别接口" }))).toBe(true)
+    expect(footer?.contains(screen.getByRole("button", { name: "测试合成接口" }))).toBe(true)
+    expect(screen.getAllByText("选择 HTTP API 接入后可验证。")).toHaveLength(2)
   })
 
   it("aligns transport, address and model when a loopback adapter is selected", () => {
