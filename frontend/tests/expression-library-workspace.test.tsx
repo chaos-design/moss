@@ -346,4 +346,27 @@ describe("ExpressionLibraryWorkspace", () => {
 
     expect(await screen.findByText("已在记忆中")).toBeTruthy()
   })
+
+  it("reveals the example translation only after the eye is pressed", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "keep tabs on" },
+    })
+
+    const translation = "你能持续关注这批货的配送情况，如果延迟了就告诉我吗？"
+    expect(await screen.findByText("已显示 1 / 1 条")).toBeTruthy()
+    // 默认收起：译文尚未渲染，学习者先自己读英文例句。
+    expect(screen.queryByText(translation)).toBeNull()
+
+    const eye = screen.getByRole("button", { name: "例句译文：keep tabs on" })
+    expect(eye.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(eye)
+
+    expect(eye.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText(translation)).toBeTruthy()
+
+    fireEvent.click(eye)
+    expect(screen.queryByText(translation)).toBeNull()
+  })
 })

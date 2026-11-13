@@ -33,6 +33,17 @@ describe("expression library", () => {
     }
   })
 
+  it("gives every reviewed idiom a Chinese translation of its example", () => {
+    const reviewed = builtInExpressionItems.filter((item) =>
+      item.id.startsWith("builtin:reviewed:"),
+    )
+    expect(reviewed).toHaveLength(100)
+    for (const item of reviewed) {
+      expect(item.exampleTranslation, item.phrase).toBeTruthy()
+      expect(/[\u3400-\u9fff]/u.test(item.exampleTranslation ?? "")).toBe(true)
+    }
+  })
+
   it("lets an imported expression replace the same built-in phrase in one scene", () => {
     const builtIn = builtInExpressionItems.find((item) => item.phrase === "keep tabs on")
     if (!builtIn) {

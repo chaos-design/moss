@@ -6,6 +6,8 @@ export type IdiomaticExpressionNote = {
   why: string
   origin: string
   example: string
+  /** 例句的中文译文：默认收起，由学习者主动展开，避免先看到中文。 */
+  exampleTranslation?: string
   context: IdiomaticExpressionContext
 }
 
@@ -16,6 +18,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "tab 曾指用来记账或追踪信息的小票、标签或记录。保留这些记录，就能持续掌握对象的状态。固定搭配通常使用复数 tabs，不说 keep tab on。",
     origin: "19 世纪美国英语中的 tab 记录用法，后来从“留存记录”引申为“持续监控”。",
     example: "Could you keep tabs on the delivery and let me know if it is delayed?",
+    exampleTranslation: "你能持续关注这批货的配送情况，如果延迟了就告诉我吗？",
     context: "通用",
   },
   {
@@ -24,6 +27,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "把已经完成的工作量算作完整的一天，表示当前这轮工作可以结束。",
     origin: "源自英语中的工作日表达，20 世纪初已常用于结束当天工作。",
     example: "We have fixed the main issue, so let's call it a day.",
+    exampleTranslation: "我们已经修好了主要问题，今天就到这里吧。",
     context: "通用",
   },
   {
@@ -32,6 +36,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "hang on 有“抓住不松手”的画面，转为比喻后表示在困难中继续撑住。",
     origin: "由 hang on 的身体动作隐喻发展而来，20 世纪美国口语中普及。",
     example: "Hang in there. The first week is always the hardest.",
+    exampleTranslation: "坚持住。第一周总是最难的。",
     context: "日常",
   },
   {
@@ -40,6 +45,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "hang 在这里表示某件事的做法或运作方式；摸清它的“路数”，就能熟练完成。",
     origin: "19 世纪美国英语，早期常指掌握工具的正确使用方式。",
     example: "It took me a few days to get the hang of the new coffee machine.",
+    exampleTranslation: "我花了几天才摸清这台新咖啡机的用法。",
     context: "日常",
   },
   {
@@ -48,6 +54,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "冰层阻挡船只前进，破冰后通道才会打开；社交中的沉默和拘谨也像一道阻隔。",
     origin: "break the ice 的比喻用法可追溯到早期现代英语，后来稳定用于社交开场。",
     example: "A simple question about the venue helped break the ice.",
+    exampleTranslation: "一个关于场地的小问题帮忙打破了冷场。",
     context: "日常",
   },
   {
@@ -56,6 +63,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "比赛因下雨取消时，观众可凭 rain check 日后再次入场，因此引申为保留邀请、以后兑现。",
     origin: "19 世纪后期美国棒球票务用语。",
     example: "I cannot make dinner tonight, but can I take a rain check?",
+    exampleTranslation: "我今晚没法去吃晚饭，可以改天再约吗？",
     context: "日常",
   },
   {
@@ -64,6 +72,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "hit 有“开始接触并投入”的口语感，hit the road 就是踏上道路、开始行程。",
     origin: "20 世纪美国口语，由实际出行场景发展为固定表达。",
     example: "We should hit the road before traffic gets heavy.",
+    exampleTranslation: "我们应该在堵车之前上路。",
     context: "日常",
   },
   {
@@ -72,6 +81,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "不立即作答，而是让问题经过一夜思考，第二天再做判断。",
     origin: "英语中长期存在的“过夜后再决定”表达，19 世纪已有记录。",
     example: "It is a big purchase, so I want to sleep on it.",
+    exampleTranslation: "这是一笔大开销，我想考虑一晚再决定。",
     context: "通用",
   },
   {
@@ -80,6 +90,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "flow 是水流；不逆流而行，就表示接受当前节奏并随情况调整。",
     origin: "由水流隐喻形成，20 世纪后期在日常口语中广泛流行。",
     example: "We do not need a strict plan for Sunday. Let's go with the flow.",
+    exampleTranslation: "周日我们不需要严格的计划，顺其自然吧。",
     context: "日常",
   },
   {
@@ -88,6 +99,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "来自 a bolt out of the blue，晴朗蓝天突然出现闪电，强调事情毫无预兆。",
     origin: "19 世纪英语短语 a bolt out of the blue 的缩略形式。",
     example: "She called me out of the blue after five years.",
+    exampleTranslation: "五年之后她突然给我打来了电话。",
     context: "日常",
   },
   {
@@ -96,6 +108,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "骑在篱笆上时，人还没有落到任何一侧，对应尚未做出选择。",
     origin: "19 世纪美国政治语境中的形象比喻，后来扩展到一般决策。",
     example: "I am still on the fence about moving downtown.",
+    exampleTranslation: "我还在犹豫要不要搬到市中心。",
     context: "通用",
   },
   {
@@ -104,6 +117,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "weather 在这里代表让人不适的外部状况，under 强调被这种状态压住。",
     origin: "19 世纪已有记录；常见的航海起源说缺少定论，因此更稳妥地视为天气与不适的隐喻。",
     example: "I am feeling a little under the weather, so I will stay home.",
+    exampleTranslation: "我有点不舒服，所以会待在家里。",
     context: "日常",
   },
   {
@@ -112,6 +126,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "spill 强调容器里的东西突然散出；秘密一旦“洒出来”便无法完整收回。",
     origin: "20 世纪初美国俚语。古希腊投豆表决的故事流传很广，但没有可靠证据证明它是直接来源。",
     example: "Who spilled the beans about the surprise party?",
+    exampleTranslation: "是谁把惊喜派对的事说漏嘴了？",
     context: "日常",
   },
   {
@@ -120,6 +135,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "不沿道路或赛道完整绕过拐角，而是斜切过去，可以省距离，却可能违反规则或遗漏步骤。",
     origin: "19 世纪的行走、驾驶和赛跑意象，后来用于工作质量。",
     example: "We cannot cut corners on the safety review.",
+    exampleTranslation: "安全审查上我们不能偷工减料。",
     context: "通用",
   },
   {
@@ -128,6 +144,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "big deal 指重要的大事，加上 no 后直接弱化事情的重要程度。",
     origin: "20 世纪美国口语，由 deal 的“重要事情”含义形成。",
     example: "Thanks for covering my shift. No big deal.",
+    exampleTranslation: "谢谢你帮我代班。这没什么大不了的。",
     context: "日常",
   },
   {
@@ -136,6 +153,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "音乐家不用乐谱、只凭听觉演奏，后来引申为不依照固定计划，根据现场情况调整。",
     origin: "16 世纪以来的音乐表达，20 世纪扩展为一般口语。",
     example: "We may finish early, so let's play the afternoon by ear.",
+    exampleTranslation: "我们可能会提前结束，所以下午见机行事吧。",
     context: "日常",
   },
   {
@@ -144,6 +162,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "一起阅读时，翻到同一页才能讨论同一段内容，因此用来表示信息和理解已经对齐。",
     origin: "20 世纪后期的美国商业口语，由共同阅读的画面发展而来。",
     example: "Let's make sure we are on the same page about the deadline.",
+    exampleTranslation: "我们确认一下对截止时间的理解是一致的。",
     context: "职场",
   },
   {
@@ -152,6 +171,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "circle 描绘绕一圈后回到原点，工作沟通中表示先处理别的内容，再回来继续。",
     origin: "由移动路径的比喻进入 20 世纪商业英语。",
     example: "I need to check the numbers, and I will circle back this afternoon.",
+    exampleTranslation: "我需要核对一下数字，今天下午再回来谈这件事。",
     context: "职场",
   },
   {
@@ -160,6 +180,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "棒球跑垒员需要触垒，商业语境借用这个短暂接触动作表示快速确认状态。",
     origin: "20 世纪美国英语，来自棒球 touch a base。",
     example: "Can we touch base tomorrow morning before the client call?",
+    exampleTranslation: "我们明天早上在客户电话会之前简短同步一下好吗？",
     context: "职场",
   },
   {
@@ -168,6 +189,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "loop 是闭合的信息回路；人在回路里，就会持续收到更新并参与沟通。",
     origin: "20 世纪通信、航空和控制系统中的 closed loop 概念，后来进入办公语言。",
     example: "Please keep Maya in the loop on any design changes.",
+    exampleTranslation: "任何设计改动都请让 Maya 持续知情。",
     context: "职场",
   },
   {
@@ -176,6 +198,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "仪表盘指针只有在数值真正变化时才移动，因此表示结果足以改变指标。",
     origin: "来自仪表和测量设备的指针意象，20 世纪商业英语中普及。",
     example: "The campaign increased traffic, but it did not move the needle on sales.",
+    exampleTranslation: "这次活动带来了更多流量，但并没有让销售出现实质变化。",
     context: "职场",
   },
   {
@@ -184,6 +207,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "跳高项目把横杆升高后，运动员必须达到更高水平才能越过。",
     origin: "来自田径跳高的横杆，20 世纪广泛用于质量和绩效标准。",
     example: "This release raises the bar for accessibility across the product.",
+    exampleTranslation: "这个版本提高了整个产品的无障碍标准。",
     context: "职场",
   },
   {
@@ -192,6 +216,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "square one 代表最初位置；回到那里意味着此前进展没有带来可用结果。",
     origin: "20 世纪中期在英国流行，常与 BBC 足球场分区播报联系在一起，但确切来源仍有争议。",
     example: "The vendor rejected the terms, so we are back to square one.",
+    exampleTranslation: "供应商拒绝了这些条款，所以我们又回到了起点。",
     context: "职场",
   },
   {
@@ -200,6 +225,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "帆船上有大量绳索，新手必须知道每根绳索的用途才能工作。",
     origin: "19 世纪航海用语，之后扩展到学习任何岗位或流程。",
     example: "Give her a week to learn the ropes before she handles requests alone.",
+    exampleTranslation: "给她一周时间熟悉流程，再让她独立处理请求。",
     context: "职场",
   },
   {
@@ -208,6 +234,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "机器达到正常运行速度后才算准备就绪，人掌握足够信息后也被视为达到 speed。",
     origin: "由机械和交通工具达到工作速度的概念引申而来。",
     example: "I will send the notes so you can get up to speed quickly.",
+    exampleTranslation: "我会把笔记发给你，方便你快速了解最新情况。",
     context: "职场",
   },
   {
@@ -216,6 +243,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "物质进入管道后会沿既定路径流向出口，对应事项已经进入处理链路但尚未完成。",
     origin: "来自工业管道运输的比喻，20 世纪用于产品、招聘和销售流程。",
     example: "We have two accessibility improvements in the pipeline.",
+    exampleTranslation: "我们有两项无障碍改进正在推进中。",
     context: "职场",
   },
   {
@@ -224,6 +252,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "球静止时没有进展，开始滚动后动作才真正发生。",
     origin: "19 世纪由球类活动的动作发展为启动计划的固定表达。",
     example: "I drafted the agenda to get the ball rolling.",
+    exampleTranslation: "我起草了议程，好让事情先启动起来。",
     context: "职场",
   },
   {
@@ -232,6 +261,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "offline 原指设备断开网络；会议里表示把支线话题从当前共同频道移开。",
     origin: "来自 20 世纪计算机与通信术语，后来成为会议用语。",
     example: "This is important, but let's take it offline and keep the meeting focused.",
+    exampleTranslation: "这件事很重要，但我们会后单独讨论，让会议保持聚焦。",
     context: "职场",
   },
   {
@@ -240,6 +270,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "技术上的带宽决定信道能承载多少信息，借用到人和团队时表示还能承担多少工作。",
     origin: "通信工程术语，20 世纪后期进入组织管理语言。",
     example: "I do not have the bandwidth to lead another project this month.",
+    exampleTranslation: "这个月我没有精力再负责一个项目了。",
     context: "职场",
   },
   {
@@ -248,6 +279,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "瓶身再宽，液体仍只能通过狭窄瓶颈流出，对应整个流程被最慢环节限制。",
     origin: "由瓶子形状形成的工程和生产隐喻，19 世纪已见比喻用法。",
     example: "Manual approval is the main bottleneck in the release process.",
+    exampleTranslation: "人工审批是发布流程中的主要瓶颈。",
     context: "职场",
   },
   {
@@ -256,6 +288,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "树上位置较低的果实最容易摘到，因此表示成本低、见效快的任务。",
     origin: "20 世纪中后期美国英语中的果园隐喻，随后在商业语境中普及。",
     example: "Updating the error messages is low-hanging fruit.",
+    exampleTranslation: "改进错误提示是最容易先取得的成果。",
     context: "职场",
   },
   {
@@ -264,6 +297,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "在美国英语里，把议题放到桌上意味着暂时搁置；但英国英语中 table a proposal 常表示正式提交讨论。",
     origin: "议会程序用语；美式与英式英语后来形成了相反的常见含义。",
     example: "We are missing the cost estimate, so let's table this until Friday.",
+    exampleTranslation: "我们还缺成本估算，所以先把这件事搁置到周五。",
     context: "职场",
   },
   {
@@ -272,6 +306,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "book 指写明规则、程序或标准的手册；照着书执行就是完全遵守规定。",
     origin: "由宗教、法律和操作规则文本的权威性发展而来，18 世纪已有记录。",
     example: "The audit has to be done by the book.",
+    exampleTranslation: "这次审计必须严格按规章来做。",
     context: "职场",
   },
   {
@@ -280,6 +315,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "ballpark 表示一个可接受的大概范围，而不是精确落点，因此 figure 只需接近真实数值。",
     origin: "20 世纪美国英语，来自棒球场所代表的范围概念。",
     example: "Can you give me a ballpark figure for the migration cost?",
+    exampleTranslation: "你能给我一个迁移成本的大致估算吗？",
     context: "职场",
   },
   {
@@ -288,6 +324,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "潜水越深，看到的就越不只是水面信息，因此表示进入细节做系统研究。",
     origin: "由水下潜水的字面动作引申，20 世纪后期在技术和商业语境中普及。",
     example: "We will do a deep dive into the failure logs tomorrow.",
+    exampleTranslation: "我们明天会对故障日志做一次深入分析。",
     context: "职场",
   },
   {
@@ -296,6 +333,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "quick 强调投入周期短，win 强调结果可见；组合后用于优先安排低阻力、高确定性的改进。",
     origin: "20 世纪后期项目管理和商业策略用语。",
     example: "Adding saved filters would be a quick win for support agents.",
+    exampleTranslation: "增加已保存的筛选条件，对客服来说是个短期就能见效的改进。",
     context: "职场",
   },
   {
@@ -305,6 +343,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "blue moon 表示罕见事件的用法至少可追溯到 19 世纪；现代历法中的特定定义出现得更晚，并非这个短语最初形成的必要条件。",
     example: "We eat out at expensive restaurants only once in a blue moon.",
+    exampleTranslation: "我们很少去昂贵的餐厅吃饭。",
     context: "日常",
   },
   {
@@ -314,6 +353,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "这个固定说法在 20 世纪中期的美国英语中普及；把它直接归因于战争截肢或肖像画收费的故事都缺乏可靠证据。",
     example: "A last-minute flight during the holiday can cost an arm and a leg.",
+    exampleTranslation: "节假日临时买机票可能会贵得离谱。",
     context: "日常",
   },
   {
@@ -323,6 +363,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "20 世纪 30 年代的美国俚语；它可能受到 cakewalk 等早期“轻松获胜”表达影响，但具体形成路径并不完全确定。",
     example: "Once you know the shortcut, exporting the report is a piece of cake.",
+    exampleTranslation: "只要知道这个快捷方式，导出报告就是件轻而易举的事。",
     context: "通用",
   },
   {
@@ -332,6 +373,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "19 世纪已有比喻用法。让伤员在无麻醉手术中咬子弹的故事广为流传，但是否是短语的直接来源仍有争议。",
     example: "I finally bit the bullet and told my manager that the deadline was unrealistic.",
+    exampleTranslation: "我终于硬着头皮告诉经理，这个截止时间不现实。",
     context: "通用",
   },
   {
@@ -341,6 +383,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "18 世纪已有记录。把猫冒充小猪装袋出售的解释经常被引用，但缺少足够证据确认它就是直接来源。",
     example: "I accidentally let the cat out of the bag about their engagement.",
+    exampleTranslation: "我不小心把他们订婚的事说漏了。",
     context: "日常",
   },
   {
@@ -349,6 +392,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "表达把对方暂时引向错误判断，像轻轻拉住腿让人失去原来的步调，但现代用法通常没有恶意。",
     origin: "19 世纪英语俚语，确切来源不明；关于绊倒路人或刑罚的故事都没有得到可靠证实。",
     example: "Do not worry, I am just pulling your leg.",
+    exampleTranslation: "别担心，我只是在逗你。",
     context: "日常",
   },
   {
@@ -357,6 +401,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "船离岸后便无法登上，错过船班的具体场景自然引申为行动太晚而失去机会。",
     origin: "20 世纪初开始常见，由错过交通工具的字面情境发展为机会隐喻。",
     example: "Apply this week, or you might miss the boat.",
+    exampleTranslation: "这周就申请，否则你可能错过机会。",
     context: "通用",
   },
   {
@@ -365,6 +410,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "狩猎时先敲打灌木把猎物赶出来，而不是直接捕捉目标，因此比喻只在主题外围活动。",
     origin: "来自欧洲狩猎中的 beat the bushes，类似比喻在 15 世纪英语中已经出现。",
     example: "Stop beating around the bush and tell me what happened.",
+    exampleTranslation: "别绕圈子了，直接告诉我发生了什么。",
     context: "通用",
   },
   {
@@ -373,6 +419,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "人在害怕时可能感觉四肢发冷或停在原地，cold feet 因而表示行动前突然胆怯。",
     origin: "19 世纪后期开始形成现代用法；它是否来自军队、赌博或文学作品仍没有定论。",
     example: "He got cold feet just before signing the lease.",
+    exampleTranslation: "就在签租约之前，他临阵退缩了。",
     context: "日常",
   },
   {
@@ -381,6 +428,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "单根稻草很轻，但不断累加后，最后一根也可能压垮负重者；重点在累计压力而非最后事件本身有多严重。",
     origin: "来自“最后一根稻草压垮骆驼”的古老负重谚语，现代简化形式在 19 世纪普及。",
     example: "The third unexplained delay was the last straw for the client.",
+    exampleTranslation: "第三次没有解释的延迟，让客户终于无法忍受。",
     context: "通用",
   },
   {
@@ -390,6 +438,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "源自中古英语 through thicket and thin wood 一类路径表达，后来固定为共同经历好坏处境。",
     example: "We have supported each other through thick and thin.",
+    exampleTranslation: "无论顺境逆境，我们一直互相支持。",
     context: "日常",
   },
   {
@@ -398,6 +447,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "blessing 被 disguise 遮住，起初看不出好处，直到后来才发现事情带来了积极结果。",
     origin: "18 世纪英语中形成的宗教与文学表达，后来进入一般日常用语。",
     example: "Missing that train was a blessing in disguise because the next one was direct.",
+    exampleTranslation: "错过那班火车其实是因祸得福，因为下一班是直达的。",
     context: "通用",
   },
   {
@@ -407,6 +457,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "17 世纪以来已有相近用法，通常与账目或资源两端相接有关；更具体的裁缝、绳索等来源说法缺少定论。",
     example: "They took on extra shifts to make ends meet.",
+    exampleTranslation: "他们多接了几班活来维持收支平衡。",
     context: "日常",
   },
   {
@@ -415,6 +466,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "未说出口的担忧像重量压在胸口，说出来就像把负担移走。",
     origin: "由 chest 承受情绪重压的身体隐喻发展而来，19 世纪已有类似表达。",
     example: "I need to get something off my chest before we continue.",
+    exampleTranslation: "在继续之前，我有件事想说出来。",
     context: "日常",
   },
   {
@@ -424,6 +476,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "措辞见于《圣经》英译本 Isaiah 52:8，原意接近面对面共同看见；表示意见一致的现代用法后来固定下来。",
     example: "We do not see eye to eye on every issue, but we respect each other.",
+    exampleTranslation: "我们并非在每个问题上都意见一致，但彼此尊重。",
     context: "通用",
   },
   {
@@ -433,6 +486,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin: "18 至 19 世纪的法律和证据讨论中逐渐固定，后来扩展到日常判断。",
     example:
       "Her explanation is plausible, so I am willing to give her the benefit of the doubt.",
+    exampleTranslation: "她的解释说得通，所以我愿意先相信她。",
     context: "通用",
   },
   {
@@ -442,6 +496,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin: "19 世纪开始常见，可能受到在行间加入隐藏文字或注释的书写方式影响。",
     example:
       "If you read between the lines, the email is really asking us to delay the launch.",
+    exampleTranslation: "如果读出言外之意，这封邮件其实是在要求我们推迟发布。",
     context: "通用",
   },
   {
@@ -451,6 +506,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "常被联系到古罗马作家 Pliny 记录的拉丁语 cum grano salis，但它如何发展成现代“怀疑看待”的含义并不完全确定。",
     example: "Take online reviews with a grain of salt because experiences vary.",
+    exampleTranslation: "网上的评价要打个折扣看，因为每个人的体验不同。",
     context: "通用",
   },
   {
@@ -459,6 +515,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "旅程中只有走到桥前才需要过桥，因此不必提前为尚未发生的障碍耗费精力。",
     origin: "19 世纪英语谚语，由旅行路线中的桥梁直接形成问题处理的隐喻。",
     example: "We may need a larger venue, but we will cross that bridge when we come to it.",
+    exampleTranslation: "我们可能需要更大的场地，但等真到那一步再说。",
     context: "通用",
   },
   {
@@ -467,6 +524,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "热水会让人感到危险和不适，身处其中自然对应受到责备或面临后果。",
     origin: "英语中已有数百年的危险与困境隐喻，确切的单一来源并不明确。",
     example: "He is in hot water after sharing the confidential file.",
+    exampleTranslation: "他分享了机密文件之后惹上了麻烦。",
     context: "通用",
   },
   {
@@ -475,6 +533,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "薄冰可能随时破裂，站在上面意味着当前安全非常脆弱。",
     origin: "由冬季行走的真实危险形成，17 世纪以来可见类似比喻。",
     example: "You are on thin ice after missing two important deadlines.",
+    exampleTranslation: "错过两个重要截止时间后，你已经处境危险了。",
     context: "通用",
   },
   {
@@ -483,6 +542,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "强烈情绪让人像散成许多部分，把自己重新“拉到一起”就是恢复控制和完整状态。",
     origin: "由 together 表示完整、协调的普通含义逐渐形成，19 世纪已见类似用法。",
     example: "Take a minute to pull yourself together before the interview.",
+    exampleTranslation: "面试前花一分钟让自己镇定下来。",
     context: "日常",
   },
   {
@@ -491,6 +551,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "蒸汽压力过高时需要排气，人在积累压力后也需要安全地释放情绪。",
     origin: "19 世纪蒸汽机时代形成的机械隐喻。",
     example: "I went for a run after work to blow off steam.",
+    exampleTranslation: "下班后我去跑步发泄了一下情绪。",
     context: "日常",
   },
   {
@@ -499,6 +560,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "soft 与坚硬相对，表示防备较弱、情感更容易被触动的内心位置。",
     origin: "19 世纪英语中由身体柔软部位引申为情感上的弱点或偏爱。",
     example: "I have a soft spot for independent bookstores.",
+    exampleTranslation: "我格外偏爱独立书店。",
     context: "日常",
   },
   {
@@ -507,6 +569,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "一个人仿佛同时拥有两个意见不同的 mind，因此无法坚定选择其中一边。",
     origin: "英语中长期存在的“内心分成两种意见”表达，早期宗教和文学文本中已有相近措辞。",
     example: "I am in two minds about accepting the offer.",
+    exampleTranslation: "我对是否接受这份工作还拿不定主意。",
     context: "日常",
   },
   {
@@ -516,6 +579,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "my cup of tea 表示“我喜欢的人或事”在 20 世纪初流行，否定形式随后成为更常见的委婉说法。",
     example: "Reality shows are not really my cup of tea.",
+    exampleTranslation: "真人秀不太合我的口味。",
     context: "日常",
   },
   {
@@ -525,6 +589,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "shot 表示“尝试、机会”的用法已有数百年，现代口语 give it a shot 在 20 世纪广泛流行。",
     example: "I have never tried pottery, but I would like to give it a shot.",
+    exampleTranslation: "我从没试过陶艺，但我想试一试。",
     context: "通用",
   },
   {
@@ -533,6 +598,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "答案像直接从头脑最表层取出，没有经过深入搜索、计算或核实。",
     origin: "20 世纪口语表达，由 head 代表即时记忆和思考能力的常见隐喻形成。",
     example: "Off the top of my head, I can think of three possible causes.",
+    exampleTranslation: "我一时能想到三个可能的原因。",
     context: "通用",
   },
   {
@@ -541,6 +607,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "帽子一落下就可充当开始信号，看到信号便立即行动。",
     origin: "19 世纪美国英语；落帽曾可用于给赛跑或打斗发出开始信号。",
     example: "She would travel at the drop of a hat if her schedule allowed.",
+    exampleTranslation: "只要日程允许，她随时都能出发去旅行。",
     context: "日常",
   },
   {
@@ -549,6 +616,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "grant 有“承认、准许”的含义；不再核实便默认某事必然存在，就是把它直接当成既定事实。",
     origin: "由 take for granted 表示“无需证明便接受”为基础，17 世纪以来逐渐发展出现代含义。",
     example: "Do not take reliable public transport for granted.",
+    exampleTranslation: "不要把可靠的公共交通当成理所当然。",
     context: "通用",
   },
   {
@@ -557,6 +625,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "make up 有“完成、形成”的意思；把尚未确定的想法整理成一个完整判断，就是决定下来。",
     origin: "16 世纪以来可见 mind 与 make up 的组合，后来固定为日常决策表达。",
     example: "You do not have to make up your mind today.",
+    exampleTranslation: "你不必今天就做决定。",
     context: "通用",
   },
   {
@@ -565,6 +634,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "hand 代表人的掌控能力；事情离开手的控制范围后，就会变得难以管理。",
     origin: "out of hand 有多种历史含义，表示“无法控制”的用法由手部掌控这一直接隐喻形成。",
     example: "The discussion got out of hand when people started interrupting each other.",
+    exampleTranslation: "大家开始互相打断时，讨论就失控了。",
     context: "通用",
   },
   {
@@ -574,6 +644,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "18 至 19 世纪已有字面和比喻用法；航海、马车和铁路都被提出为来源，确切路径仍有争议。",
     example: "It was touch and go for a while, but the patient is stable now.",
+    exampleTranslation: "有一段时间情况十分危急，但病人现在稳定了。",
     context: "通用",
   },
   {
@@ -582,6 +653,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "run 表示一段持续过程；把观察范围拉长，就能看到短期之外的最终影响。",
     origin: "由 run 表示时间或过程跨度的用法形成，17 世纪以来可见类似表达。",
     example: "The new system costs more now but will save time in the long run.",
+    exampleTranslation: "新系统现在花费更多，但从长远看会节省时间。",
     context: "通用",
   },
   {
@@ -590,6 +662,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "这里的 good 不是“良好”，而带有“最终、彻底完成”的旧义，表示状态不会再改变。",
     origin: "与 for good and all 一类较早表达有关，现代缩略形式在 19 世纪前已经使用。",
     example: "After ten years abroad, she moved back home for good.",
+    exampleTranslation: "在国外十年后，她彻底搬回了家。",
     context: "通用",
   },
   {
@@ -598,6 +671,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "把方向转到另一边后，原来的主次、因果或顺序随之倒转。",
     origin: "由 way 和 around 的普通方向含义组合而成，没有公认的单一历史典故。",
     example: "I thought Lee had called Sam, but it was the other way around.",
+    exampleTranslation: "我以为 Lee 打给了 Sam，其实是反过来。",
     context: "通用",
   },
   {
@@ -606,6 +680,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "无论事情较早还是较晚发生，两个可能时间都被包括，因此强调最终不可避免。",
     origin: "英语中长期使用的对偶时间表达，由 sooner 与 later 的直接对照形成。",
     example: "Sooner or later, we will need to replace this old laptop.",
+    exampleTranslation: "迟早我们得换掉这台旧笔记本。",
     context: "通用",
   },
   {
@@ -614,6 +689,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "point 是论述中明确而集中的要点；有 point 就表示论证并非空泛，而是包含有效理由。",
     origin: "由 point 表示论点、要点的古老用法直接发展而来。",
     example: "You have a point about the hidden maintenance cost.",
+    exampleTranslation: "关于隐藏的维护成本，你说得有道理。",
     context: "通用",
   },
   {
@@ -622,6 +698,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "铃声会发出提醒信号，某个名字或细节在脑中“响铃”，表示它触发了记忆但尚不一定清晰。",
     origin: "19 世纪末到 20 世纪初逐渐常见，由铃声作为提醒信号的功能形成。",
     example: "Her name rings a bell, but I cannot remember where we met.",
+    exampleTranslation: "她的名字有点耳熟，但我想不起我们在哪见过。",
     context: "日常",
   },
   {
@@ -630,6 +707,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "进入皮肤之下的东西难以忽略，会持续造成刺激，因此表示某人或某事不断扰动情绪。",
     origin: "20 世纪初的美国口语，由身体刺激发展为心理烦扰；后来也可表示强烈吸引，需结合语境。",
     example: "His constant interruptions are starting to get under my skin.",
+    exampleTranslation: "他不停地打断，开始让我心烦了。",
     context: "日常",
   },
   {
@@ -638,6 +716,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "box 代表既定边界和默认假设；到盒子外寻找答案，就是不受原有规则限制。",
     origin: "20 世纪后期商业表达，通常与九点连线谜题联系，但短语的确切首创时间仍有争议。",
     example: "We need to think outside the box if we want to reach new users.",
+    exampleTranslation: "如果想触达新用户，我们需要跳出常规思路。",
     context: "职场",
   },
   {
@@ -646,6 +725,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "curve 可代表数据分布或发展轨迹；位于曲线前方，就表示进度或判断领先于多数人。",
     origin: "20 世纪中期由统计曲线、进度曲线等图表语言进入商业和日常表达。",
     example: "The team stayed ahead of the curve by testing mobile accessibility early.",
+    exampleTranslation: "团队提前测试移动端无障碍，走在了前面。",
     context: "职场",
   },
   {
@@ -655,6 +735,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "20 世纪初心理学和工业研究术语。日常英语常用 steep learning curve 表示难学，虽然图表原义并不总与这种说法完全一致。",
     example: "There is a learning curve, but the editing tool becomes intuitive after a week.",
+    exampleTranslation: "这个工具有个学习曲线，但一周后剪辑就会变得很顺手。",
     context: "职场",
   },
   {
@@ -663,6 +744,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "比赛前需要安排战术和角色，工作中的复杂任务也需要一套预先协调的行动方案。",
     origin: "20 世纪体育用语，随后扩展到商业、政治和个人计划。",
     example: "What is our game plan if the supplier misses the deadline?",
+    exampleTranslation: "如果供应商错过截止时间，我们的应对方案是什么？",
     context: "职场",
   },
   {
@@ -672,6 +754,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "17 世纪以来用于描述手艺人的经验估量。所谓法律允许用拇指粗的棍子打妻子的来源说法没有可靠依据。",
     example: "As a rule of thumb, leave ten percent of the budget for unexpected costs.",
+    exampleTranslation: "按经验法则，留出预算的百分之十来应付意外开支。",
     context: "通用",
   },
   {
@@ -680,6 +763,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "雷达只能显示探测范围内的目标；某事出现在 radar 上，就表示它已经被注意到。",
     origin: "radar 在第二次世界大战期间普及后，20 世纪中期逐渐产生这种比喻用法。",
     example: "The accessibility issue is now on the leadership team's radar.",
+    exampleTranslation: "这个无障碍问题现在已进入领导团队的视野。",
     context: "职场",
   },
   {
@@ -689,6 +773,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "古典文献中已有把长篇作品微缩到坚果壳里的说法；英语在莎士比亚时期已使用 nutshell 表示极小空间。",
     example: "In a nutshell, we need more time and fewer features.",
+    exampleTranslation: "简而言之，我们需要更多时间、更少功能。",
     context: "通用",
   },
   {
@@ -697,6 +782,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "熨斗能把布料上的褶皱压平，讨论也可以把计划中的不平整之处逐一处理顺畅。",
     origin: "由熨烫衣物的动作形成，20 世纪初已广泛用于解决困难和分歧。",
     example: "We still need to iron out a few details in the contract.",
+    exampleTranslation: "我们还需要解决合同里的几个细节问题。",
     context: "职场",
   },
   {
@@ -705,6 +791,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "铁匠反复锤打材料才得到最终形状，对应通过持续协商把粗略想法塑造成可接受的结果。",
     origin: "来自金属锻造，19 世纪已出现制定协议和方案的比喻用法。",
     example: "The two teams spent the afternoon hammering out an agreement.",
+    exampleTranslation: "两个团队花了一下午敲定了一份协议。",
     context: "职场",
   },
   {
@@ -714,6 +801,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "19 世纪美国英语，确切来源不明；与软包钉、柜台量布或船舶清理有关的解释都未被确定证实。",
     example: "We have discussed the vision, so now let's get down to brass tacks.",
+    exampleTranslation: "我们已经讨论过愿景了，现在来谈具体细节吧。",
     context: "职场",
   },
   {
@@ -722,6 +810,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "炉灶后面的火眼适合让不急的锅慢慢煮，主要注意力则放在前面的锅上。",
     origin: "来自家用炉灶的烹饪布局，20 世纪中期成为常见的优先级隐喻。",
     example: "We put the redesign on the back burner until the migration is complete.",
+    exampleTranslation: "我们把改版先搁置，等迁移完成再说。",
     context: "职场",
   },
   {
@@ -730,6 +819,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "不同职业曾由不同帽子标识，一个人换戴多顶帽子，就像在多个角色之间切换。",
     origin: "由 hat 代表职业或身份的长期用法形成，20 世纪组织语境中广泛使用。",
     example: "At a small company, product managers often wear many hats.",
+    exampleTranslation: "在小公司里，产品经理常常要身兼多职。",
     context: "职场",
   },
   {
@@ -739,6 +829,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "来自《圣经》Matthew 5:41 中被要求走一英里便再走一英里的表述，后来发展为主动多付出的含义。",
     example: "The support agent went the extra mile and recorded a short tutorial.",
+    exampleTranslation: "这位客服多走了一步，录了一段简短的教程。",
     context: "通用",
   },
   {
@@ -747,6 +838,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "拔掉插头后设备立即停止运转，因此表示主动终止仍在进行的事情。",
     origin: "20 世纪随电气设备普及而形成；后来也受排水塞和医疗设备语境影响。",
     example: "The company pulled the plug on the pilot after costs doubled.",
+    exampleTranslation: "成本翻倍后，公司终止了这个试点项目。",
     context: "职场",
   },
   {
@@ -755,6 +847,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "绿色交通信号表示可以前进，获得 green light 就是得到行动许可。",
     origin: "19 世纪铁路信号及后来的道路交通灯使绿色与通行建立稳定联系，20 世纪形成常见比喻。",
     example: "Legal has given the green light to publish the campaign.",
+    exampleTranslation: "法务已经批准发布这次推广活动。",
     context: "职场",
   },
   {
@@ -763,6 +856,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "官方文件曾用红色带子捆扎，red tape 因而从实物变成对过多手续和审批的代称。",
     origin: "欧洲和英国行政文件使用红色带子的历史可追溯数百年，19 世纪已广泛用于批评官僚主义。",
     example: "The permit was delayed by months of red tape.",
+    exampleTranslation: "许可因为繁冗的手续被拖延了好几个月。",
     context: "职场",
   },
   {
@@ -772,6 +866,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "通常追溯到 19 世纪美国赛马中覆盖 win、place、show 的 across-the-board bet，后来扩展为“全面”。",
     example: "Customer satisfaction improved across the board.",
+    exampleTranslation: "客户满意度全面提升了。",
     context: "职场",
   },
   {
@@ -780,6 +875,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "财务报表最底部的一行显示最终盈亏，因此 bottom line 代表去掉细节后的决定性结果。",
     origin: "来自会计报表，20 世纪中期扩展到一般商业结论。",
     example: "The bottom line is that we cannot launch safely this week.",
+    exampleTranslation: "归根结底，我们这周无法安全上线。",
     context: "职场",
   },
   {
@@ -788,6 +884,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "双手被绑住时无法自由行动，对应规则、权限或环境让人即使愿意也做不了。",
     origin: "由身体受束缚的古老隐喻形成，没有公认的单一历史事件来源。",
     example: "I would approve the refund, but my hands are tied by the policy.",
+    exampleTranslation: "我愿意批准退款，但政策规定让我无权这么做。",
     context: "通用",
   },
   {
@@ -796,6 +893,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "post 可表示发布或更新信息；不断把新消息“贴出来”，就是让对方始终掌握进展。",
     origin: "post 表示公告、记录和通报的历史用法在 19 世纪形成 keep posted 这一表达。",
     example: "Keep me posted on any changes to the interview schedule.",
+    exampleTranslation: "面试日程有任何变化请随时告诉我。",
     context: "通用",
   },
   {
@@ -804,6 +902,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "谈判或协作通常围桌进行，把东西带到桌上就表示带来可供大家使用或讨论的价值。",
     origin: "由会议桌和谈判桌的具体场景发展而来，20 世纪商业英语中普及。",
     example: "She brings strong research skills and local knowledge to the table.",
+    exampleTranslation: "她为团队带来了扎实的研究能力和本地经验。",
     context: "职场",
   },
   {
@@ -813,6 +912,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "可能受到拳击赛前 weigh-in 和称重动作影响，20 世纪逐渐固定为加入讨论；确切语义路径并不完全确定。",
     example: "Could someone from security weigh in on this proposal?",
+    exampleTranslation: "安全团队有人能对这个提案发表意见吗？",
     context: "职场",
   },
   {
@@ -822,6 +922,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     origin:
       "20 世纪口语用法，由 run past 或 run by 表示让内容经过某人查看发展而来，确切首创来源不明。",
     example: "Can I run the revised timeline by you before I send it?",
+    exampleTranslation: "在我发出之前，可以把修改后的时间表先给你过一遍吗？",
     context: "职场",
   },
   {
@@ -830,6 +931,7 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     why: "ownership 原指拥有物品；在工作中“拥有”一项任务，意味着不只执行，还承担结果和后续处理责任。",
     origin: "由财产所有权的普通含义引申，20 世纪后期在管理和团队协作语言中广泛使用。",
     example: "I will take ownership of the rollout and report back on Friday.",
+    exampleTranslation: "我会负责这次上线，并在周五汇报进展。",
     context: "职场",
   },
 ]

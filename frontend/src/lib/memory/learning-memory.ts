@@ -1,3 +1,4 @@
+import { getScopedReviewQueue } from "./review-scope"
 import { type RecallRating, type ReviewState, scheduleReview } from "./spaced-repetition"
 
 const memoryVersion = 1
@@ -529,21 +530,7 @@ export function getReviewQueue(
   now = new Date(),
   targetMemoryItemId?: string,
 ) {
-  const dueItems = getDueMemoryItems(state, now)
-  const dueIds = new Set(dueItems.map((item) => item.id))
-  const defaultQueue =
-    dueItems.length >= 3
-      ? dueItems
-      : [
-          ...dueItems,
-          ...state.items
-            .filter((item) => !dueIds.has(item.id))
-            .sort((left, right) => left.strength - right.strength),
-        ].slice(0, 3)
-  const target = state.items.find((item) => item.id === targetMemoryItemId)
-  return target
-    ? [target, ...defaultQueue.filter((item) => item.id !== target.id)]
-    : defaultQueue
+  return getScopedReviewQueue(state, { now, targetMemoryItemId })
 }
 
 export function getRelevantMemories(

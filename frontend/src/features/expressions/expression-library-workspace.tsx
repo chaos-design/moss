@@ -4,6 +4,8 @@ import type { User } from "@supabase/supabase-js"
 import {
   BrainCircuitIcon,
   ChevronDownIcon,
+  EyeIcon,
+  EyeOffIcon,
   LoaderCircleIcon,
   PencilIcon,
   SearchIcon,
@@ -99,6 +101,7 @@ function matchesQuery(item: ExpressionLibraryItem, query: string) {
     item.why,
     item.origin,
     item.example,
+    item.exampleTranslation ?? "",
     item.context,
     expressionKindLabels[item.kind],
     expressionSceneCategoryLabels[item.sceneCategory],
@@ -520,6 +523,16 @@ function ExpressionRows({
   onEdit: (item: ExpressionLibraryItem) => void
   onStudy: (item: ExpressionLibraryItem) => void
 }) {
+  // 译文默认收起：先让学习者自己读懂例句，再按需展开对应中文。
+  const [revealedIds, setRevealedIds] = useState<string[]>([])
+  const revealedIdSet = new Set(revealedIds)
+
+  function toggleTranslation(id: string) {
+    setRevealedIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    )
+  }
+
   if (items.length === 0) {
     return (
       <section className="border-y px-5 py-14 text-center" aria-live="polite">
@@ -533,6 +546,7 @@ function ExpressionRows({
     <section className="overflow-hidden rounded-lg border bg-card" aria-label="地道表达列表">
       {items.map((item, index) => {
         const studied = studiedIds.has(createExpressionMemoryItemId(item.clientId))
+        const translationRevealed = revealedIdSet.has(item.id)
         return (
           <article
             key={item.id}
@@ -622,7 +636,36 @@ function ExpressionRows({
                 <p className="mt-1 text-muted-foreground">{item.origin}</p>
               </div>
               <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-sm md:col-span-2">
-                {item.example}
+                <span className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">{item.example}</span>
+                  {item.exampleTranslation ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="shrink-0"
+                            aria-label={`例句译文：${item.phrase}`}
+                            aria-expanded={translationRevealed}
+                            onClick={() => toggleTranslation(item.id)}
+                          />
+                        }
+                      >
+                        {translationRevealed ? <EyeOffIcon /> : <EyeIcon />}
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {translationRevealed ? "收起译文" : "显示译文"}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                </span>
+                {translationRevealed && item.exampleTranslation ? (
+                  <span className="mt-2 block font-sans text-xs leading-5 text-muted-foreground">
+                    {item.exampleTranslation}
+                  </span>
+                ) : null}
               </blockquote>
             </div>
           </article>

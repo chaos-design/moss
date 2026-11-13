@@ -45,6 +45,7 @@ const categoryAliases = new Map(
 const fieldAliases = {
   context: ["context", "语境"],
   example: ["example", "例句"],
+  exampleTranslation: ["exampletranslation", "example_translation", "例句译文", "例句翻译"],
   kind: ["kind", "type", "类型"],
   meaning: ["meaning", "含义", "中文含义"],
   origin: ["origin", "origin_note", "来源", "词源"],
@@ -96,6 +97,11 @@ function parseRecord(value: unknown): ExpressionLibraryItem {
   const why = assertField(getField(record, fieldAliases.why), "含义解释", 1_000)
   const origin = assertField(getField(record, fieldAliases.origin), "来源说明", 1_000)
   const example = assertField(getField(record, fieldAliases.example), "英文例句", 500)
+  // 例句译文是可选的：有译文时词库才显示展开按钮，没有译文不影响导入。
+  const exampleTranslation = getField(record, fieldAliases.exampleTranslation)
+  if (exampleTranslation.length > 500) {
+    throw new Error("例句译文超过 500 个字符")
+  }
   const rawCategory = getField(record, fieldAliases.sceneCategory).toLocaleLowerCase()
   const sceneCategory = categoryAliases.get(rawCategory)
   if (!sceneCategory) {
@@ -117,6 +123,7 @@ function parseRecord(value: unknown): ExpressionLibraryItem {
     why,
     origin,
     example,
+    ...(exampleTranslation ? { exampleTranslation } : {}),
     context: rawContext as ExpressionImportItem["context"],
     kind,
     sceneCategory,

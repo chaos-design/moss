@@ -53,10 +53,13 @@ export function parseImportedExpressionItem(value: unknown): ExpressionLibraryIt
     return null
   }
   const phrase = item.phrase.normalize("NFKC").replace(/\s+/g, " ").trim()
+  const exampleTranslation =
+    typeof item.exampleTranslation === "string" ? item.exampleTranslation.trim() : ""
   return {
     clientId: item.clientId.trim(),
     context: item.context as IdiomaticExpressionContext,
     example: item.example.trim(),
+    ...(exampleTranslation && exampleTranslation.length <= 500 ? { exampleTranslation } : {}),
     id: typeof item.id === "string" && item.id ? item.id : `imported:${item.clientId.trim()}`,
     kind: item.kind as ExpressionKind,
     meaning: item.meaning.trim(),

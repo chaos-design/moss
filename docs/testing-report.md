@@ -21,10 +21,11 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 77 文件，543 测试通过；本机默认 10s 上限下有 1 个重型用例偶发超时，放宽到 30s 全通过 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 84 文件，653 测试通过；本机默认 10s 上限下有 1 个重型用例偶发超时，放宽到 30s 全通过 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
-| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 37 测试通过 |
+| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 40 测试通过 |
+| `pnpm fishaudio:test` | Fish Audio 适配器配置、路由、上游映射与测试合成探针 | 48 测试通过 |
 | `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 15 测试通过 |
 | `pnpm memory:test` | 评估集校验、召回排序、参数网格和学习指标 | 6 测试通过 |
 | `pnpm test:coverage` | 核心学习算法 | 语句/函数/行 100%，分支 94.73% |
@@ -640,3 +641,45 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
 问题而非页面链路，修复后页面展示「上游凭据无效，请检查对应服务端的 API Key」。
 
 未执行：填入有效 `sk_` 密钥后的真实合成/识别；浏览器手工点验页脚吸底与等高效果。
+
+## 2026-11-14 例句译文、复习范围与考题式地道表达
+
+改动：
+
+1. **词库例句译文**：`IdiomaticExpressionNote` 新增可选 `exampleTranslation`，100 条审校内容
+   补齐中文译文；例句行末的眼睛按钮用 `aria-expanded` 展开/收起译文，默认收起。导入字段别名
+   增加 `exampleTranslation` / `example_translation` / `例句译文`，编辑弹窗可维护，译文参与搜索。
+2. **复习范围**：新增 `lib/memory/review-scope.ts`，`moss:review-scope:v1` 保存
+   混合 / 地道表达 / 场景；`getReviewQueue` 改为委托 `getScopedReviewQueue`，调度顺序不变。
+   跨范围目标不强行插入；带 `?memory=` 进入且当前范围装不下目标时，首次水合后自动切到目标范围。
+3. **考题式地道表达复习**：`features/review/expression-exam.ts` 按条目重复次数轮换释义选择、
+   表达选择与例句填空；选项由词库其他条目提供，顺序来自确定性哈希；无法挖空时回退释义题。
+   作答或跳过记为一次回想尝试，四档自评仍是唯一写入强度与间隔的信号。
+4. **语音失败语义**：`/api/speech/*` 不再把上游 401/402/429/503/504 压成 502，按适配器错误码
+   还原为 `speech_credentials_invalid`、`speech_payment_required`、`speech_rate_limited`、
+   `speech_unavailable`、`speech_not_configured`、`speech_timeout`、`speech_request_rejected`；
+   浏览器侧仍把 401/402 与 5xx 视为链路不可用并回退系统语音或浏览器识别。
+
+自动化结果：
+
+- `pnpm lint`：通过。
+- `pnpm typecheck`：通过。
+- `pnpm --dir frontend test`：84 文件、653 用例通过。
+- `pnpm tts:test` 15、`pnpm asr:test` 35、`pnpm elevenlabs:test` 40、`pnpm fishaudio:test` 48、
+  `pnpm db:test` 15、`pnpm memory:test` 6：通过。
+- `pnpm build`：通过（`NEXT_DIST_DIR=.next-verify`，29 条路由正常产出）。
+
+实测证据（本机，临时端口）：
+
+- 以当前代码启动的 5583 适配器（临时 5593）返回 `elevenlabs_unauthorized`（`invalid_api_key`，
+  上游说明为 `API key ID used as API key`）；`/api/speech/tts/test` 返回 `status:401`、
+  `speech_credentials_invalid`，并给出「上游凭据无效」的下一步提示。
+- 以当前代码启动的 5584 适配器（临时 5594）返回 `fishaudio_unreachable`；诊断返回 `status:503`、
+  `speech_unavailable`，与本机网络无法访问 `api.fish.audio` 一致。
+- 运行中的 5583/5584 是改动前启动的进程，仍返回旧错误码；需重启 `pnpm elevenlabs:start` /
+  `pnpm fishaudio:start` 后才会显示新的诊断结果。
+
+未执行：
+
+- 有效 `sk_` 密钥下的真实合成；`api.fish.audio` 的真实合成（本机网络不可达）。
+- 浏览器手工截图核验：当前环境没有浏览器自动化，桌面与 390px 的视觉验收待补。

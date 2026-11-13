@@ -12,6 +12,8 @@ export type ExpressionLibraryItem = {
   why: string
   origin: string
   example: string
+  /** 例句译文按条目提供，缺失时不显示展开按钮。 */
+  exampleTranslation?: string
   context: IdiomaticExpressionContext
   kind: ExpressionKind
   sceneCategory: SceneCategory
