@@ -221,6 +221,42 @@ describe("useVoiceConversation", () => {
     unmount()
   })
 
+  it("restarts recognition after stopping playback mid-call", async () => {
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    await act(async () => {
+      await result.current.startCall()
+    })
+    // 新会话先朗读开场白，播完自动恢复监听。
+    expect(offlineAsr.start).toHaveBeenCalledOnce()
+
+    // 模拟正在朗读第二条回复：speak 挂起，识别处于暂停状态。
+    let resolveSpeak: (() => void) | undefined
+    localTts.speak.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSpeak = resolve
+        }),
+    )
+    await act(async () => {
+      void result.current.speak("Sure, one latte coming up.", true)
+      await Promise.resolve()
+    })
+    expect(offlineAsr.start).toHaveBeenCalledOnce()
+
+    // 转写里的停止控件：打断朗读的同时必须恢复监听，通话不能卡在 speaking。
+    act(() => {
+      result.current.stopSpeech()
+    })
+    await waitFor(() => expect(result.current.callStatus).toBe("listening"))
+    expect(offlineAsr.start).toHaveBeenCalledTimes(2)
+
+    resolveSpeak?.()
+    act(() => result.current.endCall())
+    unmount()
+  })
+
   it("restores the latest session for the scene after a refresh", async () => {
     const scene = getConversationScene("coffee")
     const updatedAt = new Date(Date.now() - 5 * 60 * 1000).toISOString()

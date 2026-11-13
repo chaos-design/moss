@@ -460,7 +460,8 @@ export function ConversationWorkspace({
       return
     }
     // Escape 收起展开的输入框，把屏幕还给转写内容；草稿保留在输入框里。
-    if (event.key === "Escape" && composerExpanded) {
+    // IME 组合中（拼音/注音候选）Escape 先交给输入法取消组词，不收起输入框。
+    if (event.key === "Escape" && composerExpanded && !event.nativeEvent.isComposing) {
       event.preventDefault()
       setComposerExpanded(false)
     }

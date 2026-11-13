@@ -383,6 +383,28 @@ describe("conversation feedback UI", () => {
     ).toBe("Could I get a latte?")
   })
 
+  it("leaves IME composition to the input method instead of collapsing on Escape", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+
+    // 拼音候选中按 Escape 是取消组词，不能顺手把输入框收起。
+    fireEvent.keyDown(textarea, { key: "Escape", isComposing: true })
+    expect(textarea.className).toContain("min-h-14")
+
+    fireEvent.keyDown(textarea, { key: "Escape" })
+    expect(textarea.className).toContain("min-h-8")
+  })
+
   it("collapses an empty composer on blur and keeps a draft expanded", () => {
     const scene = getConversationScene("cafe-order")
     render(

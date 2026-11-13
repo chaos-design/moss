@@ -381,6 +381,16 @@ export function useVoiceCallRuntime({
       })
   }, [dispatch, startStreamingRecognition])
 
+  // 转写里的停止控件。语音通话中停止朗读后必须立刻恢复监听：speak() 会暂停 ASR 并把状态
+  // 置为 speaking，若不重启识别，通话会卡在 speaking 且没有语音起点信号可以唤醒。
+  const stopSpeech = useCallback(() => {
+    stopAssistantSpeech()
+    if (callActiveRef.current && !mutedRef.current) {
+      lastVoiceActivityAtRef.current = Date.now()
+      startRecognition()
+    }
+  }, [startRecognition, stopAssistantSpeech])
+
   const speak = useCallback(
     (text: string, force = false) => {
       if (!speakerEnabledRef.current && !force) {
@@ -716,7 +726,7 @@ export function useVoiceCallRuntime({
     speakingRef,
     speechPlaybackState,
     speechTargetText,
-    stopSpeech: stopAssistantSpeech,
+    stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     startCall,
