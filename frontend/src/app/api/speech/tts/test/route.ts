@@ -6,6 +6,7 @@ import {
   SpeechGatewayError,
   synthesizeSpeechAudio,
 } from "@/lib/server/speech-gateway"
+import { isLoopbackSpeechEndpoint } from "@/lib/speech-config"
 import {
   isAudioContentType,
   isPlausibleAudioPayload,
@@ -71,10 +72,13 @@ export async function POST(request: Request) {
     return errorResponse("invalid_request", "合成文本超出长度限制。", 400)
   }
 
-  const voice =
-    typeof candidate.voice === "string" && candidate.voice.trim()
+  const rawVoice =
+    typeof candidate.voice === "string"
       ? candidate.voice.trim().slice(0, speechRules.limits.maxVoiceLength)
-      : testSynthesisDefaults.voice
+      : ""
+  // 显式留空时：本机回环适配器交给服务端默认音色；公网接口保留 OpenAI 兼容默认，避免缺少必填音色。
+  const voice =
+    rawVoice || (isLoopbackSpeechEndpoint(endpoint.endpoint) ? "" : testSynthesisDefaults.voice)
   const allowedFormats = new Set(speechRules.formats.routeAllowed)
   const format =
     typeof candidate.format === "string" && allowedFormats.has(candidate.format)

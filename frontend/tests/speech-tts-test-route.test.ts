@@ -144,6 +144,65 @@ describe("POST /api/speech/tts/test", () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
   })
 
+  it("surfaces the upstream JSON error code and reason for a failed diagnostic", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "not_configured",
+              message: "尚未配置 FISH_API_KEY，Fish Audio 适配服务不可用。",
+            },
+          }),
+          { status: 503, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
+
+    const response = await POST(testRequest({ endpoint }))
+    const result = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe("speech_upstream_error")
+    expect(result.error.message).toContain("503")
+    expect(result.error.message).toContain("not_configured")
+    expect(result.error.message).toContain("尚未配置 FISH_API_KEY")
+  })
+
+  it("lets a loopback adapter use its default voice when the voice is left empty", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mp3Response())
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(
+      testRequest({
+        endpoint: { endpoint: "http://127.0.0.1:5583/v1", apiKey: "", model: "eleven_v4" },
+        voice: "",
+      }),
+    )
+    const result = await response.json()
+
+    expect(result.ok).toBe(true)
+    expect(result.voice).toBe("")
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const upstream = JSON.parse(String(init.body))
+    expect(upstream).not.toHaveProperty("voice")
+  })
+
+  it("keeps the OpenAI default voice for a public endpoint when the voice is left empty", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mp3Response())
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(testRequest({ endpoint, voice: "" }))
+    const result = await response.json()
+
+    expect(result.voice).toBe(testSynthesisDefaults.voice)
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const upstream = JSON.parse(String(init.body))
+    expect(upstream.voice).toBe(testSynthesisDefaults.voice)
+  })
+
   it("reports a thrown network error without breaking the settings page", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")))
 

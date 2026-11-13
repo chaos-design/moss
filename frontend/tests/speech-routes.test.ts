@@ -201,6 +201,32 @@ describe("POST /api/speech/asr", () => {
     expect((await rejected.json()).error.message).toContain("401")
   })
 
+  it("surfaces the upstream JSON error code and reason for recognition", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "not_configured",
+              message: "尚未配置 FISH_API_KEY，Fish Audio 适配服务不可用。",
+            },
+          }),
+          { status: 503, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
+    const response = await asrPost(
+      asrRequest({ audioBase64: base64("audio"), endpoint: validEndpoint }),
+    )
+    expect(response.status).toBe(502)
+    const body = (await response.json()) as { error: { code: string; message: string } }
+    expect(body.error.code).toBe("speech_upstream_error")
+    expect(body.error.message).toContain("503")
+    expect(body.error.message).toContain("not_configured")
+    expect(body.error.message).toContain("尚未配置 FISH_API_KEY")
+  })
+
   it("rate limits repeated recognition requests per endpoint", async () => {
     vi.stubGlobal(
       "fetch",

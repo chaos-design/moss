@@ -99,6 +99,63 @@
       "wav": { "outputFormat": "wav", "contentType": "audio/wav", "sampleRate": 44100 }
     }
   },
+  "localServices": {
+    "asr": [
+      {
+        "id": "moss-asr",
+        "label": "本机 ASR 服务",
+        "endpoint": "ws://127.0.0.1:5580/v1/asr/stream",
+        "transport": "local",
+        "engines": ["qwen3-asr", "sensevoice"]
+      },
+      {
+        "id": "funasr",
+        "label": "FunASR（外部）",
+        "endpoint": "ws://127.0.0.1:10095",
+        "transport": "local",
+        "engines": ["funasr"]
+      },
+      {
+        "id": "local-api",
+        "label": "本机 local 接口（ElevenLabs 适配器）",
+        "endpoint": "http://127.0.0.1:5583/v1",
+        "transport": "api",
+        "modelSource": "localApi"
+      },
+      {
+        "id": "fish-audio",
+        "label": "Fish Audio 适配器",
+        "endpoint": "http://127.0.0.1:5584/v1",
+        "transport": "api",
+        "modelSource": "fishAudio"
+      }
+    ],
+    "tts": [
+      {
+        "id": "moss-tts",
+        "label": "本机 TTS 网关",
+        "endpoint": "http://127.0.0.1:5578",
+        "transport": "local",
+        "voices": "gateway"
+      },
+      {
+        "id": "local-api",
+        "label": "本机 local 接口（ElevenLabs 适配器）",
+        "endpoint": "http://127.0.0.1:5583/v1",
+        "transport": "api",
+        "modelSource": "localApi",
+        "voices": "elevenlabs"
+      },
+      {
+        "id": "fish-audio",
+        "label": "Fish Audio 适配器",
+        "endpoint": "http://127.0.0.1:5584/v1",
+        "transport": "api",
+        "modelSource": "fishAudio",
+        "voices": "fishaudio"
+      }
+    ]
+  },
   "limits": {
     "maxTtsTextLength": 2000,
     "maxAsrAudioBytes": 8000000,

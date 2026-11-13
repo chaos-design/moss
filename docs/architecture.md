@@ -259,6 +259,7 @@ flowchart LR
 | 模型配置集合与当前启用项 | `moss:model-config:v1` | 仅当前启用配置以加密信封进入同源推理 API | 禁止写入数据库和日志 |
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
 | 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase；本机接口预设的地址与模型来自构建期内联的 `NEXT_PUBLIC_*_LOCAL_API_*`，不含密钥 |
+| 本机服务引擎/音色映射 | `moss:speech-local-config:v1` | 不同步；仅由设置页读写，切换服务时同步当前生效值到 `moss:asr-config:v1`、`moss:tts-config:v2` | 按服务 ID 分别保存识别引擎与音色，切换本机服务不沿用其他服务的取值；只存枚举与音色标识，不含密钥 |
 | ElevenLabs 请求内容 | 仅本机适配器进程内存 | 发送到 ElevenLabs API | 不落盘；文本、录音与保留策略由上游账户决定 |
 | Fish Audio 请求内容 | 仅本机适配器进程内存 | 发送到 Fish Audio API | 不落盘；文本、录音与保留策略由上游账户决定 |
 | 跟读评分 | 学习记忆事件 | Supabase 快照与 `shadowing_attempts` | 保存声学分数，不保存录音 |

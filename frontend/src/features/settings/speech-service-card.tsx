@@ -30,11 +30,21 @@ import {
 } from "@/components/ui/select"
 import { settingsCardHeightClass } from "@/features/settings/settings-layout"
 import { useAsrConfig } from "@/features/speech/use-asr-config"
+import { useLocalServiceConfig } from "@/features/speech/use-local-service-config"
 import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import { useTtsConfig } from "@/features/speech/use-tts-config"
 import type { AsrEngine } from "@/lib/asr-config"
 import { asrEngineOptions } from "@/lib/asr-config"
 import { asrTestAudioMimeType, createAsrTestAudioBase64 } from "@/lib/asr-test-audio"
+import {
+  buildLocalServiceSelection,
+  getAsrEngineOptionsForService,
+  getLocalService,
+  getLocalServiceOptions,
+  type LocalServiceOption,
+  matchLocalService,
+  resolveLocalService,
+} from "@/lib/local-service-config"
 import {
   describeSpeechTransport,
   getDefaultApiEndpoint,
@@ -76,7 +86,9 @@ const serviceTransportHints: Record<SpeechTransport, string> = {
 }
 
 type TestStatus = "idle" | "testing" | "success" | "error"
-type TestTarget = "asr" | "tts"
+type TestState = { status: TestStatus; message: string }
+
+const idleTestState: TestState = { status: "idle", message: "" }
 
 type TestDiagnostic = {
   ok?: boolean
@@ -100,23 +112,32 @@ function describeAudioSize(bytes: number | undefined) {
 
 export function SpeechServiceCard() {
   const { config, resolved, setEndpoint } = useSpeechConfig()
-  const [testStatus, setTestStatus] = useState<TestStatus>("idle")
-  const [testTarget, setTestTarget] = useState<TestTarget>("tts")
-  const [testMessage, setTestMessage] = useState("")
+  // ASR 与 TTS 的测试链路各自持有状态，一个服务的测试与结果不影响另一个服务。
+  const [asrTest, setAsrTest] = useState<TestState>(idleTestState)
+  const [ttsTest, setTtsTest] = useState<TestState>(idleTestState)
 
   const asr = resolved.asr
   const tts = resolved.tts
 
+  function invalidateTest(service: SpeechService) {
+    if (service === "asr") {
+      setAsrTest(idleTestState)
+    } else {
+      setTtsTest(idleTestState)
+    }
+  }
+
   function updateEndpoint(service: SpeechService, patch: Partial<SpeechEndpoint>) {
-    setTestStatus("idle")
-    setTestMessage("")
-    setEndpoint(service, (current) => ({ ...current, ...patch }))
+    invalidateTest(service)
+    // 手动切回本机服务时清掉可能残留的适配器地址，避免把 http://.../v1 当成
+    // 本机 WebSocket/网关地址使用（地址与接入方式错配）。
+    const normalized =
+      patch.transport === "local" ? { ...patch, endpoint: "", model: "", voice: "" } : patch
+    setEndpoint(service, (current) => ({ ...current, ...normalized }))
   }
 
   async function handleTtsTest() {
-    setTestTarget("tts")
-    setTestStatus("testing")
-    setTestMessage("正在请求语音合成接口…")
+    setTtsTest({ status: "testing", message: "正在请求语音合成接口…" })
     try {
       const response = await fetch("/api/speech/tts/test", {
         method: "POST",
@@ -124,7 +145,8 @@ export function SpeechServiceCard() {
         body: JSON.stringify({
           endpoint: { apiKey: tts.apiKey, endpoint: tts.endpoint, model: tts.model },
           text: testSynthesisDefaults.text,
-          voice: testSynthesisDefaults.voice,
+          // 使用设置里配置的音色；留空时交给服务端默认音色，而不是强推 OpenAI 的 alloy。
+          voice: tts.voice ?? "",
         }),
       })
       // 诊断端点始终回 JSON；非 JSON 响应按 HTTP 状态兜底，保证错误可读。
@@ -139,25 +161,25 @@ export function SpeechServiceCard() {
         const code = diagnostic.error?.code
         throw new Error(code ? `${reason}（${code}）` : reason)
       }
-      setTestStatus("success")
-      setTestMessage(
-        `语音合成接口可用，音频已正常返回。${diagnostic.contentType ?? "audio"} · ` +
+      setTtsTest({
+        status: "success",
+        message:
+          `语音合成接口可用，音频已正常返回。${diagnostic.contentType ?? "audio"} · ` +
           `${describeAudioSize(diagnostic.bytes)} · ${diagnostic.durationMs ?? 0} ms`,
-      )
+      })
     } catch (error) {
-      setTestStatus("error")
-      setTestMessage(
-        error instanceof Error
-          ? `语音合成接口不可用：${error.message}`
-          : "语音合成接口不可用。",
-      )
+      setTtsTest({
+        status: "error",
+        message:
+          error instanceof Error
+            ? `语音合成接口不可用：${error.message}`
+            : "语音合成接口不可用。",
+      })
     }
   }
 
   async function handleAsrTest() {
-    setTestTarget("asr")
-    setTestStatus("testing")
-    setTestMessage("正在请求语音识别接口…")
+    setAsrTest({ status: "testing", message: "正在请求语音识别接口…" })
     try {
       const response = await fetch("/api/speech/asr", {
         method: "POST",
@@ -181,19 +203,20 @@ export function SpeechServiceCard() {
         throw new Error(code ? `${reason}（${code}）` : reason)
       }
       const text = typeof result.data?.text === "string" ? result.data.text.trim() : ""
-      setTestStatus("success")
-      setTestMessage(
-        text
+      setAsrTest({
+        status: "success",
+        message: text
           ? `语音识别接口可用，返回文本：「${text}」。`
           : "语音识别接口可用，本次返回空文本。",
-      )
+      })
     } catch (error) {
-      setTestStatus("error")
-      setTestMessage(
-        error instanceof Error
-          ? `语音识别接口不可用：${error.message}`
-          : "语音识别接口不可用。",
-      )
+      setAsrTest({
+        status: "error",
+        message:
+          error instanceof Error
+            ? `语音识别接口不可用：${error.message}`
+            : "语音识别接口不可用。",
+      })
     }
   }
 
@@ -234,61 +257,81 @@ export function SpeechServiceCard() {
           />
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center gap-3 border-t pt-4">
-          {asr.transport === "api" ? (
+        <div className="mt-5 flex flex-col gap-2 border-t pt-4">
+          <p className="text-xs text-muted-foreground">
+            「测试识别接口」验证语音识别已配置地址与识别服务，「测试合成接口」验证语音合成
+            已配置地址与合成服务；两条测试结果相互独立。
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={testStatus === "testing"}
+              disabled={asr.transport !== "api" || asrTest.status === "testing"}
               onClick={handleAsrTest}
             >
-              {testStatus === "testing" && testTarget === "asr" ? (
+              {asrTest.status === "testing" ? (
                 <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
               ) : (
                 <EarIcon data-icon="inline-start" />
               )}
               测试识别接口
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={tts.transport !== "api" || testStatus === "testing"}
-            onClick={handleTtsTest}
-          >
-            {testStatus === "testing" && testTarget === "tts" ? (
-              <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-            ) : (
-              <Volume2Icon data-icon="inline-start" />
-            )}
-            测试合成接口
-          </Button>
-          <p
-            className={cn(
-              "flex items-center gap-1.5 text-xs",
-              testStatus === "error" && "text-destructive",
-              testStatus === "success" && "text-[var(--success)]",
-              testStatus !== "error" && testStatus !== "success" && "text-muted-foreground",
-            )}
-            role="status"
-          >
-            {testStatus === "success" ? (
-              <CheckCircle2Icon className="size-3.5" aria-hidden="true" />
-            ) : testStatus === "error" ? (
-              <AlertTriangleIcon className="size-3.5" aria-hidden="true" />
-            ) : null}
-            {tts.transport !== "api" && testTarget === "tts"
-              ? "选择 HTTP API 接入后可在此验证合成接口。"
-              : testMessage ||
-                (asr.transport === "api"
-                  ? "两个接口都可以先用这里的测试按钮验证连通性。"
-                  : "识别接口会在开始语音对话时验证。")}
-          </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={tts.transport !== "api" || ttsTest.status === "testing"}
+              onClick={handleTtsTest}
+            >
+              {ttsTest.status === "testing" ? (
+                <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+              ) : (
+                <Volume2Icon data-icon="inline-start" />
+              )}
+              测试合成接口
+            </Button>
+          </div>
+          <TestStatusLine
+            state={asrTest}
+            idleHint={
+              asr.transport === "api"
+                ? "可先用测试识别接口验证当前配置。"
+                : "选择 HTTP API 接入后可在此验证识别接口。"
+            }
+          />
+          <TestStatusLine
+            state={ttsTest}
+            idleHint={
+              tts.transport === "api"
+                ? "可先用测试合成接口验证当前配置。"
+                : "选择 HTTP API 接入后可在此验证合成接口。"
+            }
+          />
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function TestStatusLine({ state, idleHint }: { state: TestState; idleHint: string }) {
+  return (
+    <p
+      className={cn(
+        "flex items-center gap-1.5 text-xs",
+        state.status === "error" && "text-destructive",
+        state.status === "success" && "text-[var(--success)]",
+        state.status !== "error" && state.status !== "success" && "text-muted-foreground",
+      )}
+      role="status"
+    >
+      {state.status === "success" ? (
+        <CheckCircle2Icon className="size-3.5" aria-hidden="true" />
+      ) : state.status === "error" ? (
+        <AlertTriangleIcon className="size-3.5" aria-hidden="true" />
+      ) : null}
+      {state.message || idleHint}
+    </p>
   )
 }
 
@@ -410,21 +453,12 @@ function SpeechEndpointFields({
             </FieldDescription>
           </Field>
         ) : (
-          <Field data-invalid={endpointInvalid || undefined}>
-            <FieldLabel htmlFor={`${idPrefix}-local-endpoint`}>
-              {serviceLabels[service]}本机服务地址
-            </FieldLabel>
-            <Input
-              id={`${idPrefix}-local-endpoint`}
-              value={stored.endpoint}
-              onChange={(event) => onChange({ endpoint: event.target.value })}
-              placeholder={getDefaultLocalEndpoint(service)}
-              aria-invalid={endpointInvalid || undefined}
-            />
-            <FieldDescription>
-              留空则使用环境变量中的地址；服务未启动时会自动回退到浏览器语音。
-            </FieldDescription>
-          </Field>
+          <LocalServiceSelect
+            service={service}
+            endpoint={endpoint}
+            stored={stored}
+            onChange={onChange}
+          />
         )
       ) : null}
 
@@ -459,22 +493,18 @@ function SpeechEndpointFields({
       ) : null}
 
       {policy.voice !== "hidden" && endpoint.transport === "api" ? (
-        <Field>
-          <FieldLabel htmlFor={`${idPrefix}-voice`}>{serviceLabels[service]}音色</FieldLabel>
-          <Input
-            id={`${idPrefix}-voice`}
-            value={stored.voice}
-            onChange={(event) => onChange({ voice: event.target.value.trim() })}
-            placeholder="alloy"
-          />
-          <FieldDescription>
-            OpenAI 兼容服务常用 alloy/echo/fable/onyx/nova/shimmer；本机适配器可留空使用服务端
-            默认音色，Fish Audio 填 voice model ID（reference_id）。对话页的接口音色与此同步。
-          </FieldDescription>
-        </Field>
+        <ApiVoiceField
+          idPrefix={idPrefix}
+          service={service}
+          endpoint={endpoint}
+          stored={stored}
+          onChange={onChange}
+        />
       ) : null}
 
-      {endpoint.transport === "local" ? <LocalServiceConfigField service={service} /> : null}
+      {endpoint.transport === "local" ? (
+        <LocalServiceConfigField service={service} endpoint={endpoint} />
+      ) : null}
 
       <Field>
         <FieldLabel htmlFor={`${idPrefix}-status`}>
@@ -540,29 +570,166 @@ function LocalTtsVoiceDetail() {
 }
 
 // 本机接入的模型/音色配置：引擎与音色属于本机服务自己的配置，与 HTTP API 的 model 字段无关。
-function LocalServiceConfigField({ service }: { service: SpeechService }) {
+// 选项与取值都按所选本机服务独立匹配，切换服务不会沿用另一个服务的引擎或音色。
+function LocalServiceConfigField({
+  service,
+  endpoint,
+}: {
+  service: SpeechService
+  endpoint: SpeechEndpoint
+}) {
+  const { engine } = useAsrConfig()
+  const option = resolveLocalService(
+    service,
+    endpoint.transport === "local" ? "" : endpoint.endpoint,
+    engine,
+  )
   if (service === "asr") {
-    return <LocalAsrEngineField />
+    return <LocalAsrEngineField option={option} />
   }
-  return <LocalTtsVoiceField />
+  return <LocalTtsVoiceField option={option} />
 }
 
-function LocalAsrEngineField() {
+/** 本机服务地址改为下拉输入选择，选项只来自通用规则配置的 MOSS 本机服务可用项。 */
+function LocalServiceSelect({
+  service,
+  endpoint,
+  stored,
+  onChange,
+}: {
+  service: SpeechService
+  endpoint: SpeechEndpoint
+  stored: SpeechEndpoint
+  onChange: (patch: Partial<SpeechEndpoint>) => void
+}) {
+  const { config: saved, replace } = useLocalServiceConfig()
   const { engine, selectEngine } = useAsrConfig()
-  const items = asrEngineOptions.map((option) => ({
-    value: option.value,
-    label: option.label,
+  const { config: ttsConfig, selectVoice } = useTtsConfig()
+  const options = getLocalServiceOptions(service)
+  // 本机接入只看引擎与默认服务，忽略可能残留的适配器地址，避免地址与接入方式错配。
+  const current = resolveLocalService(
+    service,
+    endpoint.transport === "local" ? "" : endpoint.endpoint,
+    engine,
+  )
+  const items = options.map((option) => ({ value: option.id, label: option.label }))
+
+  function handleSelect(value: string | null) {
+    if (!value) {
+      return
+    }
+    const option = getLocalService(service, value)
+    const selection = buildLocalServiceSelection({
+      service,
+      option,
+      previousId: current.id,
+      current: stored,
+      engine,
+      gatewayVoice: getSelectedVoiceValue(ttsConfig),
+      saved,
+    })
+    replace(selection.saved)
+    if (selection.engine) {
+      selectEngine(selection.engine)
+    }
+    if (selection.gatewayVoice) {
+      selectVoice(selection.gatewayVoice)
+    }
+    onChange(selection.patch)
+  }
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={`${service}-local-service`}>
+        {serviceLabels[service]}本机服务地址
+      </FieldLabel>
+      <Select items={items} value={current.id} onValueChange={handleSelect}>
+        <SelectTrigger id={`${service}-local-service`} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          <SelectGroup>
+            {options.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      <FieldDescription>
+        下拉选项与 MOSS 本机服务可用项一致；选择本机适配器时自动对齐到 HTTP API 接入。
+        留空使用环境变量中的地址；服务未启动时会自动回退到浏览器语音。
+      </FieldDescription>
+    </Field>
+  )
+}
+
+/** 接口音色按所选本机适配器分别保存，避免 ElevenLabs voice ID 与 Fish Audio reference_id 混用。 */
+function ApiVoiceField({
+  idPrefix,
+  service,
+  endpoint,
+  stored,
+  onChange,
+}: {
+  idPrefix: SpeechService
+  service: SpeechService
+  endpoint: SpeechEndpoint
+  stored: SpeechEndpoint
+  onChange: (patch: Partial<SpeechEndpoint>) => void
+}) {
+  const { setTtsVoice } = useLocalServiceConfig()
+  const matched = service === "tts" ? matchLocalService("tts", endpoint.endpoint) : null
+  const hint =
+    matched?.voices === "fishaudio"
+      ? "Fish Audio 填 voice model ID（reference_id）；留空使用内置默认音色。与对话页音色选择同步。"
+      : matched?.voices === "elevenlabs"
+        ? "ElevenLabs 填 voice ID 或 alloy/echo/fable/onyx/nova/shimmer 兼容别名；留空使用服务端默认音色。与对话页音色选择同步。"
+        : "OpenAI 兼容服务常用 alloy/echo/fable/onyx/nova/shimmer；本机适配器可留空使用服务端默认音色，Fish Audio 填 voice model ID（reference_id）。对话页的接口音色与此同步。"
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={`${idPrefix}-voice`}>{serviceLabels[service]}音色</FieldLabel>
+      <Input
+        id={`${idPrefix}-voice`}
+        value={stored.voice}
+        onChange={(event) => {
+          const voice = event.target.value.trim()
+          if (matched) {
+            setTtsVoice(matched.id, voice)
+          }
+          onChange({ voice })
+        }}
+        placeholder={matched?.voices === "fishaudio" ? "reference_id" : "alloy"}
+      />
+      <FieldDescription>{hint}</FieldDescription>
+    </Field>
+  )
+}
+
+function LocalAsrEngineField({ option }: { option: LocalServiceOption }) {
+  const { engine, selectEngine } = useAsrConfig()
+  const { setAsrEngine } = useLocalServiceConfig()
+  const items = getAsrEngineOptionsForService(option).map((item) => ({
+    value: item.value,
+    label: item.label,
   }))
+  if (!items.length) {
+    return null
+  }
+  const value = items.some((item) => item.value === engine) ? engine : items[0].value
 
   return (
     <Field>
       <FieldLabel htmlFor="asr-engine">识别引擎</FieldLabel>
       <Select
         items={items}
-        value={engine}
-        onValueChange={(value) => {
-          if (value) {
-            selectEngine(value as AsrEngine)
+        value={value}
+        onValueChange={(next) => {
+          if (next) {
+            selectEngine(next as AsrEngine)
+            setAsrEngine(option.id, next)
           }
         }}
       >
@@ -571,24 +738,32 @@ function LocalAsrEngineField() {
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false}>
           <SelectGroup>
-            {asrEngineOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
               </SelectItem>
             ))}
           </SelectGroup>
         </SelectContent>
       </Select>
-      <FieldDescription>仅对本机 ASR 服务生效；FunASR 需按开发文档单独启动。</FieldDescription>
+      <FieldDescription>
+        {option.id === "funasr"
+          ? "FunASR（外部）使用标准 2-pass 协议，需按开发文档单独启动。"
+          : "仅对本机 ASR 服务生效（Qwen3-ASR / SenseVoice）；与对话页引擎选择同步。"}
+      </FieldDescription>
     </Field>
   )
 }
 
-function LocalTtsVoiceField() {
+function LocalTtsVoiceField({ option }: { option: LocalServiceOption }) {
   const { config, selectVoice } = useTtsConfig()
-  const items = ttsVoiceOptions.map((option) => ({
-    value: option.value,
-    label: option.label,
+  const { setTtsVoice } = useLocalServiceConfig()
+  if (option.voices !== "gateway") {
+    return null
+  }
+  const items = ttsVoiceOptions.map((voice) => ({
+    value: voice.value,
+    label: voice.label,
   }))
   const selectedValue = getSelectedVoiceValue(config)
 
@@ -601,6 +776,7 @@ function LocalTtsVoiceField() {
         onValueChange={(value) => {
           if (value) {
             selectVoice(value)
+            setTtsVoice(option.id, value)
           }
         }}
       >
@@ -609,9 +785,9 @@ function LocalTtsVoiceField() {
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false} className="max-h-64 overflow-y-auto">
           <SelectGroup>
-            {items.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
               </SelectItem>
             ))}
           </SelectGroup>

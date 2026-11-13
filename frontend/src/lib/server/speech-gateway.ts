@@ -98,15 +98,52 @@ function buildHeaders(apiKey: string, extra?: Record<string, string>) {
   }
 }
 
-function describeUpstreamFailure(service: SpeechService, response: Response) {
-  return new SpeechGatewayError(
-    "speech_upstream_error",
+// 提取上游（含本机适配器）JSON 错误体里的 code 与简短原因，便于设置页诊断可定位；
+// 只取字符串字段并截断，避免回传大段内容或泄漏密钥。
+async function extractUpstreamError(response: Response): Promise<{
+  code?: string
+  detail?: string
+}> {
+  const contentType = (response.headers.get("content-type") ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase()
+  if (!contentType.startsWith("application/json")) {
+    return {}
+  }
+  try {
+    const payload = (await response.json()) as { error?: unknown }
+    const errorBody = payload.error
+    let code: string | undefined
+    let detail: string | undefined
+    if (typeof errorBody === "string") {
+      detail = errorBody.slice(0, 200)
+    } else if (errorBody && typeof errorBody === "object") {
+      const record = errorBody as Record<string, unknown>
+      if (typeof record.code === "string" && record.code.trim()) {
+        code = record.code.trim().slice(0, 64)
+      }
+      if (typeof record.message === "string" && record.message.trim()) {
+        detail = record.message.trim().slice(0, 200)
+      } else if (typeof record.detail === "string" && record.detail.trim()) {
+        detail = record.detail.trim().slice(0, 200)
+      }
+    }
+    return { code, detail }
+  } catch {
+    return {}
+  }
+}
+
+async function describeUpstreamFailure(service: SpeechService, response: Response) {
+  const base =
     service === "asr"
       ? `语音识别接口返回 ${response.status}，请检查接口地址与密钥。`
-      : `语音合成接口返回 ${response.status}，请检查接口地址与密钥。`,
-    502,
-    true,
-  )
+      : `语音合成接口返回 ${response.status}，请检查接口地址与密钥。`
+  const upstream = await extractUpstreamError(response)
+  const detail = [upstream.code ?? null, upstream.detail ?? null].filter(Boolean).join("，")
+  const message = detail ? `${base}（${detail}）` : base
+  return new SpeechGatewayError("speech_upstream_error", message, 502, true)
 }
 
 export async function transcribeSpeechAudio(input: {
@@ -148,7 +185,7 @@ export async function transcribeSpeechAudio(input: {
   }
 
   if (!response.ok) {
-    throw describeUpstreamFailure("asr", response)
+    throw await describeUpstreamFailure("asr", response)
   }
 
   let text: unknown
@@ -200,7 +237,7 @@ export async function synthesizeSpeechAudio(input: {
   }
 
   if (!response.ok) {
-    throw describeUpstreamFailure("tts", response)
+    throw await describeUpstreamFailure("tts", response)
   }
 
   const contentType = response.headers.get("content-type") ?? ""

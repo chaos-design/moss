@@ -72,10 +72,10 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
 
 | 服务 | 接入方式 | endpoint | model | apiKey | voice | engine |
 | --- | --- | --- | --- | --- | --- | --- |
-| ASR | 本机服务 (`local`) | 可选（留空用默认 5580） | — | — | — | 可选（Qwen3-ASR / SenseVoice / FunASR） |
+| ASR | 本机服务 (`local`) | 下拉选择（MOSS 本机服务可用项，留空用默认 5580） | — | — | — | 按所选本机服务独立匹配（Qwen3-ASR / SenseVoice / FunASR） |
 | ASR | HTTP API (`api`) | 必填 | 可选 | 可选 | — | — |
 | ASR | 浏览器引擎 (`browser`) | — | — | — | — | — |
-| TTS | 本机服务 (`local`) | 可选（留空用默认 5578） | — | — | 可选（Kokoro / Audio8 / CosyVoice 音色） | — |
+| TTS | 本机服务 (`local`) | 下拉选择（MOSS 本机服务可用项，留空用默认 5578） | — | — | 按所选本机服务独立匹配（Kokoro / Audio8 / CosyVoice 音色） | — |
 | TTS | HTTP API (`api`) | 必填 | 可选 | 可选 | 可选（留空 `alloy`，Fish Audio 填 reference_id） | — |
 | TTS | 浏览器引擎 (`browser`) | — | — | — | — | — |
 
@@ -89,8 +89,15 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
   音色。TTS 的 `voice` 字段（`moss:speech-config:v1`）在设置页与对话页共享。
 - **本机接入的引擎/音色**是本机服务自己的配置（`moss:asr-config:v1`、`moss:tts-config:v2`），
   与 HTTP API 的 `model`/`voice` 字段无关；设置页与对话页读写同一份。
+- **本机服务地址**由文本输入改为下拉输入选择，选项取自规则表 `localServices`（按 ASR / TTS
+  分组，模型名复用 `models`），与 `services` 中的 MOSS 本机服务可用项一致（含 5580、5578、
+  5583、5584 与 FunASR 外部 10095）；选择 `api` 接入的本机适配器时
+  接入方式随之对齐，不允许手填地址造成地址与接入方式错配。
+- **引擎与音色按服务独立匹配**：本机服务、识别引擎、本机语音音色以服务 ID 为键分别持久化；
+  切换本机服务时只加载该服务自己的选项与取值，不沿用其他服务的引擎或音色。
 - 两个 HTTP API 接入都可先在设置页验证连通性：「测试识别接口」（内置 0.2s WAV 测试音，
-  `lib/asr-test-audio.ts`）与「测试合成接口」。
+  `lib/asr-test-audio.ts`）与「测试合成接口」。两个按钮各自独立，分别验证本服务已配置地址
+  与对应服务是否正常，结果、测试中状态与异常状态互不覆盖。
 
 ## 5. 通用限制与安全规则
 
@@ -141,6 +148,9 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
 `pnpm fishaudio:test:synthesis`（探测已启动的 5584 服务）与
 `pnpm elevenlabs:test` / `pnpm fishaudio:test`（不联网的单元测试）。
 5584 的音色别名（含共享默认值 `alloy`）映射为空串后由内置默认音色发声。
+设置页的「测试识别接口」与「测试合成接口」是两条独立链路：分别验证本服务已配置地址与对应
+服务是否正常，各自维护结果、测试中状态与异常状态，互不覆盖；本服务配置变化只失效本服务
+已有的测试结果。完整需求见 [Moss 详细设计](detailed-design.md#55-语音服务接入设置)。
 
 ## 8. 消费方对照
 
@@ -148,7 +158,9 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
 | --- | --- |
 | `frontend/src/lib/speech-rules.ts` | 类型化封装、音频有效性判定、规则默认值 |
 | `frontend/src/app/api/speech/tts/test/route.ts` | 前端诊断端点 |
-| `frontend/src/features/settings/speech-service-card.tsx` | 设置页「测试合成接口」与本机接口预设 |
+| `frontend/src/lib/local-service-config.ts` | `localServices` 选项、服务 ID 推导、引擎/音色按服务独立匹配与回退 |
+| `frontend/src/features/speech/use-local-service-config.ts` | `moss:speech-local-config:v1` 的本地持久化与跨标签页同步 |
+| `frontend/src/features/settings/speech-service-card.tsx` | 设置页「测试识别接口」「测试合成接口」、本机服务下拉与引擎/音色独立匹配 |
 | `backend/services/elevenlabs/start.mjs` | 把规则默认值注入 Python 进程 |
 | `backend/services/elevenlabs/rules.py` | Python 侧格式/音色/速度/测试默认值 |
 | `backend/services/elevenlabs/app.py` | `/v1/audio/speech/test` 探针 |
