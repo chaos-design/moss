@@ -113,8 +113,8 @@ describe("SpeechServiceCard", () => {
     fireEvent.change(screen.getByLabelText("语音识别API 密钥"), {
       target: { value: "local-token" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "填入语音识别本机接口" }))
-    fireEvent.click(screen.getByRole("button", { name: "填入语音合成本机接口" }))
+    fireEvent.click(screen.getByRole("button", { name: "使用语音识别ElevenLabs 适配器" }))
+    fireEvent.click(screen.getByRole("button", { name: "使用语音合成ElevenLabs 适配器" }))
 
     const stored = storedConfig()
     expect(stored.asr.transport).toBe("api")
@@ -131,8 +131,8 @@ describe("SpeechServiceCard", () => {
     render(<SpeechServiceCard />)
     selectApiTransportForBothServices()
 
-    fireEvent.click(screen.getByRole("button", { name: "填入语音识别Fish Audio 接口" }))
-    fireEvent.click(screen.getByRole("button", { name: "填入语音合成Fish Audio 接口" }))
+    fireEvent.click(screen.getByRole("button", { name: "使用语音识别Fish Audio 适配器" }))
+    fireEvent.click(screen.getByRole("button", { name: "使用语音合成Fish Audio 适配器" }))
 
     const stored = storedConfig()
     expect(stored.asr.endpoint).toBe(getDefaultFishAudioEndpoint("asr"))

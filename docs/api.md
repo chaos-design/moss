@@ -22,6 +22,7 @@
 | `POST /api/translation` | Supabase session 或加密自带配置 | 30 次/分钟/主体 | 单条翻译 |
 | `POST /api/speech/asr` | 无（请求自带端点配置） | 120 次/分钟/endpoint | 单段语音转写 |
 | `POST /api/speech/tts` | 无（请求自带端点配置） | 240 次/分钟/endpoint | 文本转音频 |
+| `GET /api/speech/services` | 无 | 无 | 探测本机语音服务是否在线 |
 | `WS /v1/asr/stream` | 可选部署 token | 连接数与消息大小限制 | PCM 与转写 |
 | FunASR 2-pass WebSocket | 由本地服务决定 | 由本地服务决定 | PCM 与转写 |
 | `POST /v1/tts/synthesize` | loopback + Origin | 文本长度与服务资源限制 | 文本与 WAV |
@@ -226,6 +227,29 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
 把两种语音来源都切到 `api` 后，可直接用设置的“使用 Fish Audio”一键填入（默认值即
 `http://127.0.0.1:5584/v1`、`transcribe-1-pro`、`s2.1-pro-free`）。选择该接入后，文本与
 录音会发送到 Fish Audio，适用其账户的日志、保留和计费策略。
+
+## GET `/api/speech/services`
+
+返回四个本机回环语音服务的探活结果，供设置页显示「在线 / 未启动」并驱动一键接入。地址
+固定来自 `speech-rules.json`，不接受任何请求参数，因此不会被用作任意地址探测。
+
+```json
+{
+  "data": {
+    "checkedAt": 1763035200000,
+    "services": [
+      { "id": "moss-tts", "label": "本机 TTS 网关", "kinds": ["tts"], "ready": true, "latencyMs": 3 },
+      { "id": "moss-asr", "label": "本机 ASR 服务", "kinds": ["asr"], "ready": false, "latencyMs": 1 },
+      { "id": "local-api", "label": "ElevenLabs 适配器", "kinds": ["asr", "tts"], "ready": true, "latencyMs": 2 },
+      { "id": "fish-audio", "label": "Fish Audio 适配器", "kinds": ["asr", "tts"], "ready": false, "latencyMs": 1 }
+    ]
+  }
+}
+```
+
+- 单次探活超时 900ms，四个服务并行；任何一个失败只把该项标记为 `ready: false`。
+- 设置页首屏由服务端渲染时直接调用同一探测函数并注入结果；本接口供「重新检测」按钮
+  强制刷新，响应 `Cache-Control: no-store`。
 
 ## POST `/api/speech/asr`
 

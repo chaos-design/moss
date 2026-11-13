@@ -1,7 +1,7 @@
 "use client"
 
-import { EarIcon, LoaderCircleIcon, Volume2Icon } from "lucide-react"
-import { useState } from "react"
+import { EarIcon, LoaderCircleIcon, RefreshCwIcon, Volume2Icon } from "lucide-react"
+import { useCallback, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -59,6 +59,7 @@ import {
   speechTransports,
 } from "@/lib/speech-config"
 import { speechRules, testSynthesisDefaults } from "@/lib/speech-rules"
+import type { LocalSpeechServiceProbe } from "@/lib/speech-services"
 import { getSelectedVoiceValue, ttsVoiceOptions } from "@/lib/tts-config"
 import { cn } from "@/lib/utils"
 
@@ -98,6 +99,37 @@ type AsrTestResult = {
   error?: { code?: string; message?: string }
 }
 
+/**
+ * 首屏状态由设置页在服务端探测后注入，客户端只在「重新检测」时再请求一次。
+ * 探测失败时保留已有结果，不影响手动配置。
+ */
+function useLocalServiceProbes(initialProbes: readonly LocalSpeechServiceProbe[] = []) {
+  const [probes, setProbes] = useState<LocalSpeechServiceProbe[]>([...initialProbes])
+  const [checking, setChecking] = useState(false)
+
+  const refresh = useCallback(async () => {
+    setChecking(true)
+    try {
+      const response = await fetch("/api/speech/services", { cache: "no-store" })
+      if (!response.ok) {
+        return
+      }
+      const payload = (await response.json()) as {
+        data?: { services?: LocalSpeechServiceProbe[] }
+      }
+      if (Array.isArray(payload.data?.services)) {
+        setProbes(payload.data.services)
+      }
+    } catch {
+      // 保留上一次结果，界面仍可手动配置。
+    } finally {
+      setChecking(false)
+    }
+  }, [])
+
+  return { checking, probes, refresh }
+}
+
 function describeAudioSize(bytes: number | undefined) {
   if (typeof bytes !== "number" || bytes < 0) {
     return "0 B"
@@ -119,14 +151,24 @@ function describeSpeechFailureHint(message: string) {
   return ""
 }
 
-export function SpeechServiceCard() {
+export function SpeechServiceCard({
+  initialProbes,
+}: {
+  initialProbes?: LocalSpeechServiceProbe[]
+} = {}) {
   const { config, resolved, setEndpoint } = useSpeechConfig()
   // ASR 与 TTS 的测试链路各自持有状态，一个服务的测试与结果不影响另一个服务。
   const [asrTest, setAsrTest] = useState<TestState>(idleTestState)
   const [ttsTest, setTtsTest] = useState<TestState>(idleTestState)
+  const {
+    checking: probing,
+    probes,
+    refresh: refreshProbes,
+  } = useLocalServiceProbes(initialProbes)
 
   const asr = resolved.asr
   const tts = resolved.tts
+  const readyIds = new Set(probes.filter((probe) => probe.ready).map((probe) => probe.id))
 
   function invalidateTest(service: SpeechService) {
     if (service === "asr") {
@@ -248,12 +290,18 @@ export function SpeechServiceCard() {
       </CardHeader>
 
       <CardContent className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="grid min-w-0 gap-5 lg:grid-cols-2">
+        <LocalServiceStatus
+          checking={probing}
+          probes={probes}
+          onRefresh={() => void refreshProbes()}
+        />
+        <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-2">
           <SpeechEndpointFields
             idPrefix="asr"
             service="asr"
             endpoint={asr}
             stored={config.asr}
+            readyIds={readyIds}
             onChange={(patch) => updateEndpoint("asr", patch)}
           />
           <SpeechEndpointFields
@@ -261,6 +309,7 @@ export function SpeechServiceCard() {
             service="tts"
             endpoint={tts}
             stored={config.tts}
+            readyIds={readyIds}
             onChange={(patch) => updateEndpoint("tts", patch)}
           />
         </div>
@@ -282,6 +331,64 @@ export function SpeechServiceCard() {
         />
       </CardFooter>
     </Card>
+  )
+}
+
+function LocalServiceStatus({
+  checking,
+  probes,
+  onRefresh,
+}: {
+  checking: boolean
+  probes: readonly LocalSpeechServiceProbe[]
+  onRefresh: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/35 px-3 py-2">
+      <span className="shrink-0 font-mono text-[10px] font-semibold uppercase text-muted-foreground">
+        本机服务
+      </span>
+      {probes.length === 0 ? (
+        <span className="text-xs text-muted-foreground">
+          {checking ? "正在检测…" : "未检测到本机服务，仍可手动填写接口地址。"}
+        </span>
+      ) : (
+        probes.map((probe) => (
+          <Badge
+            key={probe.id}
+            variant={probe.ready ? "secondary" : "outline"}
+            className={cn(
+              "gap-1 font-normal",
+              probe.ready ? "text-[var(--success)]" : "text-muted-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                probe.ready ? "bg-[var(--success)]" : "bg-muted-foreground/40",
+              )}
+              aria-hidden="true"
+            />
+            {probe.label}
+            {probe.ready ? "在线" : "未启动"}
+          </Badge>
+        ))
+      )}
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="ml-auto shrink-0"
+        disabled={checking}
+        onClick={onRefresh}
+      >
+        <RefreshCwIcon
+          className={checking ? "animate-spin" : undefined}
+          data-icon="inline-start"
+        />
+        重新检测
+      </Button>
+    </div>
   )
 }
 
@@ -338,22 +445,71 @@ const serviceLabels: Record<SpeechService, string> = {
   tts: "语音合成",
 }
 
+type ServicePreset = {
+  id: string
+  label: string
+  /** 对应的本机探活 id；云端预设没有可探测的本地端口。 */
+  probeId: string | null
+  endpoint: string
+  model: string
+}
+
+function getServicePresets(service: SpeechService): ServicePreset[] {
+  return [
+    {
+      id: "local-api",
+      label: "ElevenLabs 适配器",
+      probeId: "local-api",
+      endpoint: getDefaultLocalApiEndpoint(service),
+      model: getDefaultLocalApiModel(service),
+    },
+    {
+      id: "fish-audio",
+      label: "Fish Audio 适配器",
+      probeId: "fish-audio",
+      endpoint: getDefaultFishAudioEndpoint(service),
+      model: getDefaultFishAudioModel(service),
+    },
+    {
+      id: "openai",
+      label: "OpenAI 官方",
+      probeId: null,
+      endpoint: "https://api.openai.com/v1",
+      model: speechRules.models.remoteApi[service],
+    },
+  ]
+}
+
 function SpeechEndpointFields({
   endpoint,
   idPrefix,
   onChange,
+  readyIds,
   service,
   stored,
 }: {
   endpoint: SpeechEndpoint
   idPrefix: SpeechService
   onChange: (patch: Partial<SpeechEndpoint>) => void
+  readyIds: ReadonlySet<string>
   service: SpeechService
   stored: SpeechEndpoint
 }) {
   const endpointInvalid =
     Boolean(endpoint.endpoint) && !isValidSpeechEndpoint(endpoint.endpoint)
   const policy = getSpeechFieldPolicy(service, endpoint.transport)
+  const loopbackEndpoint = isLoopbackSpeechEndpoint(endpoint.endpoint)
+  const presets = getServicePresets(service)
+
+  function applyPreset(preset: (typeof presets)[number]) {
+    // 一键接入同时对齐接入方式、地址与模型，避免「切了 API 还要再填三个字段」。
+    onChange({
+      transport: "api",
+      endpoint: preset.endpoint,
+      model: preset.model,
+      voice: "",
+    })
+  }
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -362,6 +518,38 @@ function SpeechEndpointFields({
           {service === "asr" ? "语音识别（ASR）" : "语音合成（TTS）"}
         </h3>
         <Badge variant="secondary">{speechTransportLabels[endpoint.transport]}</Badge>
+      </div>
+
+      {/* 一键接入：点一下就把接入方式、地址与模型对齐到已知服务，避免逐项填写。 */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] text-muted-foreground">一键接入</span>
+        {presets.map((preset) => {
+          const active = endpoint.transport === "api" && endpoint.endpoint === preset.endpoint
+          const ready = preset.probeId ? readyIds.has(preset.probeId) : null
+          return (
+            <Button
+              key={preset.id}
+              type="button"
+              size="sm"
+              variant={active ? "secondary" : "outline"}
+              className="h-7 gap-1.5 px-2 text-xs"
+              aria-pressed={active}
+              aria-label={`使用${serviceLabels[service]}${preset.label}`}
+              onClick={() => applyPreset(preset)}
+            >
+              {ready === null ? null : (
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    ready ? "bg-[var(--success)]" : "bg-muted-foreground/40",
+                  )}
+                  aria-hidden="true"
+                />
+              )}
+              {preset.label}
+            </Button>
+          )
+        })}
       </div>
 
       <Field>
@@ -411,43 +599,10 @@ function SpeechEndpointFields({
               placeholder={getDefaultApiEndpoint(service)}
               aria-invalid={endpointInvalid || undefined}
             />
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label={`填入${serviceLabels[service]}本机接口`}
-                onClick={() =>
-                  onChange({
-                    endpoint: getDefaultLocalApiEndpoint(service),
-                    model: getDefaultLocalApiModel(service),
-                  })
-                }
-              >
-                使用本机接口
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label={`填入${serviceLabels[service]}Fish Audio 接口`}
-                onClick={() =>
-                  onChange({
-                    endpoint: getDefaultFishAudioEndpoint(service),
-                    model: getDefaultFishAudioModel(service),
-                  })
-                }
-              >
-                使用 Fish Audio
-              </Button>
-              <span className="min-w-0 break-all text-xs text-muted-foreground">
-                {getDefaultLocalApiEndpoint(service)} · {getDefaultFishAudioEndpoint(service)}
-              </span>
-            </div>
             <FieldDescription>
               填写服务根地址，系统会追加 /audio/
               {service === "asr" ? "transcriptions" : "speech"}
-              ；「使用本机接口」「使用 Fish Audio」可一键填入对应本机适配器地址与模型。
+              ；上方的「一键接入」会同时对齐地址、模型与接入方式。
             </FieldDescription>
           </Field>
         ) : (
@@ -472,7 +627,7 @@ function SpeechEndpointFields({
             />
             <FieldDescription>{speechModelFieldHint}</FieldDescription>
           </Field>
-          {policy.apiKey !== "hidden" ? (
+          {policy.apiKey !== "hidden" && !loopbackEndpoint ? (
             <Field>
               <FieldLabel htmlFor={`${idPrefix}-key`}>
                 {serviceLabels[service]}API 密钥
@@ -488,6 +643,12 @@ function SpeechEndpointFields({
             </Field>
           ) : null}
         </div>
+      ) : null}
+
+      {loopbackEndpoint && endpoint.transport === "api" ? (
+        <p className="rounded-md border border-dashed px-3 py-2 text-xs leading-5 text-muted-foreground">
+          本机回环接口由适配器在服务端持有密钥，这里无需填写 API Key。
+        </p>
       ) : null}
 
       {policy.voice !== "hidden" && endpoint.transport === "api" ? (
@@ -701,20 +862,51 @@ function ApiVoiceField({
       : matched?.voices === "elevenlabs"
         ? "ElevenLabs 填 voice ID 或 alloy/echo/fable/onyx/nova/shimmer 兼容别名；留空使用服务端默认音色。与对话页音色选择同步。"
         : "OpenAI 兼容服务常用 alloy/echo/fable/onyx/nova/shimmer；本机适配器可留空使用服务端默认音色，Fish Audio 填 voice model ID（reference_id）。对话页的接口音色与此同步。"
+  // 已知服务把常用音色列成快捷按钮，只有需要自定义 ID 时才动用输入框。
+  const aliasOptions =
+    matched?.voices === "fishaudio" ? [] : Object.keys(speechRules.voice.aliases)
+
+  function selectVoiceValue(voice: string) {
+    if (matched) {
+      setTtsVoice(matched.id, voice)
+    }
+    onChange({ voice })
+  }
 
   return (
     <Field>
       <FieldLabel htmlFor={`${idPrefix}-voice`}>{serviceLabels[service]}音色</FieldLabel>
+      {aliasOptions.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant={stored.voice ? "outline" : "secondary"}
+            className="h-7 px-2 text-xs"
+            aria-pressed={!stored.voice}
+            onClick={() => selectVoiceValue("")}
+          >
+            默认音色
+          </Button>
+          {aliasOptions.map((alias) => (
+            <Button
+              key={alias}
+              type="button"
+              size="sm"
+              variant={stored.voice === alias ? "secondary" : "outline"}
+              className="h-7 px-2 text-xs"
+              aria-pressed={stored.voice === alias}
+              onClick={() => selectVoiceValue(alias)}
+            >
+              {alias}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <Input
         id={`${idPrefix}-voice`}
         value={stored.voice}
-        onChange={(event) => {
-          const voice = event.target.value.trim()
-          if (matched) {
-            setTtsVoice(matched.id, voice)
-          }
-          onChange({ voice })
-        }}
+        onChange={(event) => selectVoiceValue(event.target.value.trim())}
         placeholder={matched?.voices === "fishaudio" ? "reference_id" : "alloy"}
       />
       <FieldDescription>{hint}</FieldDescription>

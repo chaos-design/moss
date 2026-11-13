@@ -100,6 +100,7 @@ import {
   createModelConfigEnvelope,
   resetModelConfigPublicKey,
 } from "@/lib/model-config-envelope"
+import type { LocalSpeechServiceProbe } from "@/lib/speech-services"
 import { getSelectedVoiceValue, ttsVoiceOptions } from "@/lib/tts-config"
 import { describeUserError, isUserFacingCopy, toUserFacingError } from "@/lib/user-error"
 import { cn } from "@/lib/utils"
@@ -198,7 +199,11 @@ async function validateModelConnection(config: LocalModelConfig) {
   }
 }
 
-export function SettingsForm() {
+export function SettingsForm({
+  initialSpeechProbes,
+}: {
+  initialSpeechProbes?: LocalSpeechServiceProbe[]
+} = {}) {
   const { hydrated, lastSyncedAt, state, syncError, syncNow, syncStatus, updateProfile } =
     useLearningMemory()
   const { prefs, setPrefs } = useConversationPrefs()
@@ -1144,7 +1149,7 @@ export function SettingsForm() {
         title="语音服务"
         description="配置语音识别与语音合成的接入方式；本机服务未启动时仍可继续练习。"
       >
-        <SpeechServiceCard />
+        <SpeechServiceCard initialProbes={initialSpeechProbes} />
       </SettingsSection>
 
       <SettingsSection title="账户与数据" description="管理云端账户数据和永久删除操作。">
