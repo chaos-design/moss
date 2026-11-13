@@ -140,7 +140,7 @@ describe("ExpressionLibraryWorkspace", () => {
   it("shows the complete built-in count and filters detailed rows", async () => {
     render(<ExpressionLibraryWorkspace />)
 
-    expect(screen.getAllByText("1000")).toHaveLength(2)
+    expect(screen.getAllByText("1040")).toHaveLength(2)
     fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
       target: { value: "rule of thumb" },
     })
@@ -170,7 +170,7 @@ describe("ExpressionLibraryWorkspace", () => {
     })
 
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(120))
-    expect(screen.getByText("已显示 120 / 1000 条")).toBeTruthy()
+    expect(screen.getByText("已显示 120 / 1040 条")).toBeTruthy()
   })
 
   it("imports directly pasted JSON locally before cloud sync", async () => {

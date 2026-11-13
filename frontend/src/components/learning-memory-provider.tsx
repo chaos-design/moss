@@ -14,6 +14,7 @@ import {
 import type { RecallRating } from "@/lib/memory"
 import {
   type ConversationTurnMemoryInput,
+  createDefaultLearningMemory,
   createEmptyLearningMemory,
   type ExpressionStudyMemoryInput,
   forgetConversationTurn,
@@ -113,7 +114,11 @@ function getSyncErrorMessage(error: unknown) {
 }
 
 export function LearningMemoryProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<LearningMemoryState>(() => createEmptyLearningMemory())
+  // 演示模式用内置示例记忆填充工作区，便于直接查看列表、筛选与复习分布；
+  // 正式环境仍然从空记忆开始，只记录真实发生的练习。
+  const [state, setState] = useState<LearningMemoryState>(() =>
+    isDemoMode() ? createDefaultLearningMemory() : createEmptyLearningMemory(),
+  )
   const [hydrated, setHydrated] = useState(false)
   const [syncStatus, setSyncStatus] = useState<LearningMemorySyncStatus>("connecting")
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)

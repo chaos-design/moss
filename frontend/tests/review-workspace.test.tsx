@@ -8,6 +8,7 @@ import {
   createDefaultLearningMemory,
   createEmptyLearningMemory,
   createExpressionMemoryItemId,
+  getScopedReviewQueue,
   type LearningMemoryItem,
   type LearningMemoryState,
   type LearningMemorySyncStatus,
@@ -94,7 +95,8 @@ describe("ReviewWorkspace", () => {
 
   it("records a recall attempt when the answer is revealed, not when it is rated", () => {
     render(<ReviewWorkspace />)
-    const focus = mocks.state?.items.find((item) => item.id === "clarify-trade-off")
+    // 队列首位由到期时间与强度决定，不再固定为某一条示例记忆。
+    const focus = mocks.state ? getScopedReviewQueue(mocks.state)[0] : undefined
     if (!focus) {
       throw new Error("Missing review memory")
     }
@@ -189,7 +191,11 @@ describe("ReviewWorkspace", () => {
     }
 
     fireEvent.click(within(scopeGroup).getByRole("button", { name: "场景" }))
-    expect(screen.getByText("第 1 条，共 5 条")).toBeTruthy()
+    const sceneCount = mocks.state
+      ? getScopedReviewQueue(mocks.state, { scope: "scene" }).length
+      : 0
+    expect(sceneCount).toBeGreaterThan(0)
+    expect(screen.getByText(`第 1 条，共 ${sceneCount} 条`)).toBeTruthy()
     expect(screen.queryByText(reviewExpression.phrase)).toBeNull()
     expect(screen.queryByText(reviewExpression.meaning)).toBeNull()
   })

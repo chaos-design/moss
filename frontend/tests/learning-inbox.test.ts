@@ -14,19 +14,28 @@ describe("learning inbox", () => {
     const items = getSentenceItems(state.items)
 
     expect(items).toHaveLength(state.items.length)
-    expect(items[0]?.id).toBe("clarify-trade-off")
-    expect(getSentenceSourceCount(items)).toBe(5)
+    expect(getSentenceSourceCount(items)).toBe(
+      new Set(state.items.map((item) => item.sourceSceneId)).size,
+    )
   })
 
   it("filters by memory kind", () => {
     const vocabulary = getSentenceItems(state.items, "vocabulary")
 
-    expect(vocabulary.map((item) => item.id)).toEqual(["in-stock"])
+    expect(vocabulary.length).toBeGreaterThan(0)
+    expect(vocabulary.every((item) => item.kind === "vocabulary")).toBe(true)
+    expect(vocabulary.map((item) => item.id)).toContain("in-stock")
   })
 
   it("orders due reminders from most overdue to least overdue", () => {
     const dueItems = getDueSentenceItems(state.items, now)
 
-    expect(dueItems.map((item) => item.id)).toEqual(["polite-request", "clarify-trade-off"])
+    expect(dueItems.length).toBeGreaterThan(1)
+    expect(
+      dueItems.every((item) => new Date(item.nextReviewAt).getTime() <= now.getTime()),
+    ).toBe(true)
+    const reviewTimes = dueItems.map((item) => new Date(item.nextReviewAt).getTime())
+    expect(reviewTimes).toEqual([...reviewTimes].sort((left, right) => left - right))
+    expect(dueItems.map((item) => item.id)).toContain("polite-request")
   })
 })

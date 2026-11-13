@@ -7,11 +7,11 @@ import {
 } from "@/lib/expression-library"
 
 describe("expression library", () => {
-  it("contains 1000 unique, complete expressions across every scene category", () => {
-    expect(builtInExpressionItems).toHaveLength(1_000)
+  it("contains 1040 unique, complete expressions across every scene category", () => {
+    expect(builtInExpressionItems).toHaveLength(1_040)
     expect(
       new Set(builtInExpressionItems.map((item) => item.phrase.toLocaleLowerCase())).size,
-    ).toBe(1_000)
+    ).toBe(1_040)
     expect(
       builtInExpressionItems.every(
         (item) =>
@@ -37,7 +37,7 @@ describe("expression library", () => {
     const reviewed = builtInExpressionItems.filter((item) =>
       item.id.startsWith("builtin:reviewed:"),
     )
-    expect(reviewed).toHaveLength(100)
+    expect(reviewed).toHaveLength(140)
     for (const item of reviewed) {
       expect(item.exampleTranslation, item.phrase).toBeTruthy()
       expect(/[\u3400-\u9fff]/u.test(item.exampleTranslation ?? "")).toBe(true)
