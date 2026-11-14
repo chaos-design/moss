@@ -1,4 +1,5 @@
 import type { createServerClient } from "@supabase/ssr"
+import type { User } from "@supabase/supabase-js"
 
 /** middleware 与 Server Component 共用；结构类型也便于测试用最小 mock 覆盖。 */
 type SupabaseAuthClient = ReturnType<typeof createServerClient>
@@ -40,29 +41,38 @@ function isAuthNetworkFailure(error: unknown) {
  * 都不变；凭证无效（401）或无会话（400）仍按未登录处理。
  */
 export async function hasUsableSession(supabase: SupabaseAuthClient): Promise<boolean> {
+  return (await resolveSessionUser(supabase)) !== null
+}
+
+/**
+ * 服务端 API 路由共用的会话解析：正常保持 getUser() 的联网严格校验；仅在 Node fetch
+ * 连不上 Supabase Auth（AuthRetryableFetchError 等）时降级读本地 cookie 的 getSession()，
+ * 与 hasUsableSession（middleware/登录页）语义一致——凭证无效或无会话仍按未登录处理。
+ */
+export async function resolveSessionUser(supabase: SupabaseAuthClient): Promise<User | null> {
   try {
     const {
       data: { user },
       error,
     } = await supabase.auth.getUser()
     if (user) {
-      return true
+      return user
     }
     if (!isAuthNetworkFailure(error)) {
-      return false
+      return null
     }
   } catch (error) {
     if (!isAuthNetworkFailure(error)) {
-      return false
+      return null
     }
   }
-
   try {
     const {
       data: { session },
     } = await supabase.auth.getSession()
-    return Boolean(session?.user)
+    const user = session?.user
+    return user ?? null
   } catch {
-    return false
+    return null
   }
 }

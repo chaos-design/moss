@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { hasUsableSession } from "@/lib/supabase/session"
+import { hasUsableSession, resolveSessionUser } from "@/lib/supabase/session"
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
@@ -21,6 +21,40 @@ const networkFailure = {
 beforeEach(() => {
   mocks.getUser.mockReset()
   mocks.getSession.mockReset().mockResolvedValue({ data: { session: null } })
+})
+
+describe("resolveSessionUser", () => {
+  it("returns the online user id when Supabase Auth is reachable", async () => {
+    mocks.getUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null })
+
+    expect(await resolveSessionUser(authClient())).toEqual({ id: "u1" })
+    expect(mocks.getSession).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the cookie session only on network failures", async () => {
+    mocks.getUser.mockRejectedValue(networkFailure)
+    mocks.getSession.mockResolvedValue({ data: { session: { user: { id: "u2" } } } })
+
+    expect(await resolveSessionUser(authClient())).toEqual({ id: "u2" })
+  })
+
+  it("returns null when the credential is rejected without falling back", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { status: 401, message: "invalid credentials" },
+    })
+    mocks.getSession.mockResolvedValue({ data: { session: { user: { id: "u2" } } } })
+
+    expect(await resolveSessionUser(authClient())).toBeNull()
+    expect(mocks.getSession).not.toHaveBeenCalled()
+  })
+
+  it("returns null when the cookie fallback also fails", async () => {
+    mocks.getUser.mockRejectedValue(networkFailure)
+    mocks.getSession.mockRejectedValue(new Error("still unreachable"))
+
+    expect(await resolveSessionUser(authClient())).toBeNull()
+  })
 })
 
 describe("hasUsableSession", () => {

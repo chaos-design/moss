@@ -15,6 +15,7 @@ import {
 } from "@/lib/server/browser-model-config"
 import { consumeSharedRateLimit, isRateLimited } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 type TranslationRequest = {
   text: string
@@ -100,9 +101,9 @@ export async function POST(request: Request) {
     )
   }
 
-  const authResult = supabase ? await supabase.auth.getUser() : null
-  const user = authResult?.data.user
-  if ((!user || authResult.error) && !clientModelConfig) {
+  const sessionUser = supabase ? await resolveSessionUser(supabase) : null
+  const user = sessionUser
+  if (!user && !clientModelConfig) {
     return NextResponse.json(
       { error: { code: "unauthorized", message: "请先登录后再使用翻译。" } },
       { status: 401 },

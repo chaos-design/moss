@@ -70,6 +70,7 @@ function createSupabase(
         data: { user: userId ? { id: userId } : null },
         error: null,
       }),
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
     },
     rpc,
   }
@@ -131,6 +132,33 @@ describe("/api/conversations", () => {
   })
 
   it("upserts a validated session for the authenticated user", async () => {
+    const response = await PUT(
+      new Request("https://moss.local/api/conversations", {
+        method: "PUT",
+        body: JSON.stringify(session),
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.upsertConversationSession).toHaveBeenCalledWith(
+      expect.objectContaining({ session, userId: "user-1" }),
+    )
+  })
+
+  it("falls back to the cookie session when Supabase Auth is unreachable", async () => {
+    // 本机 / 受限网络里 Node 的 fetch 连不上 Supabase Auth：getUser 报网络错误，
+    // 会话 cookie 有效时应按已登录处理（与 workspace 守卫的降级语义一致）。
+    const client = createSupabase("user-1")
+    client.auth.getUser = vi.fn().mockRejectedValue({
+      name: "AuthRetryableFetchError",
+      status: 0,
+      message: "fetch failed",
+    })
+    client.auth.getSession = vi.fn().mockResolvedValue({
+      data: { session: { user: { id: "user-1" } } },
+    })
+    mocks.getSupabaseServerClient.mockResolvedValue(client)
+
     const response = await PUT(
       new Request("https://moss.local/api/conversations", {
         method: "PUT",

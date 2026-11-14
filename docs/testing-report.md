@@ -866,3 +866,30 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
 
 未执行：真实麦克风端到端通话（需人工验证）；已在 IAB 用振荡器验证 webm 全链路与
 `/api/speech/asr` → 5583 → scribe_v2 的 WAV 上传（同日 `[beep]`）。
+
+## 2026-11-14 对话链路实测修复：契约修复重试与认证降级统一
+
+用户实测反馈两个问题：
+
+1. **「未按输出契约返回」（图1）**：模型对语音输入 "Hi" 直接回了纯文本
+   "Hello! How have you been?"，翻译 / 纠错 / 判句缺失。`parseProviderPayload`
+   已有 JSON.parse + 括号配对提取，能容忍围栏与前后缀散文，本例确认是模型
+   完全没有输出 JSON。
+   **修复**：路由层新增契约修复重试——`contractApplied=false` 时用一次聚焦请求
+   （仅含解析器消费的最小 JSON 契约说明 + 学习者原句 + 待重排回复）让模型重排；
+   修复失败（限流 / 超时 / 仍不合规）保持既有降级展示，不阻塞回复本身。
+2. **`/api/conversations` PUT 401**：用户已登录（workspace 可进、cookie 有效），
+   但六个 `auth.getUser()` 认证路由在本机受限网络下 Node fetch 连不上 Supabase
+   Auth（AuthRetryableFetchError）而直接判 401——workspace 守卫早已有
+   `hasUsableSession` 网络故障降级，API 路由没有。
+   **修复**：`lib/supabase/session.ts` 新增 `resolveSessionUser`（返回完整 User；
+   仅网络不可达时降级读 cookie 会话，4xx 一律未登录），`hasUsableSession` 改为
+   基于它实现；`/api/conversations`、`/api/conversation`、`/api/expressions`、
+   `/api/account`、`/api/memory-documents`、`/api/translation` 六个路由统一接入。
+
+自动化结果：新增 7 个用例（修复重试成功 / 修复失败保持降级 / resolveSessionUser
+四态 / conversations PUT 网络降级）；认证与对话相关 8 个套件共 84 用例、更广泛
+回归 63 用例全部通过；biome、tsc、`pnpm build` 通过。
+
+未执行：真实登录环境的浏览器端到端（需 Supabase 凭据与受限网络复现）；契约修复
+对免费档模型的实际成功率需持续观察。
