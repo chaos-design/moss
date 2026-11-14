@@ -64,6 +64,11 @@
   `AGENTS.md` 与架构文档中补齐 Mermaid 系统图、依赖方向、数据所有权和降级策略。统一
   对话与翻译 API 的容量有界进程内限流，隐藏 provider 原始错误，并补齐 OpenAI 兼容请求
   的 token 预算与完整环境变量样例。
+- T-320：语音上游失败语义还原完成并经真实密钥验收：`/api/speech/*` 按上游状态码返回
+  401/402/429/503/504；适配器旧进程与无效密钥是「一律 502」的真实根因。有效密钥写入
+  `backend/services/<adapter>/.env.local` 并重启后，5583 ElevenLabs 与 5584 Fish Audio 的
+  真实合成均在设置页测试通过（audio/mpeg 40+ KB），ElevenLabs 识别返回正常；Fish Audio
+  识别因 `transcribe-1-pro` 需账户充值返回 402，提示已按合成/识别区分（识别无免费模型）。
 - T-106：模型配置仅保存在浏览器 `moss:model-config:v1`，通过 RSA-OAEP 与 AES-256-GCM
   加密信封进入同源推理接口，服务端只在当轮解密。明文配置会被拒绝，生产环境的自带模型
   主机受白名单约束，私网、回环、URL 凭据及 Provider 重定向均被拒绝。

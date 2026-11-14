@@ -712,3 +712,100 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
   学习提醒截断、一键接入与回环隐藏密钥。
 
 未执行：浏览器手工截图核验（当前环境无浏览器自动化），390px 视觉验收待补。
+
+## 2026-11-14 例句就近译文开关与高亮、语音探活三态与 502 运行时验证
+
+改动：
+
+1. **例句译文开关就近**：词库行已在前一轮把译文开关移到例句末尾；本轮把复习考试卡的
+   「显示译文/收起译文」从单独居中一行移到例句句尾（`expression-exam-card.tsx`），与词库
+   同一位置习惯，并补 aria-label「显示/收起 <phrase> 的例句译文」。
+2. **目标表达高亮**（前一轮完成，本轮验证）：词库与考试卡例句经 `ExpressionText` +
+   `splitExpressionHighlights` 高亮目标表达；词库数据测试断言 140 条精讲词条的每条拓展
+   例句都能命中高亮（含 `keeps tabs on` 等词尾变化与不规则过去式）。
+3. **精讲表达记忆增强**（前一轮完成，本轮验证）：`idiomatic-expression-memory.ts` 对 140 条
+   精讲词条全部提供 `usage`、`memoryTip` 与各 2 条带中文翻译的拓展例句；考试卡作答后展示
+   「更多例句 / 用法 / 记忆提示」。本轮统一两个未加引号的 key（`bandwidth`、`bottleneck`）。
+4. **语音探活三态**：`LocalSpeechServiceProbe` 新增 `state: ready | unconfigured | down`；
+   适配器 `/health` 返回 503 且 body 带 `configured:false` 时显示「已启动·缺密钥」徽章并
+   提示对应 `.env.local`；「检测本机服务」在缺密钥时不再误报「均未启动」；一键接入圆点
+   用空心警示点区分缺密钥态。
+5. **失败提示精确化**：`describeSpeechFailureHint` 识别本机适配器凭据错误后直接给出
+   `backend/services/elevenlabs/.env.local`（ELEVENLABS_API_KEY，需 sk_ 开头 Secret Key）/
+   `backend/services/fishaudio/.env.local`（FISH_API_KEY）；`/api/speech/*` 的
+   `speech_endpoint_unreachable` 按端口号给出对应启动命令（端口取自规则表）。
+
+运行时验证（本机实际执行）：
+
+- 定位 5583/5584「仍出现 502」的两个根因：运行中的适配器是错误码改造前启动的旧进程；
+  且现存 `ELEVENLABS_API_KEY` 是 64 位 Key ID 而非 `sk_` Secret Key。重启两个适配器后，
+  经 `/api/speech/tts/test` 实测：5583 上游 401（`invalid_api_key`）→ 诊断返回
+  `status:401 speech_credentials_invalid`；5584 上游 401 → `status:401
+  speech_credentials_invalid`。两个上游域名当前出口可达（不再表现为 503 unreachable）。
+- 浏览器实测（demo 构建 + 5579）：不可达地址（浏览器历史保存的 5590）提示带具体地址与
+  `speech_endpoint_unreachable`；一键接入 5583 后测试提示精确到
+  `backend/services/elevenlabs/.env.local` 与 `sk_` 要求。
+- 视觉核验（内置浏览器截图 + 结构断言，1440px 与 390px）：词库行目标表达 `<mark>` 高亮、
+  译文开关位于例句段落内且展开正常；考试卡作答后「更多例句 / 用法 / 记忆提示」完整呈现；
+  词库、复习、设置页在 390px 均无横向溢出。
+- `pnpm check`：通过（86 个前端测试文件 / 670 用例 + 后端套件 + biome + tsc）。
+- `pnpm build`：通过。
+
+未执行：
+
+- ~~有效 `sk_` Secret Key 与有效 Fish Audio Key 下的真实合成~~ → 已在同日补齐，见下。
+
+### 有效密钥后的复测（同日 2026-11-14）
+
+用户提供真实密钥并写入两份 `.env.local`（gitignore 覆盖，未入库），重启两个适配器后实测：
+
+- `POST /api/speech/tts/test`（经 5577 开发服务器）：5583 ElevenLabs 返回 `ok:true`、
+  `audio/mpeg` 41.8 KB / 3.1 s；5584 Fish Audio 返回 `ok:true`、`audio/mpeg` 38 KB / 3.0 s。
+- 设置页 UI（demo 构建 + 5579）：TTS 一键接入 ElevenLabs 后「测试合成接口」显示绿色
+  「语音合成接口可用，音频已正常返回。audio/mpeg · 46.2 KB · 2625 ms」；ASR 一键接入
+  ElevenLabs 后「测试识别接口」显示绿色「语音识别接口可用」（内置测试音频经 scribe_v2
+  返回空文本）；切 Fish Audio 预设合成同样绿色（43.3 KB · 2018 ms）。
+- `POST /api/speech/asr` 直测：5583 把 440 Hz 测试音转写为 `[beep]`；5584 返回 402
+  `speech_payment_required`——`transcribe-1-pro` 需账户充值。据此修正 fishaudio 适配器的
+  402 提示按服务区分：合成建议改用免费模型 `s2.1-pro-free`，识别不再误导（Fish Audio
+  暂无免费识别模型），补 `test_payment_required_hint_matches_service` 用例
+  （`pnpm fishaudio:test` 49 用例通过）。
+- 「本机服务」徽章：本机 TTS 网关在线、ElevenLabs 适配器在线、Fish Audio 适配器在线、
+  本机 ASR 服务未启动（5580 未启动，与实际一致）。
+
+剩余未执行：Fish Audio 识别（`transcribe-1-pro`）需账户充值后才能验证；本机 ASR 5580
+链路未启动。
+
+## 2026-11-14 语音参数兜底、模型/音色配置对齐官方文档、未登录对话同步门控
+
+改动：
+
+1. **语音参数兜底默认值**：5583 ElevenLabs 适配器在上游拒绝时自动重试一次——
+   `404 voice_not_found` 改用默认音色（George），`400 bad_request` 且消息含 "invalid ID"
+   改用默认模型；5584 Fish Audio 在 `reference_id` 被 400/404/422 拒绝时去掉音色重试一次。
+   兜底仍失败时保留上游语义，`voice_not_found` 提示「可清空音色直接使用服务端默认音色」。
+   覆盖场景：设置页手误音色名（如 `multilingual`）不再让整条语音链路报
+   `speech_request_rejected`。
+2. **模型选择对齐官方文档**：ElevenLabs 默认 TTS 模型由 `eleven_v4` 改为
+   `eleven_flash_v2_5`（官方模型页标注 API 半价档，约 100ms 延迟档位；2026-11-14 在免费层
+   实测可用）；规则表新增 `models.localApiTtsOptions`（flash_v2_5 / v4 / multilingual_v2 /
+   v3）、`localApiAsrOptions`、`fishAudioTtsOptions`、`fishAudioAsrOptions`，设置页对
+   5583/5584 显示模型快捷按钮。
+3. **音色映射修复与补充**：实测发现旧 `nova → Rachel(21m00Tcm4TlvDq8ikWAM)`、
+   `shimmer → AZnzlk1XvdvUeBnXmlld` 两个映射目标已转付费专属（402 paid_plan_required），
+   改映射到仍免费的 Laura / Lily；新增 `voice.premadeElevenLabs` 官方预置音色表
+   （george/adam/bill/brian/callum/emma/jessica/laura/liam/lily/matilda/river/roger），
+   全部用免费层合成请求逐一验证。设置页音色快捷按钮按适配器区分：5583 显示预置音色，
+   5584 无公开预置音色（reference_id 账户私有），OpenAI 兼容服务仍显示六个兼容别名。
+4. **未登录对话同步门控**：`use-conversation-sessions` 接入 `useAuth`——未登录/匿名/演示
+   模式时完全跳过云端同步（此前每次挂载都会向 `/api/conversations` 发请求并收到 401）；
+   本机写入不受影响，登录后由合并流程补传本地会话。
+
+自动化结果：
+
+- `pnpm elevenlabs:test`：43 用例通过（含 voice/model 兜底重试、兜底失败保留可执行提示、
+  规则表别名与 Python 镜像一致性）。
+- `pnpm fishaudio:test`：51 用例通过（含 reference_id 兜底、未发送音色不重试、402 提示
+  按服务区分）。
+- `pnpm --dir frontend test`：相关套件（speech-service-card、conversation-sessions、
+  speech-routes）通过。
