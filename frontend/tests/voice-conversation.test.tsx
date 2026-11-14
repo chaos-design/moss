@@ -38,6 +38,15 @@ const modelConfigCrypto = vi.hoisted(() => ({
   resetPublicKey: vi.fn(),
 }))
 
+// useConversationSessions 通过 useAuth 门控云端同步；本套件聚焦语音运行时，按登录态桩定。
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    accountLabel: "学习账户",
+    requireSignIn: () => true,
+  }),
+}))
+
 vi.mock("@/features/speech/use-local-tts", () => ({
   useLocalTts: () => ({
     playbackState: "idle",
@@ -201,6 +210,62 @@ afterEach(() => {
 })
 
 describe("useVoiceConversation", () => {
+  it("tracks the spoken reply so the transcript can offer a stop control", async () => {
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    expect(result.current.speechTargetText).toBe("")
+    await act(async () => {
+      result.current.speak("Would you like it hot or iced?", true)
+    })
+    expect(result.current.speechTargetText).toBe("Would you like it hot or iced?")
+
+    act(() => {
+      result.current.stopSpeech()
+    })
+    expect(localTts.stop).toHaveBeenCalled()
+    // 停止朗读后目标文本一并清空，转写里的播放按钮随即恢复播放入口。
+    expect(result.current.speechTargetText).toBe("")
+    expect(result.current.speechPlaybackState).toBe("idle")
+    unmount()
+  })
+
+  it("restarts recognition after stopping playback mid-call", async () => {
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    await act(async () => {
+      await result.current.startCall()
+    })
+    // 新会话先朗读开场白，播完自动恢复监听。
+    expect(offlineAsr.start).toHaveBeenCalledOnce()
+
+    // 模拟正在朗读第二条回复：speak 挂起，识别处于暂停状态。
+    let resolveSpeak: (() => void) | undefined
+    localTts.speak.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSpeak = resolve
+        }),
+    )
+    await act(async () => {
+      void result.current.speak("Sure, one latte coming up.", true)
+      await Promise.resolve()
+    })
+    expect(offlineAsr.start).toHaveBeenCalledOnce()
+
+    // 转写里的停止控件：打断朗读的同时必须恢复监听，通话不能卡在 speaking。
+    act(() => {
+      result.current.stopSpeech()
+    })
+    await waitFor(() => expect(result.current.callStatus).toBe("listening"))
+    expect(offlineAsr.start).toHaveBeenCalledTimes(2)
+
+    resolveSpeak?.()
+    act(() => result.current.endCall())
+    unmount()
+  })
+
   it("restores the latest session for the scene after a refresh", async () => {
     const scene = getConversationScene("coffee")
     const updatedAt = new Date(Date.now() - 5 * 60 * 1000).toISOString()

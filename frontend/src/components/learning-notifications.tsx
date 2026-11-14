@@ -29,6 +29,8 @@ function formatDueTime(value: string) {
 export function LearningNotifications() {
   const { state } = useLearningMemory()
   const dueItems = useMemo(() => getDueSentenceItems(state.items), [state.items])
+  // 提醒只是入口，不承担完整列表：只列最早到期的几条，其余交给复习页。
+  const visibleDueItems = dueItems.slice(0, 5)
   const countLabel = dueItems.length > 99 ? "99+" : String(dueItems.length)
 
   return (
@@ -65,7 +67,7 @@ export function LearningNotifications() {
 
         {dueItems.length > 0 ? (
           <div className="max-h-80 overflow-y-auto py-1">
-            {dueItems.map((item) => (
+            {visibleDueItems.map((item) => (
               <Link
                 key={item.id}
                 href={createMemoryTargetHref("/workspace/review", item.id)}
@@ -85,6 +87,11 @@ export function LearningNotifications() {
                 />
               </Link>
             ))}
+            {dueItems.length > visibleDueItems.length ? (
+              <p className="px-4 pb-2 text-[11px] text-muted-foreground">
+                仅显示最早到期的 {visibleDueItems.length} 条，其余请在复习页查看。
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="flex items-start gap-3 px-4 py-5">

@@ -113,8 +113,8 @@ export function AccountDataControls() {
       }
 
       clearMossLocalData()
-      router.replace("/login?deleted=true")
-      router.refresh()
+      // 不能追加 refresh()，否则会取消尚未完成的 replace，导致停在当前页。
+      await router.replace("/login?deleted=true")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "账户删除失败")
       setDeleting(false)

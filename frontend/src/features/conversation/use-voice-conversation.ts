@@ -134,6 +134,10 @@ export function useVoiceConversation({
     speak,
     speakingRef,
     speechPlaybackState,
+    speechTargetText,
+    recognitionRetryPending,
+    retryRecognition,
+    stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     startCall: startVoiceCall,
@@ -311,6 +315,11 @@ export function useVoiceConversation({
     void submitMessage(draft, "text")
   }, [draft, submitMessage])
 
+  // 文字模式下打断正在生成的回复。发送新消息会自动打断，但草稿为空时这是唯一的停止方式。
+  const stopReply = useCallback(() => {
+    cancelRequest()
+  }, [cancelRequest])
+
   const startCall = useCallback(() => {
     markLocalInteraction()
     return startVoiceCall()
@@ -468,6 +477,7 @@ export function useVoiceConversation({
     retryLastReply,
     sendDraft,
     setDraft,
+    stopReply,
     selectedVoice,
     selectedAsrEngine,
     selectApiVoice,
@@ -477,6 +487,10 @@ export function useVoiceConversation({
     selectVoice,
     speakerEnabled,
     speechPlaybackState,
+    speechTargetText,
+    recognitionRetryPending,
+    retryRecognition,
+    stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     speak,

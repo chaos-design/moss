@@ -4,6 +4,8 @@ import type { User } from "@supabase/supabase-js"
 import {
   BrainCircuitIcon,
   ChevronDownIcon,
+  EyeIcon,
+  EyeOffIcon,
   LoaderCircleIcon,
   PencilIcon,
   SearchIcon,
@@ -13,6 +15,7 @@ import {
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useAuth } from "@/components/auth-provider"
+import { ExpressionText } from "@/components/expression-text"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import {
   AlertDialog,
@@ -99,6 +102,7 @@ function matchesQuery(item: ExpressionLibraryItem, query: string) {
     item.why,
     item.origin,
     item.example,
+    item.exampleTranslation ?? "",
     item.context,
     expressionKindLabels[item.kind],
     expressionSceneCategoryLabels[item.sceneCategory],
@@ -520,6 +524,16 @@ function ExpressionRows({
   onEdit: (item: ExpressionLibraryItem) => void
   onStudy: (item: ExpressionLibraryItem) => void
 }) {
+  // 译文默认收起：先让学习者自己读懂例句，再按需展开对应中文。
+  const [revealedIds, setRevealedIds] = useState<string[]>([])
+  const revealedIdSet = new Set(revealedIds)
+
+  function toggleTranslation(id: string) {
+    setRevealedIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    )
+  }
+
   if (items.length === 0) {
     return (
       <section className="border-y px-5 py-14 text-center" aria-live="polite">
@@ -533,6 +547,7 @@ function ExpressionRows({
     <section className="overflow-hidden rounded-lg border bg-card" aria-label="地道表达列表">
       {items.map((item, index) => {
         const studied = studiedIds.has(createExpressionMemoryItemId(item.clientId))
+        const translationRevealed = revealedIdSet.has(item.id)
         return (
           <article
             key={item.id}
@@ -622,7 +637,35 @@ function ExpressionRows({
                 <p className="mt-1 text-muted-foreground">{item.origin}</p>
               </div>
               <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-sm md:col-span-2">
-                {item.example}
+                {/* 译文开关紧跟例句末尾：它只解释这一句，不再被推到整行最右侧。 */}
+                <p className="min-w-0">
+                  <ExpressionText text={item.example} phrase={item.phrase} />
+                  {item.exampleTranslation ? (
+                    <button
+                      type="button"
+                      aria-expanded={translationRevealed}
+                      aria-label={
+                        translationRevealed
+                          ? `收起 ${item.phrase} 的例句译文`
+                          : `显示 ${item.phrase} 的例句译文`
+                      }
+                      className="ml-1 inline-flex items-center gap-0.5 rounded-sm px-1 align-middle font-sans text-[11px] font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => toggleTranslation(item.id)}
+                    >
+                      {translationRevealed ? (
+                        <EyeOffIcon className="size-3" aria-hidden="true" />
+                      ) : (
+                        <EyeIcon className="size-3" aria-hidden="true" />
+                      )}
+                      {translationRevealed ? "收起" : "译文"}
+                    </button>
+                  ) : null}
+                </p>
+                {translationRevealed && item.exampleTranslation ? (
+                  <span className="mt-2 block font-sans text-xs leading-5 text-muted-foreground">
+                    {item.exampleTranslation}
+                  </span>
+                ) : null}
               </blockquote>
             </div>
           </article>

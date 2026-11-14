@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { splitExpressionHighlights } from "@/lib/expression-highlight"
 import {
   builtInExpressionItems,
   createImportedExpressionItem,
@@ -7,11 +8,11 @@ import {
 } from "@/lib/expression-library"
 
 describe("expression library", () => {
-  it("contains 1000 unique, complete expressions across every scene category", () => {
-    expect(builtInExpressionItems).toHaveLength(1_000)
+  it("contains 1040 unique, complete expressions across every scene category", () => {
+    expect(builtInExpressionItems).toHaveLength(1_040)
     expect(
       new Set(builtInExpressionItems.map((item) => item.phrase.toLocaleLowerCase())).size,
-    ).toBe(1_000)
+    ).toBe(1_040)
     expect(
       builtInExpressionItems.every(
         (item) =>
@@ -30,6 +31,43 @@ describe("expression library", () => {
       expect(
         builtInExpressionItems.filter((item) => item.sceneCategory === category.value).length,
       ).toBeGreaterThanOrEqual(90)
+    }
+  })
+
+  it("gives every reviewed idiom a Chinese translation of its example", () => {
+    const reviewed = builtInExpressionItems.filter((item) =>
+      item.id.startsWith("builtin:reviewed:"),
+    )
+    expect(reviewed).toHaveLength(140)
+    for (const item of reviewed) {
+      expect(item.exampleTranslation, item.phrase).toBeTruthy()
+      expect(/[\u3400-\u9fff]/u.test(item.exampleTranslation ?? "")).toBe(true)
+    }
+  })
+
+  it("adds usage notes, memory tips and extra examples to every reviewed idiom", () => {
+    const reviewed = builtInExpressionItems.filter((item) =>
+      item.id.startsWith("builtin:reviewed:"),
+    )
+    expect(reviewed).toHaveLength(140)
+    for (const item of reviewed) {
+      expect(item.usage?.trim(), item.phrase).toBeTruthy()
+      expect(item.memoryTip?.trim(), item.phrase).toBeTruthy()
+      expect(item.examples?.length, item.phrase).toBeGreaterThanOrEqual(2)
+      for (const example of item.examples ?? []) {
+        expect(/[.!?]$/.test(example.text), `${item.phrase}: ${example.text}`).toBe(true)
+        expect(
+          /[\u3400-\u9fff]/u.test(example.translation ?? ""),
+          `${item.phrase}: ${example.text}`,
+        ).toBe(true)
+        // 拓展例句必须真的出现目标表达，否则复习时看不到高亮。
+        expect(
+          splitExpressionHighlights(example.text, item.phrase).some(
+            (segment) => segment.highlighted,
+          ),
+          `${item.phrase}: ${example.text}`,
+        ).toBe(true)
+      }
     }
   })
 

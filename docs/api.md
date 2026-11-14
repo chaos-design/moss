@@ -22,9 +22,14 @@
 | `POST /api/translation` | Supabase session 或加密自带配置 | 30 次/分钟/主体 | 单条翻译 |
 | `POST /api/speech/asr` | 无（请求自带端点配置） | 120 次/分钟/endpoint | 单段语音转写 |
 | `POST /api/speech/tts` | 无（请求自带端点配置） | 240 次/分钟/endpoint | 文本转音频 |
+| `GET /api/speech/services` | 无 | 无 | 探测本机语音服务是否在线 |
 | `WS /v1/asr/stream` | 可选部署 token | 连接数与消息大小限制 | PCM 与转写 |
 | FunASR 2-pass WebSocket | 由本地服务决定 | 由本地服务决定 | PCM 与转写 |
 | `POST /v1/tts/synthesize` | loopback + Origin | 文本长度与服务资源限制 | 文本与 WAV |
+| `POST http://127.0.0.1:5583/v1/audio/speech` | 可选本机 Bearer token | 2000 字符、上游配额 | 文本与音频 |
+| `POST http://127.0.0.1:5583/v1/audio/transcriptions` | 可选本机 Bearer token | 8 MB、上游配额 | 音频与转写 |
+| `POST http://127.0.0.1:5584/v1/audio/speech` | 可选本机 Bearer token | 2000 字符、上游配额 | 文本与音频 |
+| `POST http://127.0.0.1:5584/v1/audio/transcriptions` | 可选本机 Bearer token | 8 MB、上游配额 | 音频与转写 |
 
 Next.js API 成功响应使用 `{ "data": ... }`，失败响应使用
 `{ "error": { "code": "...", "message": "..." } }`。Provider 原始错误、响应正文和凭据
@@ -132,16 +137,122 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 | `api` | `/api/speech/asr` → OpenAI 兼容 `/audio/transcriptions` | `/api/speech/tts` → OpenAI 兼容 `/audio/speech` |
 | `browser` | 浏览器 `SpeechRecognition` | 浏览器 `speechSynthesis` |
 
-`local` 接入地址可在设置中覆盖，留空时使用 `NEXT_PUBLIC_ASR_SERVICE_URL` 与
-`NEXT_PUBLIC_TTS_SERVICE_URL`。`local` 连接失败时，前端在当前会话内自动回退到浏览器引擎并提示
-一次，不改写用户已保存的接入方式。`api` 接入的默认根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与
-`NEXT_PUBLIC_TTS_API_URL`，模型来自 `NEXT_PUBLIC_ASR_API_MODEL` 与
-`NEXT_PUBLIC_TTS_API_MODEL`；`tts.voice` 留空时使用 `alloy`。
+`local` 接入的本机服务由设置中的下拉输入选择决定，选项与通用规则配置 `speech-rules.json`
+的 MOSS 本机服务可用项一致，触发器和选项同时展示服务地址，不再接受手填地址；留空时使用
+`NEXT_PUBLIC_ASR_SERVICE_URL` 与 `NEXT_PUBLIC_TTS_SERVICE_URL`。识别引擎与本机语音音色按
+所选本机服务独立匹配并分别持久化，不沿用其他本机服务的取值。`local` 连接失败时，前端在
+当前会话内自动回退到浏览器引擎并提示一次，不改写用户已保存的接入方式。`api` 接入的默认
+根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与 `NEXT_PUBLIC_TTS_API_URL`，模型来自
+`NEXT_PUBLIC_ASR_API_MODEL` 与 `NEXT_PUBLIC_TTS_API_MODEL`；环境模型未设置时模型字段保持
+为空，由服务端默认模型接管；`tts.voice` 留空时使用 `alloy`。
+
+设置卡片为 ASR 与 TTS 各提供一个独立的「测试识别接口」「测试合成接口」按钮，分别验证本服务
+已配置地址与对应服务是否正常；两个按钮的结果、测试中状态与异常状态互不覆盖。本机服务下拉、
+引擎与音色的匹配约束及完整需求见
+[Moss 详细设计](detailed-design.md#55-语音服务接入设置)。
+
+### 本机 local 接口
+
+`api` 接入也可以指向运行在本机的 OpenAI 兼容语音服务。设置卡片为 ASR 与 TTS 各提供
+“使用本机接口”（5583）与“使用 Fish Audio”（5584）一键填入，根地址与模型来自：
+
+| 变量 | 默认值 |
+| --- | --- |
+| `NEXT_PUBLIC_ASR_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
+| `NEXT_PUBLIC_ASR_LOCAL_API_MODEL` | `scribe_v2` |
+| `NEXT_PUBLIC_TTS_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
+| `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | `eleven_v4` |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL` | `transcribe-1-pro` |
+| `NEXT_PUBLIC_TTS_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
+| `NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL` | `s2.1-pro-free` |
+
+这些值在构建期内联，只含公开地址与模型名，不含密钥。所有跨服务默认值（端口、本地模型、
+音色、格式、限制、测试合成参数）统一登记在 `frontend/src/lib/speech-rules.json`，归纳说明见
+[语音服务通用规则配置](./speech-rules.md)。若本机服务配置了访问令牌（例如
+`MOSS_ELEVENLABS_ACCESS_TOKEN`），把同一个值填进设置的“API 密钥”，代理会以
+`Authorization: Bearer ...` 转发。请求始终经同源 `/api/speech/asr` 与 `/api/speech/tts`
+转发，浏览器不直连本机端口；根地址会自动追加 `/audio/transcriptions` 或 `/audio/speech`。
+
+回环主机（`localhost`、`127.0.0.1`、`::1`）在所有构建环境下都允许，因此
+`pnpm build && pnpm start` 的同机自托管部署也能连本机服务。非回环私网主机仍被拒绝，
+`local` 接入的 WebSocket/HTTP sidecar 地址也仍只允许回环。Vercel 等无本机服务的运行环境
+无法使用该链路，应使用白名单内的远程语音端点。
 
 `api` 识别按段上传：接口没有中间结果和语音起点信号，因此该接入方式不提供实时字幕，也不支持用
 说话打断 AI 播报，需要打断时使用文字输入。`browser` 识别由浏览器实现决定行为，静默一段时间后
 浏览器会结束一次会话，前端会自动重新开始监听。识别引擎选择器（SenseVoice、Qwen3-ASR、
 FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控件。
+
+### 可选：ElevenLabs 本机适配服务
+
+`backend/services/elevenlabs` 是一个独立的本机适配器，把 ElevenLabs 的 TTS 与 ASR 翻译为
+OpenAI 兼容的 `/audio/speech` 与 `/audio/transcriptions`。它监听 `127.0.0.1:5583`，
+不修改 `5578`、`5580` 或默认接入方式；只有把两种语音来源都切到 `api` 并填写
+`http://127.0.0.1:5583/v1` 时才生效。
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+```
+
+默认模型为 `eleven_v4`（TTS）与 `scribe_v2`（ASR），默认音色为快速入门使用的 George
+`JBFqnCBsd6RMkjVDRZzb`。协议、音色别名、隐私边界和全部环境变量见
+[适配服务 README](../backend/services/elevenlabs/README.md)。
+
+把两种语音来源都切到 `api` 后，可直接用设置的“使用本机接口”一键填入（默认值即
+`http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_v4`）。`/api/speech/*` 允许回环地址，
+因此本机开发与同机自托管的生产构建都可用；Vercel 等无本机服务的运行环境仍无法访问该端口。
+选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和计费策略。
+
+### 可选：Fish Audio 本机适配服务
+
+`backend/services/fishaudio` 是与 ElevenLabs 适配器同构的本机适配器，把 Fish Audio 的
+TTS 与 ASR 翻译为 OpenAI 兼容的 `/audio/speech` 与 `/audio/transcriptions`。它监听
+`127.0.0.1:5584`，不修改 `5577`–`5583` 或默认接入方式；只有把两种语音来源都切到 `api`
+并填写 `http://127.0.0.1:5584/v1`（或直接点“使用 Fish Audio”）时才生效。
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+```
+
+默认模型为 `s2.1-pro-free`（TTS，免费开发者档）与 `transcribe-1-pro`（ASR）。音色为
+Fish Audio voice model ID（reference_id），可留空使用内置默认音色；`alloy` 等六个 OpenAI
+别名统一映射为内置默认音色。`speed` 直接转发（上游接受 `0.5`–`2`），实时性档位默认
+`balanced`。付费模型在账户未充值时上游返回 402，适配器归一化为
+`fishaudio_payment_required` 并提示改用免费模型。协议、隐私边界和全部环境变量见
+[适配服务 README](../backend/services/fishaudio/README.md)。
+
+把两种语音来源都切到 `api` 后，可直接用设置的“使用 Fish Audio”一键填入（默认值即
+`http://127.0.0.1:5584/v1`、`transcribe-1-pro`、`s2.1-pro-free`）。选择该接入后，文本与
+录音会发送到 Fish Audio，适用其账户的日志、保留和计费策略。
+
+## GET `/api/speech/services`
+
+返回四个本机回环语音服务的探活结果，供设置页显示「在线 / 已启动·缺密钥 / 未启动」并驱动
+一键接入。地址固定来自 `speech-rules.json`，不接受任何请求参数，因此不会被用作任意地址探测。
+
+```json
+{
+  "data": {
+    "checkedAt": 1763035200000,
+    "services": [
+      { "id": "moss-tts", "label": "本机 TTS 网关", "kinds": ["tts"], "ready": true, "state": "ready", "latencyMs": 3 },
+      { "id": "moss-asr", "label": "本机 ASR 服务", "kinds": ["asr"], "ready": false, "state": "down", "latencyMs": 1 },
+      { "id": "local-api", "label": "ElevenLabs 适配器", "kinds": ["asr", "tts"], "ready": true, "state": "ready", "latencyMs": 2 },
+      { "id": "fish-audio", "label": "Fish Audio 适配器", "kinds": ["asr", "tts"], "ready": false, "state": "unconfigured", "latencyMs": 1 }
+    ]
+  }
+}
+```
+
+- 单次探活超时 900ms，四个服务并行。
+- `state` 三态：`ready`（2xx）；`unconfigured`（收到响应但非 2xx，且 body 带
+  `configured: false`，即适配器在线但缺上游密钥）；`down`（探活失败或其余非 2xx）。
+  二值 `ready` 字段保留兼容，仅当 `state === "ready"` 时为 `true`。
+- 设置页首屏由服务端渲染时直接调用同一探测函数并注入结果；本接口供「重新检测」按钮
+  强制刷新，响应 `Cache-Control: no-store`。
 
 ## POST `/api/speech/asr`
 
@@ -169,15 +280,24 @@ FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控�
 
 约束与错误：
 
-- `endpoint` 必须通过与推理端点相同的策略：生产环境仅允许 HTTPS 公网主机，且主机名需在
-  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、`api.anthropic.com`）；
-  非生产环境额外允许回环地址。URL 不得携带用户名或密码。
+- `endpoint` 沿用推理端点策略：远程主机必须是 HTTPS 公网地址，且生产环境的主机名需在
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、
+  `api.anthropic.com`）；回环主机 `localhost`、`127.0.0.1`、`::1` 内置允许，用于本机 local
+  接口，在生产构建下同样可用。非回环私网主机、URL 内嵌用户名或密码一律拒绝。
 - 解码后的音频不超过 8 MB，请求体不超过 12 MB，`language` 可省略。
-- 上游使用 `multipart/form-data`：`file`、`model`、`response_format=json`、可选 `language`。
+- 上游使用 `multipart/form-data`：`file`、`model`（配置为空时省略，由服务端默认模型接管）、
+  `response_format=json`、可选 `language`。
 - 上游 30 秒未响应视为不可用。错误码：`invalid_json`、`invalid_request`、
   `invalid_speech_endpoint`、`invalid_audio`、`request_too_large`、`rate_limited`、
-  `speech_endpoint_unreachable`、`speech_upstream_error`、`speech_invalid_response`、`asr_failed`。
+  `speech_endpoint_unreachable`、`speech_request_rejected`（400）、`speech_credentials_invalid`
+  （401）、`speech_payment_required`（402）、`speech_rate_limited`（429）、
+  `speech_unavailable` / `speech_not_configured`（503）、`speech_timeout`（504）、
+  `speech_upstream_error`（502）、`speech_invalid_response`、`asr_failed`。
+- 上游状态不再一律折算成 502：本机 5583/5584 适配器会把凭据、余额、限流与超时都包成 502，
+  网关按上游状态码与错误码还原成上表的状态，设置页据此提示「改密钥 / 充值 / 稍后重试」。
+  浏览器侧仍把 401、402 与 5xx 视为「该链路当前不可用」，当次会话回退系统语音或浏览器识别。
 - 服务端只返回规范化文案，不回传上游响应正文；密钥仅用于当次转发，不落盘、不记录。
+- 设置页「测试识别接口」用内置 0.2 秒 WAV 测试音走同一链路，可在开始语音对话前验证配置。
 
 ## POST `/api/speech/tts`
 
@@ -197,10 +317,52 @@ FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控�
 }
 ```
 
-- `text` 去除首尾空白后长度为 1–2000 字符，`voice` 必填且不超过 120 字符，`speed` 收敛到
+- `text` 去除首尾空白后长度为 1–2000 字符，`voice` 可选且不超过 120 字符，`speed` 收敛到
   `0.5`–`2`，`format` 取 `mp3`、`opus`、`aac`、`flac`、`wav`、`pcm` 之一，默认 `mp3`。
+- 模型与音色是否必填由服务端决定：空值按契约省略字段转发，本机适配器与自建网关使用自己的
+  默认模型/音色；强制要求模型的云端服务会返回明确的上游错误。字段规范见
+  [语音服务通用规则配置](./speech-rules.md#配置字段规范)。
 - 端点策略、限流（240 次/分钟/endpoint）与错误码语义同 `/api/speech/asr`。
 - 上游返回非 `audio/*` 内容时记为 `speech_invalid_response`，浏览器据此回退到系统语音。
+
+## POST `/api/speech/tts/test`
+
+设置页「测试合成接口」使用的诊断端点。它复用 `/api/speech/tts` 的端点策略、Bearer 注入与
+合成链路，因此**对任意 OpenAI 兼容端点都可用**（包括本机 5583 接口）；区别是只回传结构化
+诊断，**不回传音频本体**，并额外校验 `Content-Type`、最小字节数与已知容器魔数
+（ID3 / RIFF / OggS，裸 PCM 只校验长度）。
+
+请求体与 `/api/speech/tts` 相同，但 `text`、`voice`、`speed`、`format` 可省略，缺省值来自
+通用规则配置（`Moss 语音接口测试成功。`、`alloy`、`1`、`mp3`）：
+
+```json
+{ "endpoint": { "endpoint": "http://127.0.0.1:5583/v1", "apiKey": "", "model": "eleven_v4" } }
+```
+
+成功响应（HTTP 200）：
+
+```json
+{
+  "ok": true,
+  "status": 200,
+  "contentType": "audio/mpeg",
+  "bytes": 10240,
+  "durationMs": 321,
+  "model": "eleven_v4",
+  "voice": "alloy",
+  "format": "mp3",
+  "checks": { "audioContentType": true, "plausiblePayload": true }
+}
+```
+
+上游不可达、返回非音频内容或音频不完整时，仍返回 HTTP 200 但带有 `ok: false` 与
+`error: { code, message }`，便于设置页直接展示原因；只有本地参数校验与限流失败才返回标准
+4xx。限流按 `speech-tts-test:<endpoint>` 单独计数，验证操作不会占满正常合成配额。
+
+本机 5583 / 5584 适配器另提供专用自检探针 `POST /v1/audio/speech/test`（同样只返回诊断），
+可用 `pnpm elevenlabs:test:synthesis` 或 `pnpm fishaudio:test:synthesis` 复跑；详见
+[ElevenLabs 适配服务 README](../backend/services/elevenlabs/README.md) 与
+[Fish Audio 适配服务 README](../backend/services/fishaudio/README.md)。
 
 ## POST `/api/conversation`
 

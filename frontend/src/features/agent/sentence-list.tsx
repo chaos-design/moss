@@ -13,6 +13,7 @@ import { useLearningMemory } from "@/components/learning-memory-provider"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useIncrementalList } from "@/components/use-incremental-list"
 import {
   getDueSentenceItems,
   getSentenceItems,
@@ -81,6 +82,12 @@ export function SentenceList() {
     () => getSentenceItems(state.items, filter),
     [filter, state.items],
   )
+  const { reset, sentinelRef, visibleCount } = useIncrementalList({
+    total: filteredItems.length,
+    initial: 12,
+    step: 12,
+  })
+  const visibleItems = filteredItems.slice(0, visibleCount)
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,7 +99,10 @@ export function SentenceList() {
 
       <Tabs
         value={filter}
-        onValueChange={(value) => setFilter(value as SentenceKindFilter)}
+        onValueChange={(value) => {
+          setFilter(value as SentenceKindFilter)
+          reset()
+        }}
         className="gap-4"
       >
         <div className="sticky top-16 z-30 -mx-4 overflow-x-auto bg-background px-4 py-2 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8">
@@ -115,7 +125,21 @@ export function SentenceList() {
         {kindOptions.map((option) => (
           <TabsContent key={option.value} value={option.value}>
             {option.value === filter ? (
-              <SentenceRows items={filteredItems} dueIds={dueIds} filter={filter} />
+              <>
+                <SentenceRows items={visibleItems} dueIds={dueIds} filter={filter} />
+                {filteredItems.length > 0 ? (
+                  <>
+                    <div
+                      ref={sentinelRef}
+                      className="grid min-h-8 place-items-center"
+                      aria-hidden="true"
+                    />
+                    <p className="text-center text-xs text-muted-foreground" aria-live="polite">
+                      已显示 {visibleItems.length} / {filteredItems.length} 条
+                    </p>
+                  </>
+                ) : null}
+              </>
             ) : null}
           </TabsContent>
         ))}

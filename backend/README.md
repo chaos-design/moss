@@ -15,6 +15,8 @@ flowchart LR
     Gateway --> Kokoro[Kokoro in-process]
     Gateway --> Audio8[Audio8 :5582]
     Gateway --> CosyVoice[CosyVoice :5581]
+    Next[Next.js API] -->|可选 HTTP API 接入| ElevenLabs[ElevenLabs Adapter :5583]
+    ElevenLabs -->|HTTPS| ElevenLabsApi[ElevenLabs API]
     Next[Next.js API] --> Supabase[(Supabase)]
 ```
 
@@ -22,9 +24,11 @@ flowchart LR
 | --- | --- | --- |
 | `services/asr` | SenseVoice/Qwen3-ASR、VAD、WebSocket 协议 | [ASR](services/asr/README.md) |
 | `services/tts` | TTS 网关、缓存、引擎适配和运行时 | [TTS](services/tts/README.md) |
+| `services/elevenlabs` | 可选 ElevenLabs TTS/ASR 到 OpenAI 兼容契约的适配 | [ElevenLabs](services/elevenlabs/README.md) |
 | `supabase` | 全量/增量 SQL、RLS、RPC、pgvector、Realtime | [部署](../docs/deployment.md) |
 | `tests/asr` | ASR 配置、协议和服务边界测试 | `pnpm asr:test` |
 | `tests/tts` | TTS 网关与 sidecar 测试 | `pnpm tts:test` |
+| `tests/elevenlabs` | ElevenLabs 适配器配置、路由与上游映射测试 | `pnpm elevenlabs:test` |
 
 ## 本地运行
 
@@ -36,6 +40,13 @@ pnpm dev:offline
 
 `dev:offline` 以同一父进程启动 Web、ASR 和 TTS；任一必需子进程退出时会终止其余进程，
 避免留下端口占用。Audio8 和 CosyVoice 未安装时不会阻止 Kokoro 工作。
+
+ElevenLabs 适配器是独立可选项，不由 `dev:offline` 启动：
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+```
 
 `supabase/platform.sql` 用于新实例完整建库，`supabase/update.sql` 只保留当前增量变更；
 `pnpm db:test` 校验两份 SQL 的安全契约。

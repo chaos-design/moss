@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server"
-import { AiProviderStatusError, getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
+import {
+  type AiProviderConfig,
+  AiProviderStatusError,
+  getAiProviderConfig,
+  requestAiText,
+} from "@/lib/ai-provider"
 import {
   applyTutorModeToConversation,
+  type ConversationResponseData,
   parseProviderConversation,
 } from "@/lib/conversation-feedback"
 import { isTutorMode, type TutorMode } from "@/lib/conversation-prefs"
@@ -33,6 +39,7 @@ import {
 } from "@/lib/server/browser-model-config"
 import { consumeSharedRateLimit, isRateLimited } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 type ChatTurn = {
   role: "assistant" | "user"
@@ -60,6 +67,45 @@ const requestLimit = 20
 // ceiling is still the plan's maxDuration cap.
 const providerTimeoutMs = 110_000
 export const maxDuration = 120
+
+// 契约修复：模型偶尔不按输出契约返回 JSON（弱模型 / 免费档常见，图1 的
+// 「未按输出契约返回」即此）。用一次聚焦请求把回复重排成解析器真正消费的最小 JSON
+// 契约；修复失败（限流 / 超时 / 仍不合规）时保持既有降级展示，不阻塞回复本身。
+const conversationContractRepairPrompt = `You repair a previous reply for an English-learning chat. Output ONLY one JSON object, no prose and no code fences, with exactly these fields:
+{"reply": string — the English reply for the learner (reuse the given reply text verbatim when it is already good), "translation": string — Simplified Chinese translation of the reply, "recall": string — empty unless a recall hint is needed, "inputAnalysis": {"intent": "scene_reply" | "translation_request" | "language_question"}, "validation": {"status": "improve" | "accurate" | "guidance", "corrected": string — an improved version of the learner's original message (identical to it when it was already fine), "explanation": string — Simplified Chinese rationale, "issues": Array<{kind: "clarity" | "expression" | "task_coverage", original: string, corrected: string, explanation: string}>, "examples": Array<{english: string, chinese: string}>}}`
+
+async function repairConversationContract(input: {
+  config: AiProviderConfig
+  rawReply: string
+  originalInput: string
+  suggestedPhrase?: string
+  sceneTag?: string
+}): Promise<ConversationResponseData | null> {
+  try {
+    const repaired = await requestAiText({
+      config: input.config,
+      temperature: 0.2,
+      maxTokens: 1200,
+      messages: [
+        { role: "system", content: conversationContractRepairPrompt },
+        {
+          role: "user",
+          content: `Learner's original message:\n${input.originalInput}\n\nAssistant reply to reformat:\n${input.rawReply}`,
+        },
+      ],
+      signal: AbortSignal.timeout(providerTimeoutMs),
+    })
+    const parsed = parseProviderConversation(
+      repaired,
+      input.originalInput,
+      input.suggestedPhrase,
+      input.sceneTag,
+    )
+    return parsed.contractApplied ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 export function GET() {
   return NextResponse.json(getModelConfigPublicKey(), {
@@ -339,13 +385,10 @@ export async function POST(request: Request) {
     }
 
     if (supabase) {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser()
-      if (user && !error) {
-        clientKey = user.id
-        userId = user.id
+      const sessionUser = await resolveSessionUser(supabase)
+      if (sessionUser) {
+        clientKey = sessionUser.id
+        userId = sessionUser.id
       } else if (!usingClientConfig) {
         return NextResponse.json(
           { error: { code: "unauthorized", message: "请先登录后再开始对话。" } },
@@ -461,12 +504,22 @@ export async function POST(request: Request) {
       ],
       signal: AbortSignal.timeout(providerTimeoutMs),
     })
-    const parsed = parseProviderConversation(
+    let parsed = parseProviderConversation(
       content,
       latestUserContent,
       scene.focusPhrases[0]?.[1],
       scene.tags[0],
     )
+    if (!parsed.contractApplied) {
+      parsed =
+        (await repairConversationContract({
+          config: providerConfig,
+          rawReply: content,
+          originalInput: latestUserContent,
+          suggestedPhrase: scene.focusPhrases[0]?.[1],
+          sceneTag: scene.tags[0],
+        })) ?? parsed
+    }
 
     await saveConversationMemory({
       client: supabase,

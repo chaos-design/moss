@@ -1,6 +1,13 @@
 "use client"
 
-import { type Dispatch, type MutableRefObject, useCallback, useEffect, useRef } from "react"
+import {
+  type Dispatch,
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { toast } from "sonner"
 import type {
   ConversationMessage,
@@ -181,10 +188,13 @@ export function useVoiceCallRuntime({
   const idleReminderCountRef = useRef(0)
   const lastVoiceActivityAtRef = useRef(Date.now())
   const previewingVoiceRef = useRef<string | null>(null)
+  // 正在朗读（或合成）的文本：转写里的播放按钮据此显示加载/停止状态。
+  const [speechTargetText, setSpeechTargetText] = useState("")
 
   const stopAssistantSpeech = useCallback(() => {
     speechRequestRef.current += 1
     speakingRef.current = false
+    setSpeechTargetText("")
     echoGuardUntilRef.current = Date.now() + playbackEchoGuardMs
     stopLocalSpeech()
   }, [stopLocalSpeech])
@@ -233,10 +243,13 @@ export function useVoiceCallRuntime({
     loadingProgress: speechRecognitionProgress,
     pause: pauseStreamingAsr,
     prepare: prepareStreamingAsr,
+    recognitionRetryPending,
+    retryRecognition: retryFailedRecognition,
     start: startStreamingRecognition,
     stop: stopStreamingAsr,
     transport: asrTransport,
   } = useAsrSession({
+    bargeInEnabled: !mutedRef.current,
     context: [
       `Scenario: ${scene.title}.`,
       `Goal: ${scene.objective}`,
@@ -290,9 +303,18 @@ export function useVoiceCallRuntime({
       if (!pendingRef.current && !speakingRef.current) {
         return
       }
+      if (mutedRef.current) {
+        // 静音时监听到的任何事件都不构成打断（api 打断监听此时只能听到静音轨）。
+        return
+      }
       interruptAssistant()
       if (callActiveRef.current && !mutedRef.current) {
         dispatch({ type: "call-status-changed", status: "listening" })
+        // api 接入的采集在播报前已停止：打断后立即重启；本机/浏览器通道仍在监听，
+        // 无需重启（重复 start 会先经过 connecting 抖动状态）。
+        if (asrTransport === "api") {
+          startRecognition()
+        }
       }
     },
     onTranscript: (transcript, language) => {
@@ -371,6 +393,16 @@ export function useVoiceCallRuntime({
       })
   }, [dispatch, startStreamingRecognition])
 
+  // 转写里的停止控件。语音通话中停止朗读后必须立刻恢复监听：speak() 会暂停 ASR 并把状态
+  // 置为 speaking，若不重启识别，通话会卡在 speaking 且没有语音起点信号可以唤醒。
+  const stopSpeech = useCallback(() => {
+    stopAssistantSpeech()
+    if (callActiveRef.current && !mutedRef.current) {
+      lastVoiceActivityAtRef.current = Date.now()
+      startRecognition()
+    }
+  }, [startRecognition, stopAssistantSpeech])
+
   const speak = useCallback(
     (text: string, force = false) => {
       if (!speakerEnabledRef.current && !force) {
@@ -382,6 +414,7 @@ export function useVoiceCallRuntime({
       speechRequestRef.current = requestId
       speakingRef.current = true
       lastAssistantSpeechRef.current = text
+      setSpeechTargetText(text)
       echoGuardUntilRef.current = Number.POSITIVE_INFINITY
       resetVoiceTurn()
       stopRecognition()
@@ -444,6 +477,12 @@ export function useVoiceCallRuntime({
     },
     [dispatch, playVoicePreview, ttsConfig.engine, ttsTransport],
   )
+
+  const retryRecognition = useCallback(() => {
+    listeningRef.current = true
+    shouldListenRef.current = true
+    retryFailedRecognition()
+  }, [retryFailedRecognition])
 
   const startCall = useCallback(async () => {
     if (callActiveRef.current) {
@@ -704,6 +743,10 @@ export function useVoiceCallRuntime({
     speak,
     speakingRef,
     speechPlaybackState,
+    speechTargetText,
+    recognitionRetryPending,
+    retryRecognition,
+    stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     startCall,

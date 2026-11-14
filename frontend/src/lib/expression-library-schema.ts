@@ -4,6 +4,12 @@ import type { IdiomaticExpressionContext } from "@/lib/idiomatic-expressions"
 export type ExpressionKind = "collocation" | "idiom" | "phrasal-verb" | "sentence-pattern"
 export type ExpressionSource = "builtin" | "imported"
 
+/** 复习时展示的拓展例句；译文可选，缺失时只显示英文。 */
+export type ExpressionExample = {
+  text: string
+  translation?: string
+}
+
 export type ExpressionLibraryItem = {
   id: string
   clientId: string
@@ -12,6 +18,14 @@ export type ExpressionLibraryItem = {
   why: string
   origin: string
   example: string
+  /** 例句译文按条目提供，缺失时不显示展开按钮。 */
+  exampleTranslation?: string
+  /** 用法讲解：句法位置、常见搭配与语域限制。 */
+  usage?: string
+  /** 记忆提示：画面、对比或易错点。 */
+  memoryTip?: string
+  /** 主例句之外的拓展例句。 */
+  examples?: readonly ExpressionExample[]
   context: IdiomaticExpressionContext
   kind: ExpressionKind
   sceneCategory: SceneCategory

@@ -100,6 +100,7 @@ import {
   createModelConfigEnvelope,
   resetModelConfigPublicKey,
 } from "@/lib/model-config-envelope"
+import type { LocalSpeechServiceProbe } from "@/lib/speech-services"
 import { getSelectedVoiceValue, ttsVoiceOptions } from "@/lib/tts-config"
 import { describeUserError, isUserFacingCopy, toUserFacingError } from "@/lib/user-error"
 import { cn } from "@/lib/utils"
@@ -198,7 +199,11 @@ async function validateModelConnection(config: LocalModelConfig) {
   }
 }
 
-export function SettingsForm() {
+export function SettingsForm({
+  initialSpeechProbes,
+}: {
+  initialSpeechProbes?: LocalSpeechServiceProbe[]
+} = {}) {
   const { hydrated, lastSyncedAt, state, syncError, syncNow, syncStatus, updateProfile } =
     useLearningMemory()
   const { prefs, setPrefs } = useConversationPrefs()
@@ -456,11 +461,11 @@ export function SettingsForm() {
         title="模型与学习策略"
         description="配置推理服务、学习目标、练习节奏和记忆找回方式。"
       >
-        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
-          <form className="order-2 w-full min-w-0" onSubmit={handleSubmit}>
+        <div className="grid min-w-0 items-stretch gap-5 lg:grid-cols-2">
+          <form className="order-2 flex w-full min-w-0 flex-col" onSubmit={handleSubmit}>
             <Card
               size="sm"
-              className={cn("w-full min-w-0 rounded-lg", settingsCardHeightClass)}
+              className={cn("h-full w-full min-w-0 flex-1 rounded-lg", settingsCardHeightClass)}
             >
               <CardHeader className="shrink-0">
                 <CardTitle className="font-serif text-lg">模型服务</CardTitle>
@@ -486,7 +491,7 @@ export function SettingsForm() {
                 <div className="col-span-full mt-2 w-full border-b" aria-hidden="true" />
               </CardHeader>
 
-              <CardContent className="min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-5">
+              <CardContent className="min-h-0 flex-1 overflow-y-auto overscroll-contain flex flex-col gap-5">
                 {!configEditorOpen ? (
                   <section className="flex flex-col gap-2" aria-label="已保存的 AI 配置">
                     {modelConfigs.configs.length > 0 ? (
@@ -854,7 +859,7 @@ export function SettingsForm() {
 
           <Card
             size="sm"
-            className={cn("order-1 w-full min-w-0 rounded-lg", settingsCardHeightClass)}
+            className={cn("order-1 h-full w-full min-w-0 rounded-lg", settingsCardHeightClass)}
           >
             <CardHeader className="shrink-0">
               <CardTitle className="flex items-center gap-2 font-serif text-lg">
@@ -865,7 +870,7 @@ export function SettingsForm() {
                 用于决定学什么、练多久，以及优先迁移到哪些场景。
               </CardDescription>
             </CardHeader>
-            <CardContent className="min-h-0 max-w-3xl overflow-y-auto overscroll-contain">
+            <CardContent className="min-h-0 max-w-3xl flex-1 overflow-y-auto overscroll-contain">
               <div className="mb-4 flex w-full items-start justify-between gap-3 border-b pb-4">
                 <div className="flex min-w-0 items-start gap-2">
                   {syncStatus === "synced" ? (
@@ -969,12 +974,12 @@ export function SettingsForm() {
         title="对话体验"
         description="整段改写实际发送的对话 Prompt，以及转写布局、输入方式、会话判句与发音。"
       >
-        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 items-stretch gap-4 lg:grid-cols-2">
           <ConversationPromptEditor />
 
           <Card
             className={cn(
-              "order-2 rounded-lg lg:col-start-1 lg:row-start-2",
+              "order-2 h-full rounded-lg lg:col-start-1 lg:row-start-2",
               settingsCardHeightClass,
             )}
           >
@@ -1065,7 +1070,7 @@ export function SettingsForm() {
 
           <Card
             className={cn(
-              "order-3 rounded-lg lg:col-start-2 lg:row-start-2",
+              "order-3 h-full rounded-lg lg:col-start-2 lg:row-start-2",
               settingsCardHeightClass,
             )}
           >
@@ -1144,7 +1149,7 @@ export function SettingsForm() {
         title="语音服务"
         description="配置语音识别与语音合成的接入方式；本机服务未启动时仍可继续练习。"
       >
-        <SpeechServiceCard />
+        <SpeechServiceCard initialProbes={initialSpeechProbes} />
       </SettingsSection>
 
       <SettingsSection title="账户与数据" description="管理云端账户数据和永久删除操作。">

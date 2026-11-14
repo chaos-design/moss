@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/expression-library-repository"
 import { consumeSharedRateLimit } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 const maximumImportBatchSize = 200
 const maximumRequestBytes = 2_000_000
@@ -31,11 +32,8 @@ async function authenticate(): Promise<AuthenticationResult> {
       response: errorResponse("service_not_configured", "服务端认证尚未配置。", 503),
     }
   }
-  const {
-    data: { user },
-    error,
-  } = await client.auth.getUser()
-  if (error || !user) {
+  const user = await resolveSessionUser(client)
+  if (!user) {
     return {
       authenticated: false,
       response: errorResponse("unauthorized", "请先登录后再同步表达词库。", 401),

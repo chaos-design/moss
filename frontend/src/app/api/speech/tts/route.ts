@@ -6,9 +6,10 @@ import {
   SpeechGatewayError,
   synthesizeSpeechAudio,
 } from "@/lib/server/speech-gateway"
+import { speechRules } from "@/lib/speech-rules"
 
-const maximumRequestBytes = 64_000
-const allowedFormats = new Set(["mp3", "opus", "aac", "flac", "wav", "pcm"])
+const maximumRequestBytes = speechRules.limits.maxSpeechRequestBytes
+const allowedFormats = new Set(speechRules.formats.routeAllowed)
 
 type SynthesisRequest = {
   endpoint: unknown
@@ -50,24 +51,22 @@ export async function POST(request: Request) {
     return errorResponse("invalid_request", "合成文本为空或超出长度限制。", 400)
   }
 
+  // 音色按服务而定：OpenAI 兼容云端通常必填；本机适配器与自建网关可留空，由服务端默认音色接管。
   const voice = typeof candidate.voice === "string" ? candidate.voice.trim().slice(0, 120) : ""
-  if (!voice) {
-    return errorResponse("invalid_request", "请选择要使用的音色。", 400)
-  }
 
   const speed =
     typeof candidate.speed === "number" && Number.isFinite(candidate.speed)
-      ? Math.min(2, Math.max(0.5, candidate.speed))
-      : 1
+      ? Math.min(speechRules.speed.max, Math.max(speechRules.speed.min, candidate.speed))
+      : speechRules.speed.default
   const format =
     typeof candidate.format === "string" && allowedFormats.has(candidate.format)
       ? candidate.format
-      : "mp3"
+      : speechRules.formats.default
 
   if (
     isRateLimited({
       key: `speech-tts:${endpoint.endpoint}`,
-      limit: 240,
+      limit: speechRules.limits.ttsRateLimitPerMinute,
       windowMs: 60_000,
     })
   ) {

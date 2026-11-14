@@ -1,6 +1,7 @@
 "use client"
 
 import { type Dispatch, useCallback, useEffect, useRef } from "react"
+import { useAuth } from "@/components/auth-provider"
 import {
   type ConversationMessage,
   type ConversationRuntimeEvent,
@@ -49,6 +50,15 @@ export function useConversationSessions({
   const storageKeyRef = useRef(conversationHistoryStorageKey)
   const hasLocalInteractionRef = useRef(false)
 
+  // 云端同步只属于已登录学习者：未登录/演示模式时整体关闭，不再发起 /api/conversations
+  // 请求（此前每次挂载都会 401）。本地写入永远先成功，登录后由合并流程补传本地会话。
+  const { status: authStatus } = useAuth()
+  const cloudSyncEnabled = authStatus === "authenticated"
+  const cloudSyncRef = useRef(cloudSyncEnabled)
+  useEffect(() => {
+    cloudSyncRef.current = cloudSyncEnabled
+  }, [cloudSyncEnabled])
+
   const markLocalInteraction = useCallback(() => {
     hasLocalInteractionRef.current = true
   }, [])
@@ -86,7 +96,9 @@ export function useConversationSessions({
         saveConversationSession(historyRef.current, session, storageKeyRef.current),
       )
       hasLocalInteractionRef.current = true
-      void saveCloudConversationSession(session).catch(() => {})
+      if (cloudSyncRef.current) {
+        void saveCloudConversationSession(session).catch(() => {})
+      }
     },
     [scene.id, scene.partnerName, scene.title, updateVisibleHistory],
   )
@@ -108,7 +120,7 @@ export function useConversationSessions({
       dispatch({ type: "session-restored", session: resumableSession })
     }
 
-    if (!getSupabasePublicConfig()) {
+    if (!cloudSyncEnabled || !getSupabasePublicConfig()) {
       return
     }
 
@@ -156,7 +168,7 @@ export function useConversationSessions({
       .catch(() => {})
 
     return () => abortController.abort()
-  }, [dispatch, resumeWindowMs, scene.id, updateVisibleHistory])
+  }, [cloudSyncEnabled, dispatch, resumeWindowMs, scene.id, updateVisibleHistory])
 
   const resetSession = useCallback(
     (completeCurrent = true) => {
@@ -170,7 +182,9 @@ export function useConversationSessions({
           updateVisibleHistory(
             saveConversationSession(historyRef.current, completed, storageKeyRef.current),
           )
-          void saveCloudConversationSession(completed).catch(() => {})
+          if (cloudSyncRef.current) {
+            void saveCloudConversationSession(completed).catch(() => {})
+          }
         }
       }
 
@@ -223,9 +237,13 @@ export function useConversationSessions({
         ),
       )
       for (const completed of completedSessions) {
-        void saveCloudConversationSession(completed).catch(() => {})
+        if (cloudSyncRef.current) {
+          void saveCloudConversationSession(completed).catch(() => {})
+        }
       }
-      void saveCloudConversationSession(resumedSession).catch(() => {})
+      if (cloudSyncRef.current) {
+        void saveCloudConversationSession(resumedSession).catch(() => {})
+      }
       currentSessionIdRef.current = resumedSession.id
       sessionStartedAtRef.current = resumedSession.startedAt
       callSecondsRef.current = resumedSession.durationSeconds
@@ -242,7 +260,9 @@ export function useConversationSessions({
         removeConversationSession(historyRef.current, sessionId, storageKeyRef.current),
       )
       hasLocalInteractionRef.current = true
-      void deleteCloudConversationSession(sessionId).catch(() => {})
+      if (cloudSyncRef.current) {
+        void deleteCloudConversationSession(sessionId).catch(() => {})
+      }
       return sessionId === currentSessionIdRef.current
     },
     [updateVisibleHistory],

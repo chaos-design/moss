@@ -30,6 +30,7 @@ backend/services/tts/runtimes/cosyvoice/models
 backend/services/tts/runtimes/cosyvoice/runtime
 .vscode
 .vercel
+.workbuddy
 
 __pycache__
 .venv

@@ -17,12 +17,23 @@ import {
   TranscriptTurn,
   VoiceCallPanel,
 } from "@/features/conversation/conversation-workspace"
+import { setConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { asrEngineOptions } from "@/lib/asr-config"
 import type { StoredConversationMessage } from "@/lib/conversation-history"
+import {
+  conversationSceneStorageKey,
+  saveLastConversationScene,
+} from "@/lib/conversation-history"
 import { getConversationScene } from "@/lib/conversation-scenes"
 
+// 工作区挂载时会读取上次场景并可能 router.replace 回去；把 replace 提升为可断言的 spy。
+const { routerReplace, routerRefresh } = vi.hoisted(() => ({
+  routerReplace: vi.fn(),
+  routerRefresh: vi.fn(),
+}))
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ refresh: routerRefresh, replace: routerReplace }),
 }))
 
 // TranscriptTurn consults the shared auth status before requesting a translation; these tests cover
@@ -35,8 +46,41 @@ vi.mock("@/components/auth-provider", () => ({
   }),
 }))
 
-afterEach(cleanup)
+// Composer and transcript tests submit turns and exercise speech replay, so TTS playback is
+// stubbed with stable spies (vi.hoisted keeps them identical across renders — the runtime's
+// playback callbacks depend on their identity); `stop` mirrors the real hook by resetting state.
+const { ttsSpies } = vi.hoisted(() => ({
+  ttsSpies: {
+    playbackState: "idle" as "idle" | "loading" | "playing",
+    speak: vi.fn(async (_text: string, options?: { onStart?: () => void }) => {
+      options?.onStart?.()
+    }),
+    stop: vi.fn(() => {
+      ttsSpies.playbackState = "idle"
+    }),
+  },
+}))
+vi.mock("@/features/speech/use-local-tts", () => ({
+  useLocalTts: () => ({
+    playbackState: ttsSpies.playbackState,
+    prepare: vi.fn().mockResolvedValue(undefined),
+    previewVoice: vi.fn().mockResolvedValue(undefined),
+    speak: ttsSpies.speak,
+    stop: ttsSpies.stop,
+  }),
+}))
+
+vi.mock("@/lib/model-config-envelope", () => ({
+  createModelConfigEnvelope: vi.fn().mockResolvedValue({ signature: "test" }),
+  resetModelConfigPublicKey: vi.fn(),
+}))
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 beforeEach(() => {
+  ttsSpies.playbackState = "idle"
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => true },
     releasePointerCapture: { configurable: true, value: vi.fn() },
@@ -324,6 +368,171 @@ describe("conversation feedback UI", () => {
     expect(composerClasses).not.toContain("has-disabled:bg-input/50")
   })
 
+  it("collapses the expanded composer on Escape and keeps the draft", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    expect(textarea.className).toContain("min-h-8")
+
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+    fireEvent.change(textarea, { target: { value: "Could I get a latte?" } })
+
+    fireEvent.keyDown(textarea, { key: "Escape" })
+    expect(textarea.className).toContain("min-h-8")
+    // 收起只是把屏幕还给转写内容，草稿必须原样保留。
+    expect(
+      (screen.getByRole("textbox", { name: "输入对话内容" }) as HTMLTextAreaElement).value,
+    ).toBe("Could I get a latte?")
+  })
+
+  it("leaves IME composition to the input method instead of collapsing on Escape", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+
+    // 拼音候选中按 Escape 是取消组词，不能顺手把输入框收起。
+    fireEvent.keyDown(textarea, { key: "Escape", isComposing: true })
+    expect(textarea.className).toContain("min-h-14")
+
+    fireEvent.keyDown(textarea, { key: "Escape" })
+    expect(textarea.className).toContain("min-h-8")
+  })
+
+  it("collapses an empty composer on blur and keeps a draft expanded", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+
+    fireEvent.focus(textarea)
+    fireEvent.blur(textarea)
+    expect(textarea.className).toContain("min-h-8")
+
+    fireEvent.focus(textarea)
+    fireEvent.change(textarea, { target: { value: "Still typing here." } })
+    fireEvent.blur(textarea)
+    // 正在写的草稿不因失焦被收起，避免打断输入。
+    expect(textarea.className).toContain("min-h-14")
+  })
+
+  it("offers a stop control while a reply is pending and clears it when stopped", () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    const deferred: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve
+          }),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "I would like a latte, please." } })
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    // 生成期间提供独立的停止入口：草稿为空时这是唯一的打断方式。
+    expect(screen.getByRole("button", { name: "停止生成回复" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "停止生成回复" }))
+
+    expect(screen.queryByRole("button", { name: "停止生成回复" })).toBeNull()
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
+    // 被打断的提问保留在转写里，等待重发或删除。
+    expect(screen.getByText("I would like a latte, please.")).toBeTruthy()
+    deferred.resolve?.(null)
+  })
+
+  it("clears the pending state once the reply lands", async () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              content: "Certainly, one latte coming up.",
+              translation: "好的，一杯拿铁马上来。",
+              recall: "",
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "One latte, please." } })
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    expect(screen.getByRole("button", { name: "停止生成回复" })).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "停止生成回复" })).toBeNull(),
+    )
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
+    expect(screen.getByText("Certainly, one latte coming up.")).toBeTruthy()
+  })
+
+  it("tracks speech playback on the transcript replay button", async () => {
+    window.localStorage.clear()
+    const scene = getConversationScene("cafe-order")
+    ttsSpies.playbackState = "playing"
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 点击播放：朗读目标锁定这条回复，按钮变成停止控件。
+    fireEvent.click(screen.getByRole("button", { name: "播放本轮英语" }))
+    const stopButton = await waitFor(() => screen.getByRole("button", { name: "停止播放" }))
+    expect(stopButton.getAttribute("aria-pressed")).toBe("true")
+
+    // 再次点击停止：恢复播放入口，Agent 语音反馈状态由此可感知、可打断。
+    fireEvent.click(stopButton)
+    await waitFor(() => screen.getByRole("button", { name: "播放本轮英语" }))
+    expect(screen.queryByRole("button", { name: "停止播放" })).toBeNull()
+  })
+
   it("gives the transcript its own breathing room below the session metrics bar", () => {
     const scene = getConversationScene("cafe-order")
     render(
@@ -569,6 +778,8 @@ describe("conversation feedback UI", () => {
   it("renders the full voice activity effect and recording reticle", () => {
     const view = render(
       <VoiceCallPanel
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
         callSeconds={4}
         callStatus="listening"
         muted={false}
@@ -598,6 +809,8 @@ describe("conversation feedback UI", () => {
     const onToggleSpeaker = vi.fn()
     render(
       <VoiceCallPanel
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
         callSeconds={64}
         callStatus="listening"
         idlePrompt="你有任何问题吗？"
@@ -844,5 +1057,80 @@ describe("conversation feedback UI", () => {
     expect(aside.style.width).toBe("360px")
     expect(window.localStorage.getItem("moss:conversation-guide-width:v1")).toBe("360")
     expect(onCollapsedChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe("conversation last-scene restore", () => {
+  beforeEach(() => {
+    routerReplace.mockClear()
+    routerRefresh.mockClear()
+    window.localStorage.clear()
+  })
+
+  it("redirects to the last stored scene when the page has no ?scene= param", async () => {
+    saveLastConversationScene("idiomatic-english")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith(
+        `/workspace/conversation?scene=${encodeURIComponent("idiomatic-english")}`,
+      ),
+    )
+    // 重定向路径不写当前场景，避免用默认场景覆盖「上次场景」。
+    expect(window.localStorage.getItem(conversationSceneStorageKey)).toBe("idiomatic-english")
+  })
+
+  it("renders the scene-loading skeleton while the last scene differs", async () => {
+    saveLastConversationScene("idiomatic-english")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 场景未确定：先渲染骨架而非默认场景内容，重定向在后台进行且期间骨架保持。
+    expect(screen.getByRole("status", { name: "正在加载对话页面" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "咖啡店点单" })).toBeNull()
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith(
+        `/workspace/conversation?scene=${encodeURIComponent("idiomatic-english")}`,
+      ),
+    )
+    expect(screen.getByRole("status", { name: "正在加载对话页面" })).toBeTruthy()
+  })
+
+  it("renders the workspace once the stored scene matches the rendered one", async () => {
+    saveLastConversationScene("coffee")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 场景立即确定：不经过骨架，直接渲染内容。
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "咖啡店点单" })).toBeTruthy(),
+    )
+    expect(screen.queryByRole("status", { name: "正在加载对话页面" })).toBeNull()
+  })
+
+  it("keeps the rendered scene and records it when nothing was stored", () => {
+    // "cafe-order" 不是场景 ID：getConversationScene 会回退到默认场景 "coffee"。
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    expect(routerReplace).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(conversationSceneStorageKey)).toBe(scene.id)
   })
 })

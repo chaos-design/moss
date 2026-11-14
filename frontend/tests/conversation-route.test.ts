@@ -587,6 +587,98 @@ describe("POST /api/conversation authentication", () => {
     expect(retryRequest.max_tokens).toBe(4096)
   })
 
+  it("repairs a plain-text reply into the contract with one follow-up call", async () => {
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+    vi.stubEnv("AI_API_KEY", "secret")
+    vi.stubEnv("AI_MODEL_NAME", "model")
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Hello! How have you been?" } }],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    reply: "Hello! How have you been?",
+                    translation: "你好！最近怎么样？",
+                    validation: {
+                      status: "guidance",
+                      corrected: "Hi! How have you been?",
+                      explanation: "补全问候信息，表达更完整。",
+                      issues: [
+                        {
+                          kind: "clarity",
+                          original: "Hi",
+                          corrected: "Hi! How have you been?",
+                          explanation: "信息不足。",
+                        },
+                      ],
+                      examples: [
+                        { english: "Hi! How have you been?", chinese: "你好！最近怎么样？" },
+                      ],
+                    },
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(createConversationRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.contractApplied).toBe(true)
+    expect(body.data.content).toBe("Hello! How have you been?")
+    expect(body.data.translation).toBe("你好！最近怎么样？")
+    expect(body.data.validation.status).toBe("guidance")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const repairRequest = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))
+    expect(repairRequest.messages[0].content).toContain("Output ONLY one JSON object")
+    expect(repairRequest.messages[1].content).toContain("A latte, please.")
+    expect(repairRequest.messages[1].content).toContain("Hello! How have you been?")
+  })
+
+  it("keeps the degraded reply when the contract repair also fails", async () => {
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+    vi.stubEnv("AI_API_KEY", "secret")
+    vi.stubEnv("AI_MODEL_NAME", "model")
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Hello! How have you been?" } }],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(createConversationRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.contractApplied).toBe(false)
+    expect(body.data.content).toContain("Hello")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it("supports Anthropic Messages API fields", async () => {
     getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
     vi.stubEnv("AI_BASE_URL", "https://api.anthropic.com/v1")

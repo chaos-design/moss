@@ -113,7 +113,7 @@ describe("getConversationScene", () => {
     const scene = getConversationScene("idiomatic-english")
     const notes = scene.expressionNotes ?? []
 
-    expect(notes).toHaveLength(100)
+    expect(notes).toHaveLength(140)
     expect(new Set(notes.map((note) => note.phrase.toLocaleLowerCase())).size).toBe(
       notes.length,
     )

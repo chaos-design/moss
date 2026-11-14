@@ -20,6 +20,7 @@
       "!backend/services/tts/runtimes/cosyvoice/.modelscope",
       "!backend/services/tts/runtimes/cosyvoice/models",
       "!backend/services/tts/runtimes/cosyvoice/runtime",
+      "!backend/services/elevenlabs/.venv",
       "!.tmp-*",
       "!.vscode"
     ]

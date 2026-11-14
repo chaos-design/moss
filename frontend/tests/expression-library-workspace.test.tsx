@@ -140,7 +140,7 @@ describe("ExpressionLibraryWorkspace", () => {
   it("shows the complete built-in count and filters detailed rows", async () => {
     render(<ExpressionLibraryWorkspace />)
 
-    expect(screen.getAllByText("1000")).toHaveLength(2)
+    expect(screen.getAllByText("1040")).toHaveLength(2)
     fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
       target: { value: "rule of thumb" },
     })
@@ -170,7 +170,7 @@ describe("ExpressionLibraryWorkspace", () => {
     })
 
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(120))
-    expect(screen.getByText("已显示 120 / 1000 条")).toBeTruthy()
+    expect(screen.getByText("已显示 120 / 1040 条")).toBeTruthy()
   })
 
   it("imports directly pasted JSON locally before cloud sync", async () => {
@@ -345,5 +345,29 @@ describe("ExpressionLibraryWorkspace", () => {
     })
 
     expect(await screen.findByText("已在记忆中")).toBeTruthy()
+  })
+
+  it("reveals the example translation only after the eye is pressed", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "keep tabs on" },
+    })
+
+    const translation = "你能持续关注这批货的配送情况，如果延迟了就告诉我吗？"
+    expect(await screen.findByText("已显示 1 / 1 条")).toBeTruthy()
+    // 默认收起：译文尚未渲染，学习者先自己读英文例句。
+    expect(screen.queryByText(translation)).toBeNull()
+
+    // 译文开关紧跟例句，无障碍名称按当前动作区分。
+    const eye = screen.getByRole("button", { name: "显示 keep tabs on 的例句译文" })
+    expect(eye.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(eye)
+
+    expect(eye.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText(translation)).toBeTruthy()
+
+    fireEvent.click(eye)
+    expect(screen.queryByText(translation)).toBeNull()
   })
 })

@@ -105,8 +105,8 @@ export function WorkspaceHeader() {
     }
 
     toast.success("已退出登录，学习记忆保留在本机")
-    router.replace("/login")
-    router.refresh()
+    // 不能追加 refresh()，否则会取消尚未完成的 replace，导致停在当前页。
+    await router.replace("/login")
   }
 
   return (

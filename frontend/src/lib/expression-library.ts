@@ -50,7 +50,7 @@ const reviewedItems: ExpressionLibraryItem[] = idiomaticExpressionNotes.map((not
   ...note,
   id: `builtin:reviewed:${index + 1}`,
   clientId: `builtin-reviewed-${index + 1}`,
-  kind: "idiom",
+  kind: note.kind ?? "idiom",
   sceneCategory: inferReviewedCategory(note.phrase, note.context),
   source: "builtin",
 }))
@@ -69,8 +69,8 @@ export const builtInExpressionItems: readonly ExpressionLibraryItem[] = [
   ...generatedItems,
 ]
 
-if (builtInExpressionItems.length !== 1_000) {
-  throw new Error(`Built-in expression library must contain 1000 items.`)
+if (builtInExpressionItems.length !== 1_040) {
+  throw new Error(`Built-in expression library must contain 1040 items.`)
 }
 
 export function mergeExpressionLibraryItems(

@@ -28,6 +28,23 @@ describe("workspace environment loading", () => {
     })
   })
 
+  it("inlines the local speech interface configuration for the settings preset", () => {
+    expect(
+      getPublicEnvironment({
+        NEXT_PUBLIC_ASR_LOCAL_API_URL: "http://127.0.0.1:5583/v1",
+        NEXT_PUBLIC_ASR_LOCAL_API_MODEL: "scribe_v2",
+        NEXT_PUBLIC_TTS_LOCAL_API_URL: "http://127.0.0.1:5583/v1",
+        NEXT_PUBLIC_TTS_LOCAL_API_MODEL: "eleven_v4",
+        ELEVENLABS_API_KEY: "never-expose",
+      }),
+    ).toEqual({
+      NEXT_PUBLIC_ASR_LOCAL_API_URL: "http://127.0.0.1:5583/v1",
+      NEXT_PUBLIC_ASR_LOCAL_API_MODEL: "scribe_v2",
+      NEXT_PUBLIC_TTS_LOCAL_API_URL: "http://127.0.0.1:5583/v1",
+      NEXT_PUBLIC_TTS_LOCAL_API_MODEL: "eleven_v4",
+    })
+  })
+
   it("force-loads the root .env.local after Next processes the frontend directory", () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "moss-env-"))
     temporaryDirectories.push(workspaceRoot)
