@@ -157,6 +157,21 @@ describe("SpeechServiceCard", () => {
     expect(screen.getByText(/音色 9a9cf47702da476aa4629e2506d4a857/)).toBeTruthy()
   })
 
+  it("describes an empty API voice truthfully instead of claiming an alloy default", () => {
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    // 回环适配器留空 = 适配器服务端默认音色接管，不是 alloy。
+    fireEvent.click(screen.getByRole("button", { name: "使用语音合成ElevenLabs 适配器" }))
+    expect(screen.getByText(/音色留空，由服务端默认音色接管/)).toBeTruthy()
+
+    // 公网接口留空没有服务端默认可依赖：如实提示云端服务通常必填。
+    fireEvent.change(screen.getByLabelText("语音合成接口地址"), {
+      target: { value: "https://api.openai.com/v1" },
+    })
+    expect(screen.getByText(/音色留空（云端服务通常必填）/)).toBeTruthy()
+  })
+
   it("configures the local ASR engine from the same field policy as the conversation page", () => {
     render(<SpeechServiceCard />)
 

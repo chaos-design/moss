@@ -892,7 +892,13 @@ function EffectiveServiceDetail({
     return <LocalTtsVoiceDetail />
   }
   if (service === "tts" && endpoint.transport === "api") {
-    return endpoint.voice ? ` · 音色 ${endpoint.voice}` : " · 音色 alloy"
+    if (endpoint.voice) {
+      return ` · 音色 ${endpoint.voice}`
+    }
+    // 留空的音色没有通用的「默认值」：回环适配器用服务端默认音色，云端服务通常直接拒绝。
+    return isLoopbackSpeechEndpoint(endpoint.endpoint)
+      ? " · 音色留空，由服务端默认音色接管"
+      : " · 音色留空（云端服务通常必填）"
   }
   return null
 }

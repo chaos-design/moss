@@ -342,8 +342,9 @@ function seedMemoryItem(now: Date, seed: DefaultMemorySeed): LearningMemoryItem 
 /**
  * 句子列表与长期记忆的示例数据。
  *
- * 新账户与演示模式共用一个足够大的起始集合：四类记忆各有覆盖，强度与到期时间错开，
- * 这样筛选、排序、分批复用和复习队列都能立刻看到真实分布，而不是空列表。
+ * 这套种子只用于演示模式（`LearningMemoryProvider` 里 `isDemoMode()` 分支）：四类记忆
+ * 各有覆盖，强度与到期时间错开，这样筛选、排序、分批复用和复习队列都能立刻看到真实
+ * 分布，而不是空列表。正式环境从空记忆开始，只记录真实发生的练习。
  */
 const defaultMemorySeeds: readonly DefaultMemorySeed[] = [
   {

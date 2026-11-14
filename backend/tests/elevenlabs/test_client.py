@@ -183,6 +183,42 @@ class ElevenLabsClientTest(unittest.TestCase):
         self.assertEqual(bodies[0]["model_id"], "bogus-model")
         self.assertEqual(bodies[1]["model_id"], "eleven_v4")
 
+    def test_does_not_retry_when_the_failure_cannot_be_fallen_back(self) -> None:
+        """凭据、余额、限流等不可兜底失败只请求一次，避免重复消耗配额或放大限流。"""
+        cases = [
+            (401, "elevenlabs_unauthorized"),
+            (402, "elevenlabs_payment_required"),
+            (429, "elevenlabs_rate_limited"),
+        ]
+        for provider_status, expected_code in cases:
+            with self.subTest(provider_status=provider_status):
+                requests: list[httpx.Request] = []
+
+                def handler(
+                    request: httpx.Request,
+                    status: int = provider_status,
+                ) -> httpx.Response:
+                    requests.append(request)
+                    return httpx.Response(
+                        status,
+                        json={"detail": {"status": "error", "code": "ignored", "message": "x"}},
+                    )
+
+                client = ElevenLabsClient(
+                    create_settings(),
+                    transport=httpx.MockTransport(handler),
+                )
+                with self.assertRaises(ElevenLabsServiceError) as context:
+                    client.synthesize(
+                        text="Hello.",
+                        voice="alloy",
+                        model="eleven_v4",
+                        response_format="mp3",
+                        speed=1.0,
+                    )
+                self.assertEqual(context.exception.code, expected_code)
+                self.assertEqual(len(requests), 1)
+
     def test_keeps_the_actionable_hint_when_the_voice_fallback_also_fails(self) -> None:
         def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(

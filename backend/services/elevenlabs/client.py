@@ -133,6 +133,9 @@ class ElevenLabsClient:
                 if fallback_model:
                     model_id = self.settings.tts_model
                     continue
+                # 凭据、余额、限流等不可兜底的失败不重试：原样再发一次只会
+                # 放大限流与配额消耗（与 Fish Audio 适配器「切换参数才重试」一致）。
+                break
 
         assert response is not None  # 循环至少执行一次
         self._ensure_success(response)
