@@ -962,3 +962,35 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
 
 未执行：真实扬声器环境的打断灵敏度人工验证（回声响度因设备而异，2.5 倍阈值如有
 漏判/误判可在 `apiBargeInThresholdBoost` 调整）。
+
+### 2026-11-14 识别上传 5xx 自动重试与手动重试按钮
+
+用户要求：识别接口 5xx 自动重试几次，仍失败则结束本次识别并变成重试按钮。
+
+实现：`SpeechApiClientError` 附带 HTTP 状态码；`use-browser-asr` 的上传对 5xx 与
+网络瞬断自动重试 2 次（退避 700ms / 1400ms），4xx（参数 / 凭据 / 限流）不重试。
+重试耗尽后：暂停本轮采集、保留录音、通话面板显示「重试识别」按钮——重试会把
+保留的录音重新上传，成功即恢复监听并让转写进入回合（`listeningRef` 在重试入口
+复位），仍失败则按钮保留可反复重试。
+
+自动化结果：`speech-client-retry` 5 用例（5xx / 网络瞬断可重试、4xx 与未知错误
+不重试）；语音/对话/转写路由 5 套件 99 用例通过；biome、tsc、`pnpm build` 通过。
+
+未执行：真实 5xx 上游的连击重试人工验证（单测以状态码分类覆盖；网关超时 30s
+意味着极端情况下重试总时长上限约 90s，运行时 `AbortSignal.timeout` 之外无额外
+打断）。
+
+### 2026-11-14 无场景参数进入对话页先渲染骨架
+
+用户反馈：切换到 AI 对话时先闪现默认场景内容再被重定向切到上次场景。修复：无
+`?scene=` 进入时，场景要等客户端读取「上次场景」（localStorage）才能确定——确定前
+渲染场景解析骨架（与路由级 loading 共用同一组件），确定后再渲染内容；重定向期间
+骨架保持。
+
+实现：骨架从 `app/workspace/conversation/loading.tsx` 提取为
+`features/conversation/conversation-loading.tsx` 供两处共用；`ConversationWorkspace`
+新增 `sceneResolved` 门——`restoreLastScene` 且场景未定时渲染骨架，重定向/确认后放行。
+显式 `?scene=` 不经过骨架。
+
+自动化结果：新增 2 个用例（骨架先渲染且重定向期间保持 / 同场景直接渲染内容）；
+对话工作区套件 36 用例通过；biome、tsc、`pnpm build` 通过。

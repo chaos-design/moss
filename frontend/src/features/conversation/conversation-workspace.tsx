@@ -70,6 +70,7 @@ import {
   ConversationGuideSheet,
 } from "@/features/conversation/conversation-guide"
 import { ConversationHistorySheet } from "@/features/conversation/conversation-history-sheet"
+import { ConversationLoading } from "@/features/conversation/conversation-loading"
 import {
   canRequestTranslation,
   requestConversationTranslation,
@@ -283,6 +284,9 @@ export function ConversationWorkspace({
   const router = useRouter()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
+  // 无 ?scene= 进入时场景要等客户端读取「上次场景」才能确定：确定前渲染加载骨架，
+  // 避免先闪现默认场景再被重定向切走。显式 ?scene= 无需解析，直接渲染内容。
+  const [sceneResolved, setSceneResolved] = useState(!restoreLastScene)
   const { forgetConversationTurn, state, recordConversationTurn } = useLearningMemory()
   const { prefs, setPrefs } = useConversationPrefs()
   const memoryContext = useMemo(
@@ -311,10 +315,13 @@ export function ConversationWorkspace({
     const history = readConversationHistory()
     const lastSceneId = readLastConversationScene(history)
     if (restoreLastScene && lastSceneId && lastSceneId !== scene.id) {
+      // 重定向期间保持骨架：路由按确认后的场景重渲染时，restoreLastScene 变为
+      // false，内容才正式加载。
       router.replace(`/workspace/conversation?scene=${encodeURIComponent(lastSceneId)}`)
       return
     }
     saveLastConversationScene(scene.id)
+    setSceneResolved(true)
   }, [restoreLastScene, router, scene.id])
 
   const {
@@ -488,6 +495,10 @@ export function ConversationWorkspace({
     }
   }
 
+  if (!sceneResolved) {
+    // 场景确定前只渲染骨架：避免闪现默认场景；hooks 顺序不受影响。
+    return <ConversationLoading />
+  }
   return (
     <div className="flex h-full min-h-[560px] w-full min-w-0 overflow-hidden bg-card">
       <section className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

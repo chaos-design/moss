@@ -1085,6 +1085,42 @@ describe("conversation last-scene restore", () => {
     expect(window.localStorage.getItem(conversationSceneStorageKey)).toBe("idiomatic-english")
   })
 
+  it("renders the scene-loading skeleton while the last scene differs", async () => {
+    saveLastConversationScene("idiomatic-english")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 场景未确定：先渲染骨架而非默认场景内容，重定向在后台进行且期间骨架保持。
+    expect(screen.getByRole("status", { name: "正在加载对话页面" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "咖啡店点单" })).toBeNull()
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith(
+        `/workspace/conversation?scene=${encodeURIComponent("idiomatic-english")}`,
+      ),
+    )
+    expect(screen.getByRole("status", { name: "正在加载对话页面" })).toBeTruthy()
+  })
+
+  it("renders the workspace once the stored scene matches the rendered one", async () => {
+    saveLastConversationScene("coffee")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 场景立即确定：不经过骨架，直接渲染内容。
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "咖啡店点单" })).toBeTruthy(),
+    )
+    expect(screen.queryByRole("status", { name: "正在加载对话页面" })).toBeNull()
+  })
+
   it("keeps the rendered scene and records it when nothing was stored", () => {
     // "cafe-order" 不是场景 ID：getConversationScene 会回退到默认场景 "coffee"。
     const scene = getConversationScene("cafe-order")
