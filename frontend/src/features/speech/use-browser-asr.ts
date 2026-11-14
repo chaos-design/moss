@@ -375,8 +375,14 @@ export function useBrowserAsr({
       teardown()
       return
     }
-    // 先停采集（避免把随后的助手播报录进去），上传完成后关闭采集图。
+    // 先同步解除静音检测，再异步上传：flush 有一秒左右的窗口，若检测器继续运行，
+    // 扬声器里的助手播报会被当成说话人，触发 speech-start 立刻打断回复播放。
     capturePausedRef.current = true
+    turnTrackerRef.current = null
+    if (turnFeedTimerRef.current !== null) {
+      window.clearInterval(turnFeedTimerRef.current)
+      turnFeedTimerRef.current = null
+    }
     void flushRecordedAudio().finally(() => {
       teardown()
     })

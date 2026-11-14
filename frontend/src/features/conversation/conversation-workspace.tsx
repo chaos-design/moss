@@ -446,6 +446,25 @@ export function ConversationWorkspace({
     scrollLatestTranscriptTurn(transcript)
   }, [latestMessageId, messages.length])
 
+  // 语音通话期间把正在识别的轮次滚进可视区：浮动输入面板盖住转写底部，
+  // 「最近消息对齐顶部」的滚动不保证这一轮可见。
+  useEffect(() => {
+    if (!callActive) {
+      return
+    }
+    const transcript = transcriptRef.current
+    const liveTurn = transcript?.querySelector<HTMLElement>("[data-live-transcript-turn]")
+    if (!transcript || !liveTurn) {
+      return
+    }
+    liveTurn.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    const panelTop = composerRef.current?.getBoundingClientRect().top
+    const liveBottom = liveTurn.getBoundingClientRect().bottom
+    if (typeof panelTop === "number" && liveBottom > panelTop - 8) {
+      transcript.scrollTop += liveBottom - panelTop + 8
+    }
+  }, [callActive, callStatus, liveTranscript])
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     sendDraft()
@@ -669,38 +688,24 @@ export function ConversationWorkspace({
             {/* 语音通话时把正在识别的消息固定在输入区上方：转写历史会滚动，这里始终可见。 */}
             {callActive && (liveTranscript || callStatus === "transcribing") ? (
               <div
-                className="mb-2 rounded-lg border bg-background/85 px-3 py-2 shadow-lg ring-1 ring-black/5 backdrop-blur transition-colors dark:ring-white/5"
                 role="status"
+                className="mb-2 flex items-center gap-2 rounded-lg border bg-background/85 px-3 py-2 text-sm text-muted-foreground shadow-lg ring-1 ring-black/5 backdrop-blur transition-colors dark:ring-white/5"
               >
-                {callStatus === "transcribing" && !liveTranscript ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1" aria-hidden="true">
-                      <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-                      <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-                      <span className="size-1.5 animate-bounce rounded-full bg-current" />
-                    </span>
-                    <span>正在将这句话转换为文字…</span>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-2 text-sm">
-                    <span className="mt-0.5 shrink-0 text-[11px] font-semibold text-muted-foreground">
-                      你{callStatus === "transcribing" ? "（识别中）" : ""}
-                    </span>
-                    <p className="min-w-0 flex-1 leading-6">
-                      {liveTranscript}
-                      {callStatus === "transcribing" ? (
-                        <span
-                          className="ml-1 inline-flex items-center gap-1 align-middle text-xs text-muted-foreground"
-                          aria-hidden="true"
-                        >
-                          <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-                          <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-                          <span className="size-1 animate-bounce rounded-full bg-current" />
-                        </span>
-                      ) : null}
-                    </p>
-                  </div>
-                )}
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 animate-pulse rounded-full",
+                    callStatus === "transcribing" ? "bg-[var(--chart-3)]" : "bg-primary/70",
+                  )}
+                  aria-hidden="true"
+                />
+                <p className="min-w-0 flex-1 truncate leading-6">
+                  {callStatus === "transcribing" && !liveTranscript
+                    ? "正在识别，说完稍停即可发送…"
+                    : liveTranscript}
+                </p>
+                {callStatus === "transcribing" ? (
+                  <span className="shrink-0 text-[11px]">识别中</span>
+                ) : null}
               </div>
             ) : null}
             {callActive ? (
@@ -1451,8 +1456,10 @@ function LiveTranscriptTurn({
   text: string
 }) {
   const alignRight = layout === "split"
+  const transcribing = status === "transcribing"
   return (
     <article
+      data-live-transcript-turn
       className={cn(
         "grid gap-3 py-5",
         alignRight ? "grid-cols-[minmax(0,1fr)_40px]" : "grid-cols-[40px_minmax(0,1fr)]",
@@ -1469,33 +1476,22 @@ function LiveTranscriptTurn({
           <p className="text-xs font-semibold">你</p>
           <span className="flex items-center gap-1 text-[11px] text-[var(--success)]">
             <span className="size-1.5 animate-pulse rounded-full bg-[var(--success)]" />
-            {status === "transcribing" ? "正在识别" : "语音识别就绪"}
+            {transcribing ? "正在识别" : "语音识别就绪"}
           </span>
         </div>
         {text ? (
           <p className="mt-2 text-base leading-7 text-muted-foreground">{text}</p>
         ) : (
-          <div
-            className={cn(
-              "mt-3 flex items-center gap-2.5 text-sm text-muted-foreground",
-              alignRight && "justify-end",
-            )}
-          >
-            {status === "transcribing" ? (
-              <>
-                {/* 识别中的动效与「正在回应」占位同一语言：识别环 + 弹跳圆点。 */}
-                <VoiceActivity status="transcribing" compact />
-                <span>正在将这句话转换为文字…</span>
-                <span className="flex items-center gap-1" aria-hidden="true">
-                  <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-current" />
-                </span>
-              </>
-            ) : (
-              <span>可以说中文、英文或中英混合内容…</span>
-            )}
-          </div>
+          <p className="mt-2 flex items-center gap-2 text-sm leading-7 text-muted-foreground">
+            <span
+              className={cn(
+                "size-1.5 shrink-0 animate-pulse rounded-full",
+                transcribing ? "bg-[var(--chart-3)]" : "bg-primary/70",
+              )}
+              aria-hidden="true"
+            />
+            {transcribing ? "正在将这句话转换为文字…" : "可以说中文、英文或中英混合内容…"}
+          </p>
         )}
       </div>
       {alignRight ? (
