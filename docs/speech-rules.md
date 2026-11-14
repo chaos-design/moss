@@ -99,6 +99,10 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
   替学习者填充默认模型。
 - **音色同规则**：`/api/speech/tts` 对空音色省略字段；5583 回退 George，5584 回退内置默认
   音色。TTS 的 `voice` 字段（`moss:speech-config:v1`）在设置页与对话页共享。
+- **api 识别自动断句**：HTTP API 识别（整段上传）没有服务端 VAD，客户端用 Web Audio 能量
+  检测补齐「说话开始/说完一句」信号（`features/speech/api-asr-turn-detection.ts`）：噪声底
+  自适应校准 500ms，说话确认 320ms，静音 1.2s 断句，单段上限 25s 强制上传；断句只快照
+  已积累音频块、录音保持运行，监听不中断。无 AudioContext 的环境降级为手动静音上传。
 - **本机接入的引擎/音色**是本机服务自己的配置（`moss:asr-config:v1`、`moss:tts-config:v2`），
   与 HTTP API 的 `model`/`voice` 字段无关；设置页与对话页读写同一份。
 - **本机服务地址**由文本输入改为下拉输入选择，选项取自规则表 `localServices`（按 ASR / TTS

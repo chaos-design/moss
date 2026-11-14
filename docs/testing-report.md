@@ -809,3 +809,32 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
   按服务区分）。
 - `pnpm --dir frontend test`：相关套件（speech-service-card、conversation-sessions、
   speech-routes）通过。
+
+## 2026-11-14 修复 api 接入识别收不到用户输入（语音通话静音断句）
+
+问题与定位：
+
+- 用户反馈语音通话「收不到用户输入的声音」。适配器日志显示其 TTS 正常（17:36 两次
+  `/v1/audio/speech` 200，voice=multilingual 经兜底成功），但当天没有任何新的
+  `/v1/audio/transcriptions` 请求；本机 ASR（5580）全天未启动。
+- 根因：HTTP API 接入的识别在语音通话里**没有「说完一句话」的触发器**。`use-browser-asr`
+  的 api 分支只持续累积录音块，上传仅发生在 `pause()`（助手播报开始或手动静音）；
+  用户说话期间没有 VAD、没有语音事件，回合永远无法提交，输入因此「石沉大海」。
+
+修复：
+
+- 新增 `frontend/src/features/speech/api-asr-turn-detection.ts`：镜像流式识别的客户端
+  能量检测（噪声底自适应校准 500ms、说话确认 320ms、静音 1.2s 断句、单段上限 25s），
+  纯逻辑按帧喂数据，5 个单元测试覆盖校准/断句/短促噪声/强制断句/重置。
+- `use-browser-asr` 的 api 分支接入 Web Audio（AnalyserNode + 100ms 轮询 RMS）：
+  说话开始触发 `onSpeechStart`（可打断等待中的回复），静音断句走 `flushRecordedAudio`——
+  只快照已积累音频块并上传，**录音保持运行**，上传与提交期间监听不中断；
+  无 AudioContext 的环境降级为原有的手动静音上传。
+- 对话页「识别来源」提示更新为「说完停顿约 1 秒自动整段上传识别」。
+
+自动化结果：检测器 5/5 通过；`tests/voice-conversation.test.tsx`（35）、
+`tests/conversation-sessions.test.tsx`、`tests/speech-service-card.test.tsx`、
+`tests/speech-routes.test.ts` 全部通过；biome/tsc 通过。
+
+未执行：真实麦克风通话的端到端录音验证（浏览器环境无受控麦克风），依赖单元测试与
+既有 api 链路（`/api/speech/asr` → 5583 → scribe_v2 已于同日实测可用）佐证。

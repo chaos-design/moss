@@ -886,7 +886,7 @@ export function ConversationSettingsPopover({
             disabled={disabled}
             hint={
               asrTransport === "api"
-                ? "整段上传识别，不提供实时字幕与说话打断。"
+                ? "说完停顿约 1 秒自动整段上传识别；不提供实时字幕，播放回复时不能抢话。"
                 : asrTransport === "browser"
                   ? "使用浏览器语音识别，无需本机服务。"
                   : "使用本机 ASR 服务，未启动时自动回退浏览器语音。"

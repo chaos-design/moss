@@ -1,6 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  type ApiAsrTurnTracker,
+  calculateByteRms,
+  createApiAsrTurnTracker,
+} from "@/features/speech/api-asr-turn-detection"
 import { normalizeSpeechTranscript } from "@/lib/call-runtime"
 import {
   SpeechApiClientError,
@@ -103,6 +108,13 @@ export function useBrowserAsr({
   const chunksRef = useRef<Blob[]>([])
   const activeRef = useRef(false)
   const processingRef = useRef(false)
+  // api 接入的静音断句：Web Audio 能量检测说「说完一句」时快照上传，录音保持运行。
+  const turnAudioContextRef = useRef<AudioContext | null>(null)
+  const turnSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const turnAnalyserRef = useRef<AnalyserNode | null>(null)
+  const turnMeterBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null)
+  const turnFeedTimerRef = useRef<number | null>(null)
+  const turnTrackerRef = useRef<ApiAsrTurnTracker | null>(null)
   const onErrorRef = useRef(onError)
   const onPartialRef = useRef(onPartial)
   const onProcessingChangeRef = useRef(onProcessingChange)
@@ -144,6 +156,17 @@ export function useBrowserAsr({
       recorder.stop()
     }
     chunksRef.current = []
+    if (turnFeedTimerRef.current !== null) {
+      window.clearInterval(turnFeedTimerRef.current)
+      turnFeedTimerRef.current = null
+    }
+    turnTrackerRef.current = null
+    turnSourceRef.current?.disconnect()
+    turnSourceRef.current = null
+    turnAnalyserRef.current = null
+    turnMeterBufferRef.current = null
+    void turnAudioContextRef.current?.close().catch(() => {})
+    turnAudioContextRef.current = null
     for (const track of streamRef.current?.getTracks() ?? []) {
       track.stop()
     }
@@ -151,6 +174,43 @@ export function useBrowserAsr({
     setProcessing(false)
     onPartialRef.current("")
   }, [setProcessing])
+
+  const uploadRecordedAudio = useCallback(
+    async (audio: Blob | null) => {
+      if (!audio || audio.size === 0) {
+        return
+      }
+      const requestId = requestIdRef.current
+      setProcessing(true)
+      try {
+        const { text } = await transcribeSpeechAudio({
+          audio,
+          endpoint: endpointRef.current,
+        })
+        if (requestId !== requestIdRef.current || !text) {
+          return
+        }
+        onTranscriptRef.current(text)
+      } catch (error) {
+        if (requestId !== requestIdRef.current) {
+          return
+        }
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return
+        }
+        onErrorRef.current(
+          error instanceof SpeechApiClientError || error instanceof Error
+            ? error
+            : new Error("语音识别接口暂时不可用"),
+        )
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setProcessing(false)
+        }
+      }
+    },
+    [setProcessing],
+  )
 
   const transcribeRecordedChunk = useCallback(async () => {
     const recorder = recorderRef.current
@@ -163,38 +223,61 @@ export function useBrowserAsr({
         ? new Blob(chunksRef.current, mimeType ? { type: mimeType } : undefined)
         : null
     chunksRef.current = []
-    if (!audio || audio.size === 0) {
-      return
-    }
-    const requestId = requestIdRef.current
-    setProcessing(true)
-    try {
-      const { text } = await transcribeSpeechAudio({
-        audio,
-        endpoint: endpointRef.current,
+    await uploadRecordedAudio(audio)
+  }, [uploadRecordedAudio])
+
+  // VAD 断句用：只快照已积累的音频块并上传，录音保持运行，监听不中断；
+  // 上传与提交期间用户继续说话的内容会进入下一个快照。
+  const flushRecordedAudio = useCallback(async () => {
+    const recorder = recorderRef.current
+    const mimeType = recorder?.mimeType || selectAudioMimeType()
+    const audio =
+      chunksRef.current.length > 0
+        ? new Blob(chunksRef.current, mimeType ? { type: mimeType } : undefined)
+        : null
+    chunksRef.current = []
+    await uploadRecordedAudio(audio)
+  }, [uploadRecordedAudio])
+
+  // api 接入没有服务端 VAD，也没有浏览器语音事件：用 Web Audio 能量检测补上
+  // 「说话开始/说完一句」的信号。没有 AudioContext 的环境降级为手动静音上传。
+  const armApiTurnDetection = useCallback(
+    (mediaStream: MediaStream) => {
+      if (typeof window.AudioContext === "undefined") {
+        return
+      }
+      const audioContext = new AudioContext()
+      void audioContext.resume().catch(() => {})
+      const source = audioContext.createMediaStreamSource(mediaStream)
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 1024
+      source.connect(analyser)
+      turnAudioContextRef.current = audioContext
+      turnSourceRef.current = source
+      turnAnalyserRef.current = analyser
+      const meterBuffer = new Uint8Array(analyser.fftSize)
+      turnMeterBufferRef.current = meterBuffer
+      turnTrackerRef.current = createApiAsrTurnTracker({
+        onSpeechStart: () => {
+          onSpeechStartRef.current?.()
+        },
+        onSpeechEnd: () => {
+          void flushRecordedAudio()
+        },
       })
-      if (requestId !== requestIdRef.current || !text) {
-        return
-      }
-      onTranscriptRef.current(text)
-    } catch (error) {
-      if (requestId !== requestIdRef.current) {
-        return
-      }
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return
-      }
-      onErrorRef.current(
-        error instanceof SpeechApiClientError || error instanceof Error
-          ? error
-          : new Error("语音识别接口暂时不可用"),
-      )
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setProcessing(false)
-      }
-    }
-  }, [setProcessing])
+      turnFeedTimerRef.current = window.setInterval(() => {
+        const currentAnalyser = turnAnalyserRef.current
+        const tracker = turnTrackerRef.current
+        const buffer = turnMeterBufferRef.current
+        if (!currentAnalyser || !tracker || !buffer) {
+          return
+        }
+        currentAnalyser.getByteTimeDomainData(buffer)
+        tracker.feed(calculateByteRms(buffer), 100)
+      }, 100)
+    },
+    [flushRecordedAudio],
+  )
 
   const start = useCallback(
     async (stream?: MediaStream) => {
@@ -219,6 +302,7 @@ export function useBrowserAsr({
         }
         recorder.start(1_000)
         recorderRef.current = recorder
+        armApiTurnDetection(mediaStream)
         return
       }
 
@@ -284,7 +368,7 @@ export function useBrowserAsr({
         throw error instanceof Error ? error : new Error("无法启动浏览器语音识别")
       }
     },
-    [setProcessing, teardown],
+    [armApiTurnDetection, setProcessing, teardown],
   )
 
   const pause = useCallback(() => {
