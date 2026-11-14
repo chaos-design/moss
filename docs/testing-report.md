@@ -838,3 +838,31 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
 
 未执行：真实麦克风通话的端到端录音验证（浏览器环境无受控麦克风），依赖单元测试与
 既有 api 链路（`/api/speech/asr` → 5583 → scribe_v2 已于同日实测可用）佐证。
+
+### 2026-11-14 用户实测跟进：invalid_audio 与 MediaRecorder.start 失败
+
+上一条修复上线后用户实测暴露两个叠加问题，均已定位并修复：
+
+1. **`invalid_audio`（上游 400）**：录音跨回合后，VAD 快照上传的是 MediaRecorder 的
+   **后续分片**——webm 分片只有第一块带文件头，无头的分片不是独立音频文件，上游以
+   invalid_audio 拒绝。实测确认完整 webm（原始与规范化 mime）都能通过链路
+   （440Hz 振荡器 → MediaRecorder → `/api/speech/asr` → 200 `[dial tone]`），
+   问题在分片而非格式。
+2. **`MediaRecorder.start` 抛错**：`use-browser-asr.teardown` 在回合间隙停掉了
+   通话运行时持有的麦克风流轨道，下一轮 `start()` 在死流上建 MediaRecorder 直接失败。
+
+修复：
+
+- api 通道**弃用 MediaRecorder**，改为与 VAD 共用同一张 Web Audio 图采集 PCM
+  （ScriptProcessorNode，与流式识别同一模式），断句时降采样 16kHz 并经
+  `lib/audio-wav.ts` 的 `encodeWavBlob` 编码为**完整 WAV** 上传——每轮都是独立
+  合法文件，格式问题从根上消除（25s 上限约 800KB，远低于 8MB 网关限制）。
+- **轨道所有权**：`use-browser-asr` 只停自己 `getUserMedia` 获取的流；运行时持有的
+  流由运行时在通话结束时释放。浏览器/本机接入同样受益。
+- gateway 上传文件名按实际容器取扩展名（speech.wav/.m4a/.webm），不再固定 .webm。
+
+自动化结果：`audio-wav` 3 用例（头部/采样编码/空样本）+ 检测器 5 用例 + 相关套件
+共 91 用例通过；biome（0 警告）、tsc、`pnpm build` 通过。
+
+未执行：真实麦克风端到端通话（需人工验证）；已在 IAB 用振荡器验证 webm 全链路与
+`/api/speech/asr` → 5583 → scribe_v2 的 WAV 上传（同日 `[beep]`）。

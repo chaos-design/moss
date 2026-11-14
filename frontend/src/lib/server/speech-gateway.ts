@@ -260,10 +260,18 @@ export async function transcribeSpeechAudio(input: {
   language?: string
 }) {
   const form = new FormData()
+  // 文件扩展名与实际容器保持一致：上游会按文件名/类型判断音频格式。
+  const fileExtension = input.mimeType.includes("wav")
+    ? "wav"
+    : input.mimeType.includes("mp4")
+      ? "m4a"
+      : input.mimeType.includes("ogg")
+        ? "ogg"
+        : "webm"
   form.append(
     "file",
     new Blob([input.audio], { type: input.mimeType || "audio/webm" }),
-    "speech.webm",
+    `speech.${fileExtension}`,
   )
   // 空模型按契约省略，由上游适配器/服务选择自己的默认模型。
   if (input.endpoint.model) {

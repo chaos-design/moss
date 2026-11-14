@@ -110,7 +110,8 @@ export function createApiAsrTurnTracker(
 export function calculateByteRms(buffer: Uint8Array) {
   const samples = new Float32Array(buffer.length)
   for (let index = 0; index < buffer.length; index += 1) {
-    samples[index] = (buffer[index]! - 128) / 128
+    // 字节域中心是 128（0 电平）；越界兜底到 128 等价于静音帧。
+    samples[index] = ((buffer[index] ?? 128) - 128) / 128
   }
   return calculateAudioRms(samples)
 }
