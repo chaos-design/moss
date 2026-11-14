@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 import httpx
@@ -199,7 +200,10 @@ class FishAudioClient:
                 "fishaudio_invalid_response",
                 "Fish Audio 语音识别返回了无效结果。",
             )
-        return text.strip()
+        # Fish Audio 会在转写文本里混入说话人标记（如 <|speaker:0|>），
+        # 直接进入对话会污染学习者看到的内容，在这里统一剥掉。
+        cleaned = re.sub(r"<\|[^|>]*\|>", "", text).strip()
+        return cleaned
 
     @staticmethod
     def _ensure_success(response: httpx.Response, service: str) -> None:

@@ -666,6 +666,43 @@ export function ConversationWorkspace({
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 md:px-5 md:pb-4"
         >
           <div className="pointer-events-auto mx-auto w-full max-w-lg">
+            {/* 语音通话时把正在识别的消息固定在输入区上方：转写历史会滚动，这里始终可见。 */}
+            {callActive && (liveTranscript || callStatus === "transcribing") ? (
+              <div
+                className="mb-2 rounded-lg border bg-background/85 px-3 py-2 shadow-lg ring-1 ring-black/5 backdrop-blur transition-colors dark:ring-white/5"
+                role="status"
+              >
+                {callStatus === "transcribing" && !liveTranscript ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1" aria-hidden="true">
+                      <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-current" />
+                    </span>
+                    <span>正在将这句话转换为文字…</span>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 text-sm">
+                    <span className="mt-0.5 shrink-0 text-[11px] font-semibold text-muted-foreground">
+                      你{callStatus === "transcribing" ? "（识别中）" : ""}
+                    </span>
+                    <p className="min-w-0 flex-1 leading-6">
+                      {liveTranscript}
+                      {callStatus === "transcribing" ? (
+                        <span
+                          className="ml-1 inline-flex items-center gap-1 align-middle text-xs text-muted-foreground"
+                          aria-hidden="true"
+                        >
+                          <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+                          <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+                          <span className="size-1 animate-bounce rounded-full bg-current" />
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
             {callActive ? (
               <VoiceCallPanel
                 callSeconds={callSeconds}

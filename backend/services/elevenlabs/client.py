@@ -235,6 +235,14 @@ class ElevenLabsClient:
         suffix = f"（{upstream_code}）" if upstream_code else ""
         # 上游状态码就是诊断信息。凭据、余额、参数与限流问题不再统一压成 502：
         # 设置页按 401/402/422 直接给出“换密钥 / 充值 / 改参数”，而不是让人猜网关坏了。
+        if upstream_code in {"output_format_not_allowed"}:
+            # 免费层的 TTS 输出只有 mp3；wav / pcm 等格式需要 Pro 档。
+            # 403 + 该错误码不能按「凭据无效」报，否则学习者会误改密钥。
+            raise ElevenLabsServiceError(
+                400,
+                "elevenlabs_request_rejected",
+                "ElevenLabs 当前套餐不支持该输出格式（wav / pcm 等需要 Pro 档），请改用 mp3。",
+            )
         if status in {401, 403} or upstream_code in {"invalid_api_key", "authentication_error"}:
             raise ElevenLabsServiceError(
                 401,

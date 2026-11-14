@@ -219,6 +219,40 @@ class ElevenLabsClientTest(unittest.TestCase):
                 self.assertEqual(context.exception.code, expected_code)
                 self.assertEqual(len(requests), 1)
 
+    def test_maps_output_format_gating_to_a_request_rejection(self) -> None:
+        """免费层 wav/pcm 输出被拒（403 output_format_not_allowed）不能误报成凭据无效。"""
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403,
+                json={
+                    "detail": {
+                        "status": "output_format_not_allowed",
+                        "code": "output_format_not_allowed",
+                        "message": (
+                            "Output format 'wav_44100' is only available on the Pro tier "
+                            "and above."
+                        ),
+                    }
+                },
+            )
+
+        client = ElevenLabsClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        with self.assertRaises(ElevenLabsServiceError) as context:
+            client.synthesize(
+                text="你好",
+                voice="",
+                model="eleven_flash_v2_5",
+                response_format="wav",
+                speed=1.0,
+            )
+        self.assertEqual(context.exception.status, 400)
+        self.assertEqual(context.exception.code, "elevenlabs_request_rejected")
+        self.assertIn("Pro", context.exception.message)
+        self.assertNotIn("凭据", context.exception.message)
+
     def test_keeps_the_actionable_hint_when_the_voice_fallback_also_fails(self) -> None:
         def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(

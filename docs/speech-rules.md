@@ -60,6 +60,10 @@
   `voice_not_found` 会提示「可清空音色直接使用服务端默认音色」。
 - 默认输出格式 `mp3`。前端路由允许 `mp3/opus/aac/flac/wav/pcm`，但适配器只实现了
   `mp3/opus/pcm/wav`；`aac`/`flac` 会返回 `400 unsupported_format`，不会被伪装成目标格式。
+- **套餐与输出格式**：ElevenLabs 免费层的 TTS 输出**只有 mp3**；wav / pcm 会被上游以
+  `403 output_format_not_allowed` 拒绝（Pro 档以上才可用）。适配器把该错误映射为
+  `400 elevenlabs_request_rejected` 并提示改用 mp3，不会误报成凭据问题。语音通话运行时
+  固定请求 mp3，不受影响。
 
 ElevenLabs（5583）：
 

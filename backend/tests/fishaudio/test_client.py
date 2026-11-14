@@ -116,6 +116,32 @@ class FishAudioClientTest(unittest.TestCase):
             "9a9cf47702da476aa4629e2506d4a857",
         )
 
+    def test_strips_speaker_markers_from_transcripts(self) -> None:
+        """Fish Audio 转写会混入 <|speaker:0|> 标记，不能污染学习者看到的内容。"""
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            return httpx.Response(
+                200,
+                json={"text": "<|speaker:0|>你好，最近怎么样？"},
+                headers={"content-type": "application/json"},
+            )
+
+        client = FishAudioClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        text = client.transcribe(
+            audio=b"audio",
+            filename="test.wav",
+            content_type="audio/wav",
+            model="transcribe-1-pro",
+            language="",
+        )
+
+        self.assertEqual(text, "你好，最近怎么样？")
+
     def test_retries_without_the_reference_id_when_the_voice_is_rejected(self) -> None:
         """无效 reference_id（手误或音色已删除）→ 去掉音色兜底重试，由内置默认音色接管。"""
         requests: list[httpx.Request] = []
