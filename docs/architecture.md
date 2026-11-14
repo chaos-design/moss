@@ -256,6 +256,7 @@ flowchart LR
 | 匿名学习记忆 | `moss:learning-memory:v1` | 不同步 | 登录迁移后删除匿名键 |
 | 对话历史 | `moss:conversation-history:v1` | 当前不上传 | 本地会话恢复 |
 | 对话交互偏好 | `moss:conversation-prefs:v1` | 不同步；仅导师模式枚举随推理请求发送 | 导师模式、布局、快捷键、续接与合并/判句时限 |
+| 对话上次场景 | `moss:conversation-scene:v1` | 不同步 | 无 `?scene=` 进入对话页时恢复上次场景（回退到最近会话的场景，再回退默认场景）；切换场景时写回；失效 ID 走既有回退链 |
 | 模型配置集合与当前启用项 | `moss:model-config:v1` | 仅当前启用配置以加密信封进入同源推理 API | 禁止写入数据库和日志 |
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
 | 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase；本机接口预设的地址与模型来自构建期内联的 `NEXT_PUBLIC_*_LOCAL_API_*`，不含密钥 |

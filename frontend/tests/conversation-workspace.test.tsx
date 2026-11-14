@@ -20,10 +20,20 @@ import {
 import { setConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { asrEngineOptions } from "@/lib/asr-config"
 import type { StoredConversationMessage } from "@/lib/conversation-history"
+import {
+  conversationSceneStorageKey,
+  saveLastConversationScene,
+} from "@/lib/conversation-history"
 import { getConversationScene } from "@/lib/conversation-scenes"
 
+// 工作区挂载时会读取上次场景并可能 router.replace 回去；把 replace 提升为可断言的 spy。
+const { routerReplace, routerRefresh } = vi.hoisted(() => ({
+  routerReplace: vi.fn(),
+  routerRefresh: vi.fn(),
+}))
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ refresh: routerRefresh, replace: routerReplace }),
 }))
 
 // TranscriptTurn consults the shared auth status before requesting a translation; these tests cover
@@ -1043,5 +1053,44 @@ describe("conversation feedback UI", () => {
     expect(aside.style.width).toBe("360px")
     expect(window.localStorage.getItem("moss:conversation-guide-width:v1")).toBe("360")
     expect(onCollapsedChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe("conversation last-scene restore", () => {
+  beforeEach(() => {
+    routerReplace.mockClear()
+    routerRefresh.mockClear()
+    window.localStorage.clear()
+  })
+
+  it("redirects to the last stored scene when the page has no ?scene= param", async () => {
+    saveLastConversationScene("idiomatic-english")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith(
+        `/workspace/conversation?scene=${encodeURIComponent("idiomatic-english")}`,
+      ),
+    )
+    // 重定向路径不写当前场景，避免用默认场景覆盖「上次场景」。
+    expect(window.localStorage.getItem(conversationSceneStorageKey)).toBe("idiomatic-english")
+  })
+
+  it("keeps the rendered scene and records it when nothing was stored", () => {
+    // "cafe-order" 不是场景 ID：getConversationScene 会回退到默认场景 "coffee"。
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    expect(routerReplace).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(conversationSceneStorageKey)).toBe(scene.id)
   })
 })

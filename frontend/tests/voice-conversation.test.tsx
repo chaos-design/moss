@@ -38,6 +38,15 @@ const modelConfigCrypto = vi.hoisted(() => ({
   resetPublicKey: vi.fn(),
 }))
 
+// useConversationSessions 通过 useAuth 门控云端同步；本套件聚焦语音运行时，按登录态桩定。
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    accountLabel: "学习账户",
+    requireSignIn: () => true,
+  }),
+}))
+
 vi.mock("@/features/speech/use-local-tts", () => ({
   useLocalTts: () => ({
     playbackState: "idle",
