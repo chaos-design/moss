@@ -1432,20 +1432,34 @@ function LiveTranscriptTurn({
           <p className="text-xs font-semibold">你</p>
           <span className="flex items-center gap-1 text-[11px] text-[var(--success)]">
             <span className="size-1.5 animate-pulse rounded-full bg-[var(--success)]" />
-            {status === "transcribing" ? "本地识别中" : "离线语音识别"}
+            {status === "transcribing" ? "正在识别" : "语音识别就绪"}
           </span>
         </div>
-        <p
-          className={cn(
-            !text ? "text-xs" : "text-base",
-            "mt-2 leading-7 text-muted-foreground",
-          )}
-        >
-          {text ||
-            (status === "transcribing"
-              ? "正在将这句话转换为文字…"
-              : "可以说中文、英文或中英混合内容…")}
-        </p>
+        {text ? (
+          <p className="mt-2 text-base leading-7 text-muted-foreground">{text}</p>
+        ) : (
+          <div
+            className={cn(
+              "mt-3 flex items-center gap-2.5 text-sm text-muted-foreground",
+              alignRight && "justify-end",
+            )}
+          >
+            {status === "transcribing" ? (
+              <>
+                {/* 识别中的动效与「正在回应」占位同一语言：识别环 + 弹跳圆点。 */}
+                <VoiceActivity status="transcribing" compact />
+                <span>正在将这句话转换为文字…</span>
+                <span className="flex items-center gap-1" aria-hidden="true">
+                  <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-current" />
+                </span>
+              </>
+            ) : (
+              <span>可以说中文、英文或中英混合内容…</span>
+            )}
+          </div>
+        )}
       </div>
       {alignRight ? (
         <Avatar>
