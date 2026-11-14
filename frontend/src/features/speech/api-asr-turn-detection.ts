@@ -21,6 +21,8 @@ const initialNoiseFloor = 0.006
 export const apiTurnEndSilenceMs = 1_200
 /** 单段录音上限：超过则强制断句上传，避免无限增长的音频块。 */
 export const apiTurnMaxDurationMs = 25_000
+/** 打断监听的阈值倍增：播报回声通常远低于直接说话的能量，高倍阈值区分两者。 */
+export const apiBargeInThresholdBoost = 2.5
 
 export type ApiAsrTurnEvent = "none" | "speech-start" | "speech-end"
 
@@ -35,8 +37,11 @@ export function createApiAsrTurnTracker(
   options: {
     onSpeechStart?: () => void
     onSpeechEnd?: (reason: "silence" | "max-duration") => void
+    /** 说话阈值的倍增系数；打断监听用高倍阈值过滤扬声器回声与杂音。 */
+    thresholdBoost?: number
   } = {},
 ): ApiAsrTurnTracker {
+  const thresholdBoost = options.thresholdBoost ?? 1
   let noiseFloor = initialNoiseFloor
   let calibrationMs = 0
   let speechMs = 0
@@ -54,7 +59,7 @@ export function createApiAsrTurnTracker(
 
   return {
     feed(rms, frameDurationMs) {
-      const threshold = calculateSpeechThreshold(noiseFloor)
+      const threshold = calculateSpeechThreshold(noiseFloor) * thresholdBoost
       const calibrating = calibrationMs < noiseFloorCalibrationMs
       if (calibrating) {
         // 与流式识别相同的校准策略：只吸收噪声，避免开局把环境音当说话。

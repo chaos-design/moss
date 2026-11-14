@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  apiBargeInThresholdBoost,
   apiTurnEndSilenceMs,
   apiTurnMaxDurationMs,
   createApiAsrTurnTracker,
@@ -55,6 +56,19 @@ describe("createApiAsrTurnTracker", () => {
     feedFrames(tracker, 0.2, 2) // 200ms，低于 320ms 的说话确认
     feedFrames(tracker, 0.01, 20)
     expect(speechStarts).toHaveLength(0)
+  })
+
+  it("barge-in boost keeps playback echo silent while real speech triggers", () => {
+    const speechStarts: number[] = []
+    const tracker = createApiAsrTurnTracker({
+      thresholdBoost: apiBargeInThresholdBoost,
+      onSpeechStart: () => speechStarts.push(1),
+    })
+    feedFrames(tracker, 0.02, 10) // 校准到有底噪的环境（噪声底主导阈值）
+    feedFrames(tracker, 0.05, 10) // 扬声器回声量级：低于 2.5 倍阈值，不触发
+    expect(speechStarts).toHaveLength(0)
+    feedFrames(tracker, 0.2, 6) // 真实靠近麦克风说话：立即确认打断
+    expect(speechStarts).toHaveLength(1)
   })
 
   it("force-ends an utterance that exceeds the max duration", () => {

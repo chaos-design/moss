@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   type ApiAsrTurnTracker,
+  apiBargeInThresholdBoost,
   calculateByteRms,
   createApiAsrTurnTracker,
 } from "@/features/speech/api-asr-turn-detection"
@@ -78,6 +79,8 @@ const apiMeterIntervalMs = 100
 
 export type BrowserAsrOptions = {
   endpoint: SpeechEndpoint
+  /** 暂停采集（助手播报/静音）期间是否保留高阈值打断监听。 */
+  bargeInEnabled?: boolean
   onError: (error: Error) => void
   onPartial: (text: string) => void
   onProcessingChange: (processing: boolean) => void
@@ -92,6 +95,7 @@ export type BrowserAsrOptions = {
  * uploads a WAV per detected turn.
  */
 export function useBrowserAsr({
+  bargeInEnabled = false,
   endpoint,
   onError,
   onPartial,
@@ -128,6 +132,7 @@ export function useBrowserAsr({
   const onSpeechStartRef = useRef(onSpeechStart)
   const onTranscriptRef = useRef(onTranscript)
   const endpointRef = useRef(endpoint)
+  const bargeInRef = useRef(bargeInEnabled)
   const requestIdRef = useRef(0)
 
   onErrorRef.current = onError
@@ -136,6 +141,7 @@ export function useBrowserAsr({
   onSpeechStartRef.current = onSpeechStart
   onTranscriptRef.current = onTranscript
   endpointRef.current = endpoint
+  bargeInRef.current = bargeInEnabled
 
   const setProcessing = useCallback((processing: boolean) => {
     processingRef.current = processing
@@ -370,23 +376,50 @@ export function useBrowserAsr({
     [flushRecordedAudio, setProcessing, teardown],
   )
 
+  // 播报期间的打断监听：与采集共用同一张 Web Audio 图，但用高倍阈值——扬声器回声
+  // 经噪声底自适应后远低于直接说话的能量，只有真实发言能触发 speech-start；
+  // 监听不产生转写与上传，侦测到打断后由运行时立即恢复完整采集。
+  const armBargeInMonitor = useCallback(() => {
+    if (!turnAnalyserRef.current || turnFeedTimerRef.current !== null) {
+      return
+    }
+    turnTrackerRef.current = createApiAsrTurnTracker({
+      thresholdBoost: apiBargeInThresholdBoost,
+      onSpeechStart: () => {
+        onSpeechStartRef.current?.()
+      },
+    })
+    turnFeedTimerRef.current = window.setInterval(() => {
+      const currentAnalyser = turnAnalyserRef.current
+      const tracker = turnTrackerRef.current
+      const buffer = turnMeterBufferRef.current
+      if (!currentAnalyser || !tracker || !buffer) {
+        return
+      }
+      currentAnalyser.getByteTimeDomainData(buffer)
+      tracker.feed(calculateByteRms(buffer), apiMeterIntervalMs)
+    }, apiMeterIntervalMs)
+  }, [])
+
   const pause = useCallback(() => {
     if (endpointRef.current.transport !== "api") {
       teardown()
       return
     }
-    // 先同步解除静音检测，再异步上传：flush 有一秒左右的窗口，若检测器继续运行，
-    // 扬声器里的助手播报会被当成说话人，触发 speech-start 立刻打断回复播放。
+    // 先停采集并同步解除采集用检测器（回声不能触发 speech-start 打断播报），
+    // 上传已积累音频；随后保留高阈值打断监听，真实发言立即恢复识别。
     capturePausedRef.current = true
     turnTrackerRef.current = null
     if (turnFeedTimerRef.current !== null) {
       window.clearInterval(turnFeedTimerRef.current)
       turnFeedTimerRef.current = null
     }
-    void flushRecordedAudio().finally(() => {
-      teardown()
+    void flushRecordedAudio().then(() => {
+      if (activeRef.current && bargeInRef.current) {
+        armBargeInMonitor()
+      }
     })
-  }, [flushRecordedAudio, teardown])
+  }, [armBargeInMonitor, flushRecordedAudio])
 
   const stop = useCallback(() => {
     teardown()

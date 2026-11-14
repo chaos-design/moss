@@ -685,29 +685,6 @@ export function ConversationWorkspace({
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 md:px-5 md:pb-4"
         >
           <div className="pointer-events-auto mx-auto w-full max-w-lg">
-            {/* 语音通话时把正在识别的消息固定在输入区上方：转写历史会滚动，这里始终可见。 */}
-            {callActive && (liveTranscript || callStatus === "transcribing") ? (
-              <div
-                role="status"
-                className="mb-2 flex items-center gap-2 rounded-lg border bg-background/85 px-3 py-2 text-sm text-muted-foreground shadow-lg ring-1 ring-black/5 backdrop-blur transition-colors dark:ring-white/5"
-              >
-                <span
-                  className={cn(
-                    "size-1.5 shrink-0 animate-pulse rounded-full",
-                    callStatus === "transcribing" ? "bg-[var(--chart-3)]" : "bg-primary/70",
-                  )}
-                  aria-hidden="true"
-                />
-                <p className="min-w-0 flex-1 truncate leading-6">
-                  {callStatus === "transcribing" && !liveTranscript
-                    ? "正在识别，说完稍停即可发送…"
-                    : liveTranscript}
-                </p>
-                {callStatus === "transcribing" ? (
-                  <span className="shrink-0 text-[11px]">识别中</span>
-                ) : null}
-              </div>
-            ) : null}
             {callActive ? (
               <VoiceCallPanel
                 callSeconds={callSeconds}

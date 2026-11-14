@@ -9,6 +9,8 @@ import { supportsBrowserSpeechRecognition } from "@/lib/speech-client"
 
 export type AsrSessionOptions = Omit<StreamingAsrOptions, "engine"> & {
   onTransportFallback?: (error: Error) => void
+  /** 助手播报/静音暂停采集时，是否保留高阈值打断监听（api 接入）。 */
+  bargeInEnabled?: boolean
 }
 
 /**
@@ -47,6 +49,7 @@ export function useAsrSession(options: AsrSessionOptions) {
     engine,
   })
   const browser = useBrowserAsr({
+    bargeInEnabled: options.bargeInEnabled,
     endpoint: resolved.asr,
     onError: options.onError,
     onPartial: options.onPartial,

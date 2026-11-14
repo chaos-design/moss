@@ -247,6 +247,7 @@ export function useVoiceCallRuntime({
     stop: stopStreamingAsr,
     transport: asrTransport,
   } = useAsrSession({
+    bargeInEnabled: !mutedRef.current,
     context: [
       `Scenario: ${scene.title}.`,
       `Goal: ${scene.objective}`,
@@ -300,9 +301,18 @@ export function useVoiceCallRuntime({
       if (!pendingRef.current && !speakingRef.current) {
         return
       }
+      if (mutedRef.current) {
+        // 静音时监听到的任何事件都不构成打断（api 打断监听此时只能听到静音轨）。
+        return
+      }
       interruptAssistant()
       if (callActiveRef.current && !mutedRef.current) {
         dispatch({ type: "call-status-changed", status: "listening" })
+        // api 接入的采集在播报前已停止：打断后立即重启；本机/浏览器通道仍在监听，
+        // 无需重启（重复 start 会先经过 connecting 抖动状态）。
+        if (asrTransport === "api") {
+          startRecognition()
+        }
       }
     },
     onTranscript: (transcript, language) => {
