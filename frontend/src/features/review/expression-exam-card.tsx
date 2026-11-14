@@ -1,7 +1,9 @@
 "use client"
 
 import {
+  BrainCircuitIcon,
   CheckCircle2Icon,
+  CompassIcon,
   EyeIcon,
   EyeOffIcon,
   LightbulbIcon,
@@ -9,6 +11,7 @@ import {
   XCircleIcon,
 } from "lucide-react"
 import { useState } from "react"
+import { ExpressionText } from "@/components/expression-text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -130,7 +133,30 @@ export function ExpressionExamCard({
           </p>
 
           <div className="mt-5 flex items-start justify-center gap-2">
-            <p className="font-serif text-lg leading-8">{question.example}</p>
+            {/* 译文开关紧跟例句末尾：它只解释这一句，与词库行保持同一位置习惯。 */}
+            <p className="min-w-0 font-serif text-lg leading-8">
+              <ExpressionText text={question.example} phrase={question.phrase} />
+              {question.exampleTranslation ? (
+                <button
+                  type="button"
+                  aria-expanded={translationRevealed}
+                  aria-label={
+                    translationRevealed
+                      ? `收起 ${question.phrase} 的例句译文`
+                      : `显示 ${question.phrase} 的例句译文`
+                  }
+                  className="ml-1 inline-flex items-center gap-0.5 rounded-sm px-1 align-middle font-sans text-[11px] font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setTranslationRevealed((current) => !current)}
+                >
+                  {translationRevealed ? (
+                    <EyeOffIcon className="size-3" aria-hidden="true" />
+                  ) : (
+                    <EyeIcon className="size-3" aria-hidden="true" />
+                  )}
+                  {translationRevealed ? "收起" : "译文"}
+                </button>
+              ) : null}
+            </p>
             {onPlayExample ? (
               <Button
                 variant="ghost"
@@ -144,25 +170,55 @@ export function ExpressionExamCard({
             ) : null}
           </div>
 
-          {question.exampleTranslation ? (
-            <div className="mt-2 text-center">
-              <button
-                type="button"
-                aria-expanded={translationRevealed}
-                className="inline-flex items-center gap-1 rounded-sm px-1 py-0.5 text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setTranslationRevealed((current) => !current)}
-              >
-                {translationRevealed ? (
-                  <EyeOffIcon className="size-3.5" aria-hidden="true" />
-                ) : (
-                  <EyeIcon className="size-3.5" aria-hidden="true" />
-                )}
-                {translationRevealed ? "收起译文" : "显示译文"}
-              </button>
-              {translationRevealed ? (
-                <p className="mt-1 text-xs leading-6 text-muted-foreground">
-                  {question.exampleTranslation}
-                </p>
+          {translationRevealed && question.exampleTranslation ? (
+            <p className="mt-2 text-center font-sans text-xs leading-6 text-muted-foreground">
+              {question.exampleTranslation}
+            </p>
+          ) : null}
+
+          {question.examples?.length ? (
+            <div className="mt-5">
+              <p className="text-[11px] font-medium text-foreground">更多例句</p>
+              <ul className="mt-2 grid gap-2">
+                {question.examples.map((example) => (
+                  <li key={example.text} className="rounded-md bg-muted/40 px-3 py-2 text-left">
+                    <p className="font-serif text-sm leading-6">
+                      <ExpressionText text={example.text} phrase={question.phrase} />
+                    </p>
+                    {example.translation ? (
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {example.translation}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {question.usage || question.memoryTip ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {question.usage ? (
+                <div className="rounded-md border px-3 py-2 text-left">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-foreground">
+                    <CompassIcon className="size-3.5 text-primary" aria-hidden="true" />
+                    用法
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {question.usage}
+                  </p>
+                </div>
+              ) : null}
+              {question.memoryTip ? (
+                <div className="rounded-md border px-3 py-2 text-left">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-foreground">
+                    <BrainCircuitIcon className="size-3.5 text-primary" aria-hidden="true" />
+                    记忆提示
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {question.memoryTip}
+                  </p>
+                </div>
               ) : null}
             </div>
           ) : null}

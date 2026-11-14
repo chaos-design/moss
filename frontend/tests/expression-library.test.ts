@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { splitExpressionHighlights } from "@/lib/expression-highlight"
 import {
   builtInExpressionItems,
   createImportedExpressionItem,
@@ -41,6 +42,32 @@ describe("expression library", () => {
     for (const item of reviewed) {
       expect(item.exampleTranslation, item.phrase).toBeTruthy()
       expect(/[\u3400-\u9fff]/u.test(item.exampleTranslation ?? "")).toBe(true)
+    }
+  })
+
+  it("adds usage notes, memory tips and extra examples to every reviewed idiom", () => {
+    const reviewed = builtInExpressionItems.filter((item) =>
+      item.id.startsWith("builtin:reviewed:"),
+    )
+    expect(reviewed).toHaveLength(140)
+    for (const item of reviewed) {
+      expect(item.usage?.trim(), item.phrase).toBeTruthy()
+      expect(item.memoryTip?.trim(), item.phrase).toBeTruthy()
+      expect(item.examples?.length, item.phrase).toBeGreaterThanOrEqual(2)
+      for (const example of item.examples ?? []) {
+        expect(/[.!?]$/.test(example.text), `${item.phrase}: ${example.text}`).toBe(true)
+        expect(
+          /[\u3400-\u9fff]/u.test(example.translation ?? ""),
+          `${item.phrase}: ${example.text}`,
+        ).toBe(true)
+        // 拓展例句必须真的出现目标表达，否则复习时看不到高亮。
+        expect(
+          splitExpressionHighlights(example.text, item.phrase).some(
+            (segment) => segment.highlighted,
+          ),
+          `${item.phrase}: ${example.text}`,
+        ).toBe(true)
+      }
     }
   })
 

@@ -226,7 +226,14 @@ describe("ReviewWorkspace", () => {
 
     expect(screen.getByText("这道题没有答对")).toBeTruthy()
     expect(screen.getByText("正确答案：")).toBeTruthy()
-    expect(screen.getByText(reviewExpression.example)).toBeTruthy()
+    // 目标表达在例句中被高亮，文本节点会被拆开，按段落整体文本断言。
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          (element.textContent ?? "").includes(reviewExpression.example),
+      ),
+    ).toBeTruthy()
     expect(mocks.recordRecallAttempt).toHaveBeenCalledWith({
       itemId: expressionItem.id,
       elapsedMs: expect.any(Number),

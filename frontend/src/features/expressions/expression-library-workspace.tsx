@@ -15,6 +15,7 @@ import {
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useAuth } from "@/components/auth-provider"
+import { ExpressionText } from "@/components/expression-text"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import {
   AlertDialog,
@@ -636,31 +637,30 @@ function ExpressionRows({
                 <p className="mt-1 text-muted-foreground">{item.origin}</p>
               </div>
               <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-sm md:col-span-2">
-                <span className="flex items-start justify-between gap-3">
-                  <span className="min-w-0">{item.example}</span>
+                {/* 译文开关紧跟例句末尾：它只解释这一句，不再被推到整行最右侧。 */}
+                <p className="min-w-0">
+                  <ExpressionText text={item.example} phrase={item.phrase} />
                   {item.exampleTranslation ? (
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="shrink-0"
-                            aria-label={`例句译文：${item.phrase}`}
-                            aria-expanded={translationRevealed}
-                            onClick={() => toggleTranslation(item.id)}
-                          />
-                        }
-                      >
-                        {translationRevealed ? <EyeOffIcon /> : <EyeIcon />}
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {translationRevealed ? "收起译文" : "显示译文"}
-                      </TooltipContent>
-                    </Tooltip>
+                    <button
+                      type="button"
+                      aria-expanded={translationRevealed}
+                      aria-label={
+                        translationRevealed
+                          ? `收起 ${item.phrase} 的例句译文`
+                          : `显示 ${item.phrase} 的例句译文`
+                      }
+                      className="ml-1 inline-flex items-center gap-0.5 rounded-sm px-1 align-middle font-sans text-[11px] font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => toggleTranslation(item.id)}
+                    >
+                      {translationRevealed ? (
+                        <EyeOffIcon className="size-3" aria-hidden="true" />
+                      ) : (
+                        <EyeIcon className="size-3" aria-hidden="true" />
+                      )}
+                      {translationRevealed ? "收起" : "译文"}
+                    </button>
                   ) : null}
-                </span>
+                </p>
                 {translationRevealed && item.exampleTranslation ? (
                   <span className="mt-2 block font-sans text-xs leading-5 text-muted-foreground">
                     {item.exampleTranslation}

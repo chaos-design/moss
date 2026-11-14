@@ -152,6 +152,11 @@ relevant focused document in the same change.
   hints, and optional rich expression notes.
 - Rich idiom notes must include meaning, compositional reasoning, a cautiously worded origin,
   usage context, and a complete example. Mark disputed etymologies as uncertain.
+- `frontend/src/lib/idiomatic-expression-memory.ts` owns the review enrichment for the 140 reviewed
+  notes: usage notes, memory tips, and at least two extra examples with translations. Match entries
+  by `phrase`; every entry must stay aligned with the note list.
+- Expressions show the target phrase highlighted inside each example. The example translation
+  toggle sits at the end of the sentence, never at the far edge of the row.
 - `frontend/src/lib/shadowing-dialogues.ts` owns dedicated presets and generated fallback scripts.
   Every dialogue includes both roles and identifies whether it is preset, generated, or
   memory-derived.

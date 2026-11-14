@@ -1,4 +1,4 @@
-import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
+import type { ExpressionExample, ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import type { LearningMemoryItem } from "@/lib/memory"
 import { createExpressionMemoryItemId } from "@/lib/memory"
 
@@ -36,9 +36,15 @@ export type ExpressionExamQuestion = {
   hint?: string
   options: ExpressionExamOption[]
   correctOptionId: string
+  /** 目标表达原形，用于例句高亮与拓展内容。 */
+  phrase: string
   explanation: string
   example: string
   exampleTranslation?: string
+  /** 主例句之外的迁移例句，作答后展示。 */
+  examples?: readonly ExpressionExample[]
+  usage?: string
+  memoryTip?: string
 }
 
 const optionIds = ["a", "b", "c", "d"] as const
@@ -171,6 +177,19 @@ export function buildExpressionExamQuestion(input: {
     return null
   }
 
+  // 作答后要展示的内容：主例句、拓展例句、用法与记忆提示。三个题型共用同一份，
+  // 避免只在某一种题型里出现学习支架。
+  const revealed = {
+    phrase: expression.phrase,
+    example: expression.example,
+    ...(expression.exampleTranslation
+      ? { exampleTranslation: expression.exampleTranslation }
+      : {}),
+    ...(expression.examples?.length ? { examples: expression.examples } : {}),
+    ...(expression.usage ? { usage: expression.usage } : {}),
+    ...(expression.memoryTip ? { memoryTip: expression.memoryTip } : {}),
+  }
+
   if (kind === "phrase-choice") {
     return {
       kind,
@@ -180,10 +199,7 @@ export function buildExpressionExamQuestion(input: {
       options,
       correctOptionId: correctOption.id,
       explanation: expression.why,
-      example: expression.example,
-      ...(expression.exampleTranslation
-        ? { exampleTranslation: expression.exampleTranslation }
-        : {}),
+      ...revealed,
     }
   }
 
@@ -196,10 +212,7 @@ export function buildExpressionExamQuestion(input: {
       options,
       correctOptionId: correctOption.id,
       explanation: expression.why,
-      example: expression.example,
-      ...(expression.exampleTranslation
-        ? { exampleTranslation: expression.exampleTranslation }
-        : {}),
+      ...revealed,
     }
   }
 
@@ -211,9 +224,6 @@ export function buildExpressionExamQuestion(input: {
     options,
     correctOptionId: correctOption.id,
     explanation: expression.why,
-    example: expression.example,
-    ...(expression.exampleTranslation
-      ? { exampleTranslation: expression.exampleTranslation }
-      : {}),
+    ...revealed,
   }
 }

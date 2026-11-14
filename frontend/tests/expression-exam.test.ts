@@ -63,10 +63,15 @@ describe("expression exam", () => {
 
     expect(question.kind).toBe("meaning-choice")
     expect(question.prompt).toBe("keep tabs on")
+    expect(question.phrase).toBe("keep tabs on")
     expect(question.options).toHaveLength(4)
     expect(new Set(question.options.map((option) => option.label)).size).toBe(4)
     const correct = question.options.find((option) => option.id === question.correctOptionId)
     expect(correct?.label).toBe(expression.meaning)
+    // 作答后展示的学习支架与题库内容同源，三种题型共用。
+    expect(question.usage).toBe(expression.usage)
+    expect(question.memoryTip).toBe(expression.memoryTip)
+    expect(question.examples).toEqual(expression.examples)
 
     // 同一题必须稳定：重渲染不会换题或换选项顺序。
     const repeated = buildExpressionExamQuestion({ item, expression, pool, attempt: 0 })

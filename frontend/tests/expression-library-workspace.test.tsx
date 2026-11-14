@@ -359,7 +359,8 @@ describe("ExpressionLibraryWorkspace", () => {
     // 默认收起：译文尚未渲染，学习者先自己读英文例句。
     expect(screen.queryByText(translation)).toBeNull()
 
-    const eye = screen.getByRole("button", { name: "例句译文：keep tabs on" })
+    // 译文开关紧跟例句，无障碍名称按当前动作区分。
+    const eye = screen.getByRole("button", { name: "显示 keep tabs on 的例句译文" })
     expect(eye.getAttribute("aria-expanded")).toBe("false")
     fireEvent.click(eye)
 

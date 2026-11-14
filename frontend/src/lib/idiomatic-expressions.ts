@@ -1,3 +1,5 @@
+import { idiomaticExpressionMemory } from "@/lib/idiomatic-expression-memory"
+
 export type IdiomaticExpressionContext = "日常" | "职场" | "通用"
 
 /** 精讲条目可以覆盖四类词条；缺省按习语处理，兼容最早的 100 条。 */
@@ -7,6 +9,12 @@ export type IdiomaticExpressionKind =
   | "phrasal-verb"
   | "sentence-pattern"
 
+/** 复习时展示的拓展例句：英文原句与按需查看的中文译文。 */
+export type IdiomaticExpressionExample = {
+  text: string
+  translation?: string
+}
+
 export type IdiomaticExpressionNote = {
   phrase: string
   meaning: string
@@ -15,11 +23,17 @@ export type IdiomaticExpressionNote = {
   example: string
   /** 例句的中文译文：默认收起，由学习者主动展开，避免先看到中文。 */
   exampleTranslation?: string
+  /** 用法讲解：句法位置、常见搭配与语域限制。 */
+  usage?: string
+  /** 记忆提示：把表达和画面、对比或易错点绑定。 */
+  memoryTip?: string
+  /** 主例句之外的拓展例句，用于迁移与巩固。 */
+  examples?: readonly IdiomaticExpressionExample[]
   context: IdiomaticExpressionContext
   kind?: IdiomaticExpressionKind
 }
 
-export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
+const reviewedIdiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
   {
     phrase: "keep tabs on",
     meaning: "持续关注；密切留意",
@@ -1343,3 +1357,11 @@ export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     kind: "sentence-pattern",
   },
 ]
+
+// 记忆增强内容单独维护：含义、解释、来源、主例句保持稳定，用法、记忆提示与拓展例句
+// 可以独立扩充；词条身份仍由 phrase 决定，不会影响已有学习记录。
+export const idiomaticExpressionNotes: readonly IdiomaticExpressionNote[] =
+  reviewedIdiomaticExpressionNotes.map((note) => {
+    const memory = idiomaticExpressionMemory[note.phrase]
+    return memory ? { ...note, ...memory } : note
+  })
