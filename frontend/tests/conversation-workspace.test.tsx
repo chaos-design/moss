@@ -778,6 +778,8 @@ describe("conversation feedback UI", () => {
   it("renders the full voice activity effect and recording reticle", () => {
     const view = render(
       <VoiceCallPanel
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
         callSeconds={4}
         callStatus="listening"
         muted={false}
@@ -807,6 +809,8 @@ describe("conversation feedback UI", () => {
     const onToggleSpeaker = vi.fn()
     render(
       <VoiceCallPanel
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
         callSeconds={64}
         callStatus="listening"
         idlePrompt="你有任何问题吗？"

@@ -353,6 +353,8 @@ export function ConversationWorkspace({
     speakerEnabled,
     speechPlaybackState,
     speechTargetText,
+    recognitionRetryPending,
+    retryRecognition,
     stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
@@ -689,6 +691,8 @@ export function ConversationWorkspace({
               <VoiceCallPanel
                 callSeconds={callSeconds}
                 callStatus={callStatus}
+                onRetryRecognition={retryRecognition}
+                recognitionRetryPending={recognitionRetryPending}
                 idlePrompt={idlePrompt}
                 muted={muted}
                 onEndCall={endCall}
@@ -1528,20 +1532,24 @@ export function VoiceCallPanel({
   idlePrompt,
   muted,
   onEndCall,
+  onRetryRecognition,
   onToggleMute,
   onToggleSpeaker,
   speakerEnabled,
   speechRecognitionProgress,
+  recognitionRetryPending,
 }: {
   callSeconds: number
   callStatus: VoiceCallStatus
   idlePrompt?: string | null
   muted: boolean
   onEndCall: () => void
+  onRetryRecognition: () => void
   onToggleMute: () => void
   onToggleSpeaker: () => void
   speakerEnabled: boolean
   speechRecognitionProgress: number | null
+  recognitionRetryPending: boolean
 }) {
   return (
     <div className="grid min-h-16 gap-3 rounded-lg border bg-background/85 px-3 py-3 shadow-lg ring-1 ring-black/5 backdrop-blur duration-300 animate-in fade-in slide-in-from-bottom-2 min-[480px]:grid-cols-[minmax(0,1fr)_auto] min-[480px]:items-center dark:ring-white/5">
@@ -1562,6 +1570,18 @@ export function VoiceCallPanel({
                 ? `首次加载离线识别模型 ${speechRecognitionProgress}%`
                 : getVoiceCallStatusDescription(callStatus))}
           </p>
+          {recognitionRetryPending ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={onRetryRecognition}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              重试识别
+            </Button>
+          ) : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center justify-center gap-2">

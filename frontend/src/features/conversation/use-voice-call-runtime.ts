@@ -243,6 +243,8 @@ export function useVoiceCallRuntime({
     loadingProgress: speechRecognitionProgress,
     pause: pauseStreamingAsr,
     prepare: prepareStreamingAsr,
+    recognitionRetryPending,
+    retryRecognition: retryFailedRecognition,
     start: startStreamingRecognition,
     stop: stopStreamingAsr,
     transport: asrTransport,
@@ -475,6 +477,12 @@ export function useVoiceCallRuntime({
     },
     [dispatch, playVoicePreview, ttsConfig.engine, ttsTransport],
   )
+
+  const retryRecognition = useCallback(() => {
+    listeningRef.current = true
+    shouldListenRef.current = true
+    retryFailedRecognition()
+  }, [retryFailedRecognition])
 
   const startCall = useCallback(async () => {
     if (callActiveRef.current) {
@@ -736,6 +744,8 @@ export function useVoiceCallRuntime({
     speakingRef,
     speechPlaybackState,
     speechTargetText,
+    recognitionRetryPending,
+    retryRecognition,
     stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,

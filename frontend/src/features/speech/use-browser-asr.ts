@@ -11,6 +11,7 @@ import { resamplePcm } from "@/features/speech/use-streaming-asr"
 import { encodeWavBlob } from "@/lib/audio-wav"
 import { normalizeSpeechTranscript } from "@/lib/call-runtime"
 import {
+  isRetryableRecognitionFailure,
   SpeechApiClientError,
   supportsBrowserSpeechRecognition,
   transcribeSpeechAudio,
@@ -76,6 +77,9 @@ function describeRecognitionError(error: string) {
 // 25s 上限约 800KB，远低于网关的音频字节上限。
 const apiUploadSampleRate = 16_000
 const apiMeterIntervalMs = 100
+// 5xx / 网络瞬断自动重试：首次失败后再试 2 次，退避 700ms / 1400ms。
+const recognitionAttempts = 3
+const recognitionRetryDelayMs = 700
 
 export type BrowserAsrOptions = {
   endpoint: SpeechEndpoint
@@ -126,6 +130,9 @@ export function useBrowserAsr({
   const pcmFramesRef = useRef<Float32Array[]>([])
   const pcmFrameCountRef = useRef(0)
   const capturePausedRef = useRef(false)
+  // 重试耗尽后保留的失败录音：亮出重试按钮，等待学习者手动重试。
+  const failedUploadRef = useRef<Blob | null>(null)
+  const [recognitionRetryPending, setRecognitionRetryPending] = useState(false)
   const onErrorRef = useRef(onError)
   const onPartialRef = useRef(onPartial)
   const onProcessingChangeRef = useRef(onProcessingChange)
@@ -189,6 +196,8 @@ export function useBrowserAsr({
     streamRef.current = null
     setProcessing(false)
     onPartialRef.current("")
+    setRecognitionRetryPending(false)
+    failedUploadRef.current = null
   }, [setProcessing])
 
   const uploadRecordedAudio = useCallback(
@@ -199,26 +208,46 @@ export function useBrowserAsr({
       const requestId = requestIdRef.current
       setProcessing(true)
       try {
-        const { text } = await transcribeSpeechAudio({
-          audio,
-          endpoint: endpointRef.current,
-        })
-        if (requestId !== requestIdRef.current || !text) {
-          return
+        // 5xx / 网络失败自动重试两次（线性退避）；4xx 是参数或凭据问题，重试无意义。
+        for (let attempt = 1; attempt <= recognitionAttempts; attempt += 1) {
+          try {
+            const { text } = await transcribeSpeechAudio({
+              audio,
+              endpoint: endpointRef.current,
+            })
+            if (requestId !== requestIdRef.current || !text) {
+              return
+            }
+            onTranscriptRef.current(text)
+            return
+          } catch (error) {
+            if (requestId !== requestIdRef.current) {
+              return
+            }
+            if (error instanceof DOMException && error.name === "AbortError") {
+              return
+            }
+            const failure =
+              error instanceof SpeechApiClientError || error instanceof Error
+                ? error
+                : new SpeechApiClientError("语音识别接口暂时不可用")
+            if (!isRetryableRecognitionFailure(failure)) {
+              onErrorRef.current(failure)
+              return
+            }
+            if (attempt >= recognitionAttempts) {
+              // 重试耗尽：结束本次识别——暂停采集，不再往失败回合里积累音频；
+              // 保留录音并亮出重试按钮，等待学习者手动重试。
+              failedUploadRef.current = audio
+              setRecognitionRetryPending(true)
+              onErrorRef.current(failure)
+              return
+            }
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, recognitionRetryDelayMs * attempt),
+            )
+          }
         }
-        onTranscriptRef.current(text)
-      } catch (error) {
-        if (requestId !== requestIdRef.current) {
-          return
-        }
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return
-        }
-        onErrorRef.current(
-          error instanceof SpeechApiClientError || error instanceof Error
-            ? error
-            : new Error("语音识别接口暂时不可用"),
-        )
       } finally {
         if (requestId === requestIdRef.current) {
           setProcessing(false)
@@ -228,6 +257,8 @@ export function useBrowserAsr({
     [setProcessing],
   )
 
+  // 重试按钮入口：把上次失败的录音重新上传。成功后恢复采集继续下一轮；
+  // 仍失败则按钮保留，采集保持暂停，可以反复重试。
   // VAD 断句用：只快照已积累的 PCM 并编码上传，采集保持运行，监听不中断；
   // 上传与提交期间用户继续说话的内容会进入下一个快照。
   const flushRecordedAudio = useCallback(async () => {
@@ -248,6 +279,50 @@ export function useBrowserAsr({
     const resampled = resamplePcm(samples, graph.context.sampleRate, apiUploadSampleRate)
     await uploadRecordedAudio(encodeWavBlob(resampled, apiUploadSampleRate))
   }, [uploadRecordedAudio])
+
+  const armFeedLoop = useCallback(() => {
+    if (turnFeedTimerRef.current !== null) {
+      return
+    }
+    turnFeedTimerRef.current = window.setInterval(() => {
+      const currentAnalyser = turnAnalyserRef.current
+      const tracker = turnTrackerRef.current
+      const buffer = turnMeterBufferRef.current
+      if (!currentAnalyser || !tracker || !buffer) {
+        return
+      }
+      currentAnalyser.getByteTimeDomainData(buffer)
+      tracker.feed(calculateByteRms(buffer), apiMeterIntervalMs)
+    }, apiMeterIntervalMs)
+  }, [])
+
+  const armCaptureTracker = useCallback(() => {
+    turnTrackerRef.current = createApiAsrTurnTracker({
+      onSpeechStart: () => {
+        onSpeechStartRef.current?.()
+      },
+      onSpeechEnd: () => {
+        void flushRecordedAudio()
+      },
+    })
+    armFeedLoop()
+  }, [armFeedLoop, flushRecordedAudio])
+
+  // 播报期间的打断监听：与采集共用同一张 Web Audio 图，但用高倍阈值——扬声器回声
+  // 经噪声底自适应后远低于直接说话的能量，只有真实发言能触发 speech-start；
+  // 监听不产生转写与上传，侦测到打断后由运行时立即恢复完整采集。
+  const armBargeInMonitor = useCallback(() => {
+    if (!turnAnalyserRef.current || turnFeedTimerRef.current !== null) {
+      return
+    }
+    turnTrackerRef.current = createApiAsrTurnTracker({
+      thresholdBoost: apiBargeInThresholdBoost,
+      onSpeechStart: () => {
+        onSpeechStartRef.current?.()
+      },
+    })
+    armFeedLoop()
+  }, [])
 
   const start = useCallback(
     async (stream?: MediaStream) => {
@@ -288,26 +363,8 @@ export function useBrowserAsr({
 
         audioGraphRef.current = { context: audioContext, source, processor, silentGain }
         turnAnalyserRef.current = analyser
-        const meterBuffer = new Uint8Array(new ArrayBuffer(analyser.fftSize))
-        turnMeterBufferRef.current = meterBuffer
-        turnTrackerRef.current = createApiAsrTurnTracker({
-          onSpeechStart: () => {
-            onSpeechStartRef.current?.()
-          },
-          onSpeechEnd: () => {
-            void flushRecordedAudio()
-          },
-        })
-        turnFeedTimerRef.current = window.setInterval(() => {
-          const currentAnalyser = turnAnalyserRef.current
-          const tracker = turnTrackerRef.current
-          const buffer = turnMeterBufferRef.current
-          if (!currentAnalyser || !tracker || !buffer) {
-            return
-          }
-          currentAnalyser.getByteTimeDomainData(buffer)
-          tracker.feed(calculateByteRms(buffer), apiMeterIntervalMs)
-        }, apiMeterIntervalMs)
+        turnMeterBufferRef.current = new Uint8Array(new ArrayBuffer(analyser.fftSize))
+        armCaptureTracker()
         return
       }
 
@@ -373,33 +430,25 @@ export function useBrowserAsr({
         throw error instanceof Error ? error : new Error("无法启动浏览器语音识别")
       }
     },
-    [flushRecordedAudio, setProcessing, teardown],
+    [armCaptureTracker, flushRecordedAudio, setProcessing, teardown],
   )
 
-  // 播报期间的打断监听：与采集共用同一张 Web Audio 图，但用高倍阈值——扬声器回声
-  // 经噪声底自适应后远低于直接说话的能量，只有真实发言能触发 speech-start；
-  // 监听不产生转写与上传，侦测到打断后由运行时立即恢复完整采集。
-  const armBargeInMonitor = useCallback(() => {
-    if (!turnAnalyserRef.current || turnFeedTimerRef.current !== null) {
+  const retryRecognition = useCallback(() => {
+    const audio = failedUploadRef.current
+    if (!audio) {
       return
     }
-    turnTrackerRef.current = createApiAsrTurnTracker({
-      thresholdBoost: apiBargeInThresholdBoost,
-      onSpeechStart: () => {
-        onSpeechStartRef.current?.()
-      },
-    })
-    turnFeedTimerRef.current = window.setInterval(() => {
-      const currentAnalyser = turnAnalyserRef.current
-      const tracker = turnTrackerRef.current
-      const buffer = turnMeterBufferRef.current
-      if (!currentAnalyser || !tracker || !buffer) {
-        return
+    failedUploadRef.current = null
+    setRecognitionRetryPending(false)
+    void uploadRecordedAudio(audio).finally(() => {
+      // 重试成功：恢复采集继续下一轮；仍失败：按钮保留，采集保持暂停。
+      capturePausedRef.current = failedUploadRef.current !== null
+      if (!capturePausedRef.current) {
+        armCaptureTracker()
+        armFeedLoop()
       }
-      currentAnalyser.getByteTimeDomainData(buffer)
-      tracker.feed(calculateByteRms(buffer), apiMeterIntervalMs)
-    }, apiMeterIntervalMs)
-  }, [])
+    })
+  }, [armCaptureTracker, armFeedLoop, uploadRecordedAudio])
 
   const pause = useCallback(() => {
     if (endpointRef.current.transport !== "api") {
@@ -446,5 +495,13 @@ export function useBrowserAsr({
     return stop
   }, [endpoint.transport, stop])
 
-  return { available, pause, prepare, start, stop }
+  return {
+    available,
+    pause,
+    prepare,
+    recognitionRetryPending,
+    retryRecognition,
+    start,
+    stop,
+  }
 }

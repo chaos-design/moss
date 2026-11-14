@@ -87,6 +87,8 @@ export function useAsrSession(options: AsrSessionOptions) {
 
   return {
     available: (transport === "local" ? streaming : browser).available,
+    recognitionRetryPending: browser.recognitionRetryPending,
+    retryRecognition: browser.retryRecognition,
     loadingProgress: transport === "local" ? streaming.loadingProgress : null,
     pause: transport === "local" ? streaming.pause : browser.pause,
     prepare,
