@@ -230,24 +230,27 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
 
 ## GET `/api/speech/services`
 
-返回四个本机回环语音服务的探活结果，供设置页显示「在线 / 未启动」并驱动一键接入。地址
-固定来自 `speech-rules.json`，不接受任何请求参数，因此不会被用作任意地址探测。
+返回四个本机回环语音服务的探活结果，供设置页显示「在线 / 已启动·缺密钥 / 未启动」并驱动
+一键接入。地址固定来自 `speech-rules.json`，不接受任何请求参数，因此不会被用作任意地址探测。
 
 ```json
 {
   "data": {
     "checkedAt": 1763035200000,
     "services": [
-      { "id": "moss-tts", "label": "本机 TTS 网关", "kinds": ["tts"], "ready": true, "latencyMs": 3 },
-      { "id": "moss-asr", "label": "本机 ASR 服务", "kinds": ["asr"], "ready": false, "latencyMs": 1 },
-      { "id": "local-api", "label": "ElevenLabs 适配器", "kinds": ["asr", "tts"], "ready": true, "latencyMs": 2 },
-      { "id": "fish-audio", "label": "Fish Audio 适配器", "kinds": ["asr", "tts"], "ready": false, "latencyMs": 1 }
+      { "id": "moss-tts", "label": "本机 TTS 网关", "kinds": ["tts"], "ready": true, "state": "ready", "latencyMs": 3 },
+      { "id": "moss-asr", "label": "本机 ASR 服务", "kinds": ["asr"], "ready": false, "state": "down", "latencyMs": 1 },
+      { "id": "local-api", "label": "ElevenLabs 适配器", "kinds": ["asr", "tts"], "ready": true, "state": "ready", "latencyMs": 2 },
+      { "id": "fish-audio", "label": "Fish Audio 适配器", "kinds": ["asr", "tts"], "ready": false, "state": "unconfigured", "latencyMs": 1 }
     ]
   }
 }
 ```
 
-- 单次探活超时 900ms，四个服务并行；任何一个失败只把该项标记为 `ready: false`。
+- 单次探活超时 900ms，四个服务并行。
+- `state` 三态：`ready`（2xx）；`unconfigured`（收到响应但非 2xx，且 body 带
+  `configured: false`，即适配器在线但缺上游密钥）；`down`（探活失败或其余非 2xx）。
+  二值 `ready` 字段保留兼容，仅当 `state === "ready"` 时为 `true`。
 - 设置页首屏由服务端渲染时直接调用同一探测函数并注入结果；本接口供「重新检测」按钮
   强制刷新，响应 `Cache-Control: no-store`。
 

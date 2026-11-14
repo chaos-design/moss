@@ -10,11 +10,19 @@ import { speechRules } from "@/lib/speech-rules"
 
 export type SpeechServiceKind = "asr" | "tts"
 
+/**
+ * ready：服务在线且已配置；unconfigured：端口在线但适配器缺上游密钥（/health 返回
+ * 503 且 `configured:false`）；down：未启动或探活失败。把「已启动但没配密钥」从
+ * 「未启动」里拆出来，避免学习者在密钥没配时反复重启服务。
+ */
+export type LocalSpeechServiceState = "ready" | "unconfigured" | "down"
+
 export type LocalSpeechServiceProbe = {
   id: string
   label: string
   kinds: SpeechServiceKind[]
   ready: boolean
+  state: LocalSpeechServiceState
   latencyMs: number
 }
 
@@ -70,9 +78,16 @@ async function probe(target: ProbeTarget): Promise<LocalSpeechServiceProbe> {
       cache: "no-store",
       signal: AbortSignal.timeout(probeTimeoutMs),
     })
-    return { ...target, ready: response.ok, latencyMs: Date.now() - startedAt }
+    if (response.ok) {
+      return { ...target, ready: true, state: "ready", latencyMs: Date.now() - startedAt }
+    }
+    // 适配器缺密钥时 /health 仍在线，只是返回 503 且 body 带 configured:false；
+    // 只有这种响应才算「已启动但缺密钥」，其余非 2xx 仍按未启动处理。
+    const body = (await response.json().catch(() => null)) as { configured?: unknown } | null
+    const state: LocalSpeechServiceState = body?.configured === false ? "unconfigured" : "down"
+    return { ...target, ready: false, state, latencyMs: Date.now() - startedAt }
   } catch {
-    return { ...target, ready: false, latencyMs: Date.now() - startedAt }
+    return { ...target, ready: false, state: "down", latencyMs: Date.now() - startedAt }
   }
 }
 

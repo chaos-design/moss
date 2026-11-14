@@ -116,6 +116,75 @@ class FishAudioClientTest(unittest.TestCase):
             "9a9cf47702da476aa4629e2506d4a857",
         )
 
+    def test_retries_without_the_reference_id_when_the_voice_is_rejected(self) -> None:
+        """无效 reference_id（手误或音色已删除）→ 去掉音色兜底重试，由内置默认音色接管。"""
+        requests: list[httpx.Request] = []
+        bodies: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            bodies.append(json.loads(request.content))
+            if len(requests) == 1:
+                return httpx.Response(
+                    404,
+                    json={
+                        "detail": {
+                            "code": "reference_not_found",
+                            "message": "reference not found",
+                        }
+                    },
+                )
+            return httpx.Response(
+                200,
+                content=b"ID3",
+                headers={"content-type": "audio/mpeg"},
+            )
+
+        client = FishAudioClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        audio, content_type = client.synthesize(
+            text="Hello.",
+            voice="deleted-voice-reference",
+            model="s2.1-pro-free",
+            response_format="mp3",
+            speed=1.0,
+        )
+
+        self.assertEqual(audio, b"ID3")
+        self.assertEqual(content_type, "audio/mpeg")
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(bodies[0]["reference_id"], "deleted-voice-reference")
+        self.assertNotIn("reference_id", bodies[1])
+
+    def test_does_not_retry_without_a_reference_id_when_none_was_sent(self) -> None:
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                400,
+                json={"detail": {"code": "bad_request", "message": "bad request"}},
+            )
+
+        client = FishAudioClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        with self.assertRaises(FishAudioServiceError) as context:
+            client.synthesize(
+                text="Hello.",
+                voice="",
+                model="s2.1-pro-free",
+                response_format="mp3",
+                speed=1.0,
+            )
+
+        self.assertEqual(context.exception.status, 400)
+        self.assertEqual(context.exception.code, "fishaudio_request_rejected")
+        self.assertEqual(len(requests), 1)
+
     def test_maps_supported_output_formats(self) -> None:
         requests: list[httpx.Request] = []
 
@@ -238,7 +307,7 @@ class FishAudioClientTest(unittest.TestCase):
                 speed=1.0,
             )
 
-        self.assertEqual(context.exception.status, 502)
+        self.assertEqual(context.exception.status, 503)
         self.assertEqual(context.exception.code, "fishaudio_unreachable")
         self.assertNotIn("test-key", context.exception.message)
 
@@ -283,11 +352,11 @@ class FishAudioClientTest(unittest.TestCase):
 
     def test_maps_provider_errors_to_normalized_codes(self) -> None:
         cases = [
-            (401, 502, "fishaudio_unauthorized"),
-            (403, 502, "fishaudio_unauthorized"),
-            (402, 502, "fishaudio_payment_required"),
+            (401, 401, "fishaudio_unauthorized"),
+            (403, 401, "fishaudio_unauthorized"),
+            (402, 402, "fishaudio_payment_required"),
             (429, 429, "fishaudio_rate_limited"),
-            (422, 502, "fishaudio_request_rejected"),
+            (422, 422, "fishaudio_request_rejected"),
             (500, 502, "fishaudio_upstream_error"),
         ]
         for provider_status, expected_status, expected_code in cases:
@@ -312,6 +381,41 @@ class FishAudioClientTest(unittest.TestCase):
                 self.assertEqual(context.exception.code, expected_code)
                 self.assertNotIn("provider body", context.exception.message)
                 self.assertNotIn("test-key", context.exception.message)
+
+    def test_payment_required_hint_matches_service(self) -> None:
+        # s2.1-pro-free 只是合成的免费模型：402 提示按服务区分，识别侧不误导。
+        client = FishAudioClient(
+            create_settings(),
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(402, json={"detail": "provider body"})
+            ),
+        )
+        with self.assertRaises(FishAudioServiceError) as context:
+            client.synthesize(
+                text="Hello.",
+                voice="alloy",
+                model="s2.1-pro-free",
+                response_format="mp3",
+                speed=1.0,
+            )
+        self.assertIn("s2.1-pro-free", context.exception.message)
+
+        asr_client = FishAudioClient(
+            create_settings(),
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(402, json={"detail": "provider body"})
+            ),
+        )
+        with self.assertRaises(FishAudioServiceError) as context:
+            asr_client.transcribe(
+                audio=b"audio",
+                filename="test.wav",
+                content_type="audio/wav",
+                model="transcribe-1-pro",
+                language="en",
+            )
+        self.assertNotIn("s2.1-pro-free", context.exception.message)
+        self.assertIn("识别", context.exception.message)
 
 
 if __name__ == "__main__":

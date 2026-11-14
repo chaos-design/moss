@@ -27,7 +27,7 @@
 
 | 类别 | 值 | 说明 |
 | --- | --- | --- |
-| 本机接口 TTS | `eleven_v4` | `MOSS_ELEVENLABS_TTS_MODEL` / `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` |
+| 本机接口 TTS | `eleven_flash_v2_5`（默认，成本最低、免费层可用） | `MOSS_ELEVENLABS_TTS_MODEL` / `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` |
 | 本机接口 ASR | `scribe_v2` | `MOSS_ELEVENLABS_ASR_MODEL` / `NEXT_PUBLIC_ASR_LOCAL_API_MODEL` |
 | Fish Audio TTS | `s2.1-pro-free` | `MOSS_FISHAUDIO_TTS_MODEL` / `NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL` |
 | Fish Audio ASR | `transcribe-1-pro` | `MOSS_FISHAUDIO_ASR_MODEL` / `NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL` |
@@ -36,16 +36,28 @@
 | ASR 引擎 | `qwen3-asr`、`sensevoice` | `MOSS_ASR_ENGINE` |
 | 真正的本地权重 | `kokoro-v1.0.onnx`、`kokoro-v1.1-zh.onnx`、`Audio8/Audio8-TTS-Preview-0.6b`、`CosyVoice-300M-SFT`、`Qwen/Qwen3-ASR-1.7B`、`iic/SenseVoiceSmall` | 由各 `setup.mjs` 下载到 `models/` |
 
+设置页对 5583/5584 提供模型快捷按钮，来自规则表 `models.localApiTtsOptions`
+（`eleven_flash_v2_5` / `eleven_v4` / `eleven_multilingual_v2` / `eleven_v3`，2026-11-14
+均在免费层验证可用）、`localApiAsrOptions`、`fishAudioTtsOptions`、`fishAudioAsrOptions`。
+
 > 「本机接口」(5583/5584) 是 loopback 代理，不加载本地权重；它们把 Moss 的 OpenAI 兼容契约
 > 翻译成 ElevenLabs / Fish Audio 云端 API。需要离线本地模型时应使用 5578 网关或浏览器引擎。
 
 ## 3. 音色、音频格式与速度
 
-- 默认音色 `JBFqnCBsd6RMkjVDRZzb`；`alloy`/`echo`/`fable`/`onyx`/`nova`/`shimmer`
+- 默认音色 `JBFqnCBsd6RMkjVDRZzb`（George）；`alloy`/`echo`/`fable`/`onyx`/`nova`/`shimmer`
   六个 OpenAI 音色在 5583 适配器里映射到 ElevenLabs voice ID，其余值按原样当作 voice ID。
+  规则表另附 `voice.premadeElevenLabs` 官方预置音色表（george/adam/bill/brian/callum/emma/
+  jessica/laura/liam/lily/matilda/river/roger），2026-11-14 用免费层合成请求逐一验证；
+  `nova`/`shimmer` 原指向的音色（Rachel 等）已转为付费专属（402 paid_plan_required），
+  现改映射到仍免费的 Laura / Lily。设置页对 5583 显示预置音色快捷按钮。
 - Fish Audio（5584）的音色是 voice model ID（reference_id）：六个 OpenAI 别名统一映射为
   空串 = 省略 `reference_id`、使用 Fish Audio 内置默认音色；其余非空值按原样作为
   reference_id 转发。
+- **兜底默认参数**：5583 在上游拒绝时自动重试一次——`404 voice_not_found` 改用默认音色，
+  `400 bad_request` 且消息含 "invalid ID" 改用默认模型；5584 在 reference_id 被上游
+  400/404/422 拒绝时去掉 `reference_id` 重试一次。兜底仍失败时保留上游状态码与错误码，
+  `voice_not_found` 会提示「可清空音色直接使用服务端默认音色」。
 - 默认输出格式 `mp3`。前端路由允许 `mp3/opus/aac/flac/wav/pcm`，但适配器只实现了
   `mp3/opus/pcm/wav`；`aac`/`flac` 会返回 `400 unsupported_format`，不会被伪装成目标格式。
 
@@ -168,3 +180,41 @@ Fish Audio（5584）原生接受 `mp3`/`opus`/`pcm`/`wav` 格式名，转发时�
 | `backend/services/fishaudio/start.mjs` | 把规则默认值注入 Python 进程 |
 | `backend/services/fishaudio/rules.py` | Python 侧格式/音色/速度/测试默认值 |
 | `backend/services/fishaudio/app.py` | `/v1/audio/speech/test` 探针 |
+
+## 9. 配置清单与故障排查
+
+设置页按接入方式只要求填写真正需要的字段；卡片内的「配置清单」与此表一致。
+
+| 接入方式 | 必填 | 可选 | 不需要 |
+| --- | --- | --- | --- |
+| 本机服务（`local`） | 无。ASR 先运行 `pnpm asr:start`（默认 `ws://127.0.0.1:5580/v1/asr/stream`），TTS 先运行 `pnpm tts:start`（默认 `http://127.0.0.1:5578`） | 识别引擎、本机音色 | 接口地址、API 密钥 |
+| HTTP API（`api`） | 接口根地址，如 `http://127.0.0.1:5583/v1` 或 `https://api.openai.com/v1` | 模型、API 密钥、音色 | 端口与启动命令 |
+| 浏览器引擎（`browser`） | 无 | 无 | 接口地址、密钥、本机服务 |
+
+`local` 接入不经过 `/api/speech/*`：ASR 走 WebSocket，TTS 走 `5578` 网关；服务未启动时会
+按既有规则回退浏览器语音。只有 `api` 接入的「测试接口」会真正发起合成或识别请求；
+`local` 接入的按钮是「检测本机服务」，只探活端口，不消耗上游额度。
+
+### 502 的定位顺序
+
+1. `502 speech_endpoint_unreachable`：本站连不上填写的地址。先确认端口在监听
+   （`lsof -nP -iTCP:5583 -sTCP:LISTEN`），本机适配器分别用 `pnpm elevenlabs:start`（5583）、
+   `pnpm fishaudio:start`（5584）、`pnpm tts:start`（5578）、`pnpm asr:start`（5580）启动。
+   地址填根地址即可，`/audio/speech` 后缀由系统追加且自动去重。
+2. `401 speech_credentials_invalid`：适配器已经连上上游，但服务端密钥无效。改
+   `backend/services/<adapter>/.env.local` 里的 `ELEVENLABS_API_KEY` / `FISH_API_KEY`，
+   **不要**填到浏览器「API 密钥」；浏览器字段只承载可选的 `MOSS_*_ACCESS_TOKEN`。
+3. `402 speech_payment_required`：上游余额不足或模型需要付费，改用免费模型（如
+   `s2.1-pro-free`）或充值。
+4. `503 speech_unavailable`：上游或代理不可达。检查网络、代理白名单与
+   `MOSS_*_BASE_URL`；本机适配器的 `fishaudio_unreachable` 属于这一类。
+5. `400 speech_request_rejected`：模型、音色或音频格式不被接受，按错误体里的上游码调整。
+
+适配器不再把凭据、余额、参数、限流问题统一包装成 502：上游状态码会原样保留
+（401/402/429/4xx），只有上游 5xx 或无效音频才返回 502，网络不可达返回 503，超时返回 504。
+
+「本机服务」徽章与一键接入圆点按探活结果分三态：`ready`（`/health` 200）、
+`unconfigured`（503 且 body 带 `configured:false`，显示「已启动·缺密钥」并提示对应
+`.env.local` 文件）、`down`（探活失败，显示「未启动」）。`speech_endpoint_unreachable`
+的提示会按端口号给出对应启动命令（5583 → `pnpm elevenlabs:start`，5584 →
+`pnpm fishaudio:start`，5580 → `pnpm asr:start`，5578 → `pnpm tts:start`）。

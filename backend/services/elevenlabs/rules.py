@@ -17,14 +17,29 @@ SUPPORTED_RESPONSE_FORMATS: dict[str, tuple[str, str]] = {
     "wav": ("wav_44100", "audio/wav"),
 }
 
-# OpenAI 音色名 -> ElevenLabs voice ID；其余值按原样当作 voice ID。
+# OpenAI 音色名 + ElevenLabs 官方预置音色名 -> voice ID；其余值按原样当作 voice ID。
+# nova/shimmer 原指向 Rachel/shimmer 目标音色，2026-11-14 实测已转为付费专属（402），
+# 改映射到仍免费的 Laura / Lily；premade 列表逐一用免费层合成请求验证过可用。
 VOICE_ALIASES: dict[str, str] = {
     "alloy": "JBFqnCBsd6RMkjVDRZzb",
     "echo": "onwK4e9ZLuTAKqWW03F9",
     "fable": "EXAVITQu4vr4xnSDxMaL",
     "onyx": "pNInz6obpgDQGcFmaJgB",
-    "nova": "21m00Tcm4TlvDq8ikWAM",
-    "shimmer": "AZnzlk1XvdvUeBnXmlld",
+    "nova": "FGY2WhTYpPnrIDTdsKH5",
+    "shimmer": "pFZP5JQG7iQjIQuC4Bku",
+    "george": "JBFqnCBsd6RMkjVDRZzb",
+    "adam": "pNInz6obpgDQGcFmaJgB",
+    "bill": "pqHfZKP75CvOlQylNhV4",
+    "brian": "nPczCjzI2devNBz1zQrb",
+    "callum": "N2lVS1w4EtoT3dr4eOWO",
+    "emma": "EXAVITQu4vr4xnSDxMaL",
+    "jessica": "cgSgspJ2msm6clMCkdW9",
+    "laura": "FGY2WhTYpPnrIDTdsKH5",
+    "liam": "TX3LPaxmHKxFdv7VOQHJ",
+    "lily": "pFZP5JQG7iQjIQuC4Bku",
+    "matilda": "XrExE9yKIg1WjnnlVkGX",
+    "river": "SAz9YHcvj6GT2YYXdXww",
+    "roger": "CwhRBWXzGAHq8TQ4Fs17",
 }
 
 DEFAULT_RESPONSE_FORMAT = "mp3"

@@ -40,6 +40,30 @@ export class SpeechGatewayError extends Error {
   }
 }
 
+// 「无法连接」的提示要指出该启动哪个服务：本机端口与 pnpm 命令一一对应，
+// 端口号取自规则表，避免提示文案与文档漂移。非本机地址返回空串，提示保持通用。
+function localStartCommand(endpoint: string): string {
+  let port = ""
+  try {
+    port = new URL(endpoint).port
+  } catch {
+    return ""
+  }
+  if (port === String(speechRules.services.localApi.port)) {
+    return "pnpm elevenlabs:start"
+  }
+  if (port === String(speechRules.services.fishAudio.port)) {
+    return "pnpm fishaudio:start"
+  }
+  if (port === String(speechRules.services.asr.port)) {
+    return "pnpm asr:start"
+  }
+  if (port === String(speechRules.services.ttsGateway.port)) {
+    return "pnpm tts:start"
+  }
+  return ""
+}
+
 // Browser-supplied endpoints reach the server as request payloads, so they follow the same policy
 // as browser-supplied inference endpoints: HTTPS remote hosts on the production allowlist, plus
 // loopback hosts for a local ASR/TTS gateway. Loopback works in production builds too, so a
@@ -259,9 +283,12 @@ export async function transcribeSpeechAudio(input: {
       signal: AbortSignal.timeout(speechRequestTimeoutMs),
     })
   } catch {
+    const startCommand = localStartCommand(input.endpoint.endpoint)
     throw new SpeechGatewayError(
       "speech_endpoint_unreachable",
-      "无法连接语音识别接口，请确认服务已启动或改用其他识别方式。",
+      `无法连接语音识别接口（${input.endpoint.endpoint}），请确认服务已启动${
+        startCommand ? `；本机服务先运行 ${startCommand}` : ""
+      }，或改用浏览器识别。`,
       502,
       true,
     )
@@ -311,9 +338,12 @@ export async function synthesizeSpeechAudio(input: {
       signal: AbortSignal.timeout(speechRequestTimeoutMs),
     })
   } catch {
+    const startCommand = localStartCommand(input.endpoint.endpoint)
     throw new SpeechGatewayError(
       "speech_endpoint_unreachable",
-      "无法连接语音合成接口，请确认服务已启动或改用系统语音。",
+      `无法连接语音合成接口（${input.endpoint.endpoint}），请确认服务已启动${
+        startCommand ? `；本机服务先运行 ${startCommand}` : ""
+      }，或改用浏览器合成。`,
       502,
       true,
     )

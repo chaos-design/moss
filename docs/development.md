@@ -370,12 +370,20 @@ Next.js，因为这些变量会在构建阶段内联。
 - `speech_credentials_invalid`（401）：适配器进程里的 `ELEVENLABS_API_KEY` / `FISH_API_KEY`
   无效。ElevenLabs 只接受 `sk_` 开头、创建时展示一次的密钥，把 Key ID 填进环境变量会得到
   `invalid_api_key`。
-- `speech_payment_required`（402）：Fish Audio 当前模型需要充值，可换 `s2.1-pro-free`。
+- `speech_payment_required`（402）：Fish Audio 当前模型需要充值；合成可换免费模型
+  `s2.1-pro-free`，识别（`transcribe-1-pro`）暂无免费模型，只能充值或改用其他识别服务。
 - `speech_unavailable`（503）：出口网络或代理无法访问上游域名。
-- `speech_request_rejected`（400）：模型、音色或输出格式不被上游接受。
+- `speech_request_rejected`（400/404）：模型、音色或输出格式不被上游接受。适配器先兜底：
+  5583 无效音色改用默认音色重试、无效模型改用默认模型重试；5584 无效 reference_id 去掉
+  音色重试。兜底仍失败时错误带上游码，`voice_not_found` 提示清空音色用默认音色。
 
 适配器改造后必须重启进程才会生效：`pnpm elevenlabs:start` / `pnpm fishaudio:start`。
 旧进程会继续用改造前的错误码，看起来就像「改了没作用」。
+
+设置页「本机服务」徽章与一键接入圆点按探活结果分三态：在线（`/health` 200）、
+已启动·缺密钥（503 且 body 带 `configured:false`，直接提示该改哪个 `.env.local`）、
+未启动（探活失败）。看到「已启动·缺密钥」时不要再排查端口，直接补密钥并重启适配器；
+「检测本机服务」按钮在这类机器上也不再误报「均未启动」。
 
 ### ASR 能连接但没有 final
 

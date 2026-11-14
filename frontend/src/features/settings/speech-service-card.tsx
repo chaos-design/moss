@@ -59,7 +59,7 @@ import {
   speechTransports,
 } from "@/lib/speech-config"
 import { speechRules, testSynthesisDefaults } from "@/lib/speech-rules"
-import type { LocalSpeechServiceProbe } from "@/lib/speech-services"
+import type { LocalSpeechServiceProbe, LocalSpeechServiceState } from "@/lib/speech-services"
 import { getSelectedVoiceValue, ttsVoiceOptions } from "@/lib/tts-config"
 import { cn } from "@/lib/utils"
 
@@ -107,21 +107,24 @@ function useLocalServiceProbes(initialProbes: readonly LocalSpeechServiceProbe[]
   const [probes, setProbes] = useState<LocalSpeechServiceProbe[]>([...initialProbes])
   const [checking, setChecking] = useState(false)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<LocalSpeechServiceProbe[] | null> => {
     setChecking(true)
     try {
       const response = await fetch("/api/speech/services", { cache: "no-store" })
       if (!response.ok) {
-        return
+        return null
       }
       const payload = (await response.json()) as {
         data?: { services?: LocalSpeechServiceProbe[] }
       }
       if (Array.isArray(payload.data?.services)) {
         setProbes(payload.data.services)
+        return payload.data.services
       }
+      return null
     } catch {
       // 保留上一次结果，界面仍可手动配置。
+      return null
     } finally {
       setChecking(false)
     }
@@ -138,15 +141,25 @@ function describeAudioSize(bytes: number | undefined) {
 }
 
 // 502 多来自上游：把常见原因转成可执行的下一步，同时保留原始错误码。
+// 凭据/余额类失败若能识别出本机适配器，直接指出密钥所在文件，省去在文档里翻找。
 function describeSpeechFailureHint(message: string) {
-  if (/unauthorized|invalid_api_key|invalid token/i.test(message)) {
+  if (/unauthorized|invalid_api_key|invalid token|凭据无效/.test(message)) {
+    if (/elevenlabs/i.test(message)) {
+      return " 本机适配器密钥保存在 backend/services/elevenlabs/.env.local（ELEVENLABS_API_KEY，需 sk_ 开头的 Secret Key），修改后重启适配器。"
+    }
+    if (/fishaudio/i.test(message)) {
+      return " 本机适配器密钥保存在 backend/services/fishaudio/.env.local（FISH_API_KEY），修改后重启适配器。"
+    }
     return " 上游凭据无效，请检查对应服务端的 API Key 是否完整有效。"
   }
-  if (/unreachable|not_configured|ECONNREFUSED/i.test(message)) {
+  if (/payment_required|余额不足|402/.test(message)) {
+    return " 上游账户余额不足，请改用免费模型或先充值。"
+  }
+  if (/unreachable|not_configured|ECONNREFUSED|无法连接|未启动|不可达/.test(message)) {
     return " 上游服务不可达，请确认服务已启动，且网络或代理可访问。"
   }
-  if (/payment_required/i.test(message)) {
-    return " 上游账户余额不足，请改用免费模型或先充值。"
+  if (/timeout|超时/.test(message)) {
+    return " 上游响应超时，请稍后重试或换用本机服务。"
   }
   return ""
 }
@@ -168,7 +181,7 @@ export function SpeechServiceCard({
 
   const asr = resolved.asr
   const tts = resolved.tts
-  const readyIds = new Set(probes.filter((probe) => probe.ready).map((probe) => probe.id))
+  const probeStates = new Map(probes.map((probe) => [probe.id, probe.state] as const))
 
   function invalidateTest(service: SpeechService) {
     if (service === "asr") {
@@ -187,7 +200,42 @@ export function SpeechServiceCard({
     setEndpoint(service, (current) => ({ ...current, ...normalized }))
   }
 
+  async function handleLocalCheck(service: SpeechService) {
+    const setTest = service === "asr" ? setAsrTest : setTtsTest
+    const noun = service === "asr" ? "识别" : "合成"
+    setTest({ status: "testing", message: `正在检测本机${noun}服务…` })
+    const services = await refreshProbes()
+    const candidates = (services ?? probes).filter((probe) => probe.kinds.includes(service))
+    const ready = candidates.filter((probe) => probe.ready)
+    if (ready.length > 0) {
+      setTest({
+        status: "success",
+        message: `本机${noun}服务端口在线：${ready.map((probe) => probe.label).join("、")}。`,
+      })
+      return
+    }
+    // 适配器在线但缺密钥时不要说「未启动」：端口探活结果与徽章要保持一致。
+    if (candidates.some((probe) => probe.state === "unconfigured")) {
+      setTest({
+        status: "error",
+        message: `本机${noun}适配器已启动但缺密钥：按上方「本机服务」提示补齐密钥并重启适配器，再点「重新检测」。`,
+      })
+      return
+    }
+    const command = service === "asr" ? "pnpm asr:start" : "pnpm tts:start"
+    setTest({
+      status: "error",
+      message: candidates.length
+        ? `本机${noun}服务均未启动：先运行 ${command}，再点「重新检测」。`
+        : `未检测到本机${noun}服务：先运行 ${command}，或改用浏览器引擎。`,
+    })
+  }
+
   async function handleTtsTest() {
+    if (tts.transport !== "api") {
+      await handleLocalCheck("tts")
+      return
+    }
     setTtsTest({ status: "testing", message: "正在请求语音合成接口…" })
     try {
       const response = await fetch("/api/speech/tts/test", {
@@ -228,6 +276,10 @@ export function SpeechServiceCard({
   }
 
   async function handleAsrTest() {
+    if (asr.transport !== "api") {
+      await handleLocalCheck("asr")
+      return
+    }
     setAsrTest({ status: "testing", message: "正在请求语音识别接口…" })
     try {
       const response = await fetch("/api/speech/asr", {
@@ -301,7 +353,7 @@ export function SpeechServiceCard({
             service="asr"
             endpoint={asr}
             stored={config.asr}
-            readyIds={readyIds}
+            probeStates={probeStates}
             onChange={(patch) => updateEndpoint("asr", patch)}
           />
           <SpeechEndpointFields
@@ -309,7 +361,7 @@ export function SpeechServiceCard({
             service="tts"
             endpoint={tts}
             stored={config.tts}
-            readyIds={readyIds}
+            probeStates={probeStates}
             onChange={(patch) => updateEndpoint("tts", patch)}
           />
         </div>
@@ -320,13 +372,13 @@ export function SpeechServiceCard({
         <SpeechTestControl
           service="asr"
           state={asrTest}
-          disabled={asr.transport !== "api"}
+          transport={asr.transport}
           onTest={handleAsrTest}
         />
         <SpeechTestControl
           service="tts"
           state={ttsTest}
-          disabled={tts.transport !== "api"}
+          transport={tts.transport}
           onTest={handleTtsTest}
         />
       </CardFooter>
@@ -343,68 +395,101 @@ function LocalServiceStatus({
   probes: readonly LocalSpeechServiceProbe[]
   onRefresh: () => void
 }) {
+  const unconfigured = probes.filter((probe) => probe.state === "unconfigured")
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/35 px-3 py-2">
-      <span className="shrink-0 font-mono text-[10px] font-semibold uppercase text-muted-foreground">
-        本机服务
-      </span>
-      {probes.length === 0 ? (
-        <span className="text-xs text-muted-foreground">
-          {checking ? "正在检测…" : "未检测到本机服务，仍可手动填写接口地址。"}
+    <>
+      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/35 px-3 py-2">
+        <span className="shrink-0 font-mono text-[10px] font-semibold uppercase text-muted-foreground">
+          本机服务
         </span>
-      ) : (
-        probes.map((probe) => (
-          <Badge
-            key={probe.id}
-            variant={probe.ready ? "secondary" : "outline"}
-            className={cn(
-              "gap-1 font-normal",
-              probe.ready ? "text-[var(--success)]" : "text-muted-foreground",
-            )}
-          >
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
-                probe.ready ? "bg-[var(--success)]" : "bg-muted-foreground/40",
-              )}
-              aria-hidden="true"
-            />
-            {probe.label}
-            {probe.ready ? "在线" : "未启动"}
-          </Badge>
-        ))
-      )}
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="ml-auto shrink-0"
-        disabled={checking}
-        onClick={onRefresh}
-      >
-        <RefreshCwIcon
-          className={checking ? "animate-spin" : undefined}
-          data-icon="inline-start"
-        />
-        重新检测
-      </Button>
-    </div>
+        {probes.length === 0 ? (
+          <span className="text-xs text-muted-foreground">
+            {checking ? "正在检测…" : "未检测到本机服务，仍可手动填写接口地址。"}
+          </span>
+        ) : (
+          probes.map((probe) => {
+            const ready = probe.state === "ready"
+            const unconfiguredProbe = probe.state === "unconfigured"
+            return (
+              <Badge
+                key={probe.id}
+                variant={ready ? "secondary" : "outline"}
+                className={cn(
+                  "gap-1 font-normal",
+                  ready && "text-[var(--success)]",
+                  unconfiguredProbe && "text-destructive",
+                  !ready && !unconfiguredProbe && "text-muted-foreground",
+                )}
+              >
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    ready && "bg-[var(--success)]",
+                    unconfiguredProbe && "border border-destructive/70",
+                    !ready && !unconfiguredProbe && "bg-muted-foreground/40",
+                  )}
+                  aria-hidden="true"
+                />
+                {probe.label}
+                {ready ? "在线" : unconfiguredProbe ? "已启动·缺密钥" : "未启动"}
+              </Badge>
+            )
+          })
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="ml-auto shrink-0"
+          disabled={checking}
+          onClick={onRefresh}
+        >
+          <RefreshCwIcon
+            className={checking ? "animate-spin" : undefined}
+            data-icon="inline-start"
+          />
+          重新检测
+        </Button>
+      </div>
+      {/* 「已启动·缺密钥」是学习者最容易卡住的中间态：直接给出改哪个文件、改哪个变量。 */}
+      {unconfigured.map((probe) => (
+        <p
+          key={`${probe.id}-hint`}
+          className="text-[11px] leading-5 text-destructive"
+          role="status"
+        >
+          {probe.id === "local-api"
+            ? "ElevenLabs 适配器已启动但缺密钥：把 ELEVENLABS_API_KEY（sk_ 开头的 Secret Key）写入 backend/services/elevenlabs/.env.local，重启适配器后再点「重新检测」。"
+            : probe.id === "fish-audio"
+              ? "Fish Audio 适配器已启动但缺密钥：把 FISH_API_KEY 写入 backend/services/fishaudio/.env.local，重启适配器后再点「重新检测」。"
+              : `${probe.label}未就绪，重启对应本机服务后再点「重新检测」。`}
+        </p>
+      ))}
+    </>
   )
 }
 
 function SpeechTestControl({
-  disabled,
   onTest,
   service,
   state,
+  transport,
 }: {
-  disabled: boolean
   onTest: () => void
   service: SpeechService
   state: TestState
+  transport: SpeechTransport
 }) {
   const isTesting = state.status === "testing"
-  const idleHint = service === "asr" ? "验证当前配置的识别接口。" : "验证当前配置的合成接口。"
+  const isLocal = transport === "local"
+  const isBrowser = transport === "browser"
+  const idleHint = isBrowser
+    ? "浏览器引擎无需配置，也不会发起网络请求。"
+    : isLocal
+      ? "直接检测本机端口是否在线，不发送合成或识别请求。"
+      : service === "asr"
+        ? "验证当前配置的识别接口。"
+        : "验证当前配置的合成接口。"
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -413,7 +498,7 @@ function SpeechTestControl({
         variant="outline"
         size="sm"
         className="w-full justify-center"
-        disabled={disabled || isTesting}
+        disabled={isTesting || isBrowser}
         onClick={onTest}
       >
         {isTesting ? (
@@ -423,7 +508,15 @@ function SpeechTestControl({
         ) : (
           <Volume2Icon data-icon="inline-start" />
         )}
-        {service === "asr" ? "测试识别接口" : "测试合成接口"}
+        {isBrowser
+          ? "无需测试"
+          : isLocal
+            ? service === "asr"
+              ? "检测本机识别服务"
+              : "检测本机合成服务"
+            : service === "asr"
+              ? "测试识别接口"
+              : "测试合成接口"}
       </Button>
       <p
         className={cn(
@@ -434,7 +527,7 @@ function SpeechTestControl({
         )}
         role="status"
       >
-        {state.message || (disabled ? "选择 HTTP API 接入后可验证。" : idleHint)}
+        {state.message || idleHint}
       </p>
     </div>
   )
@@ -480,18 +573,67 @@ function getServicePresets(service: SpeechService): ServicePreset[] {
   ]
 }
 
+// 接入方式决定要填哪些字段：把这件事直接写在卡片里，避免学习者在三种接入方式之间试错。
+function SpeechRequirements({
+  service,
+  transport,
+}: {
+  service: SpeechService
+  transport: SpeechTransport
+}) {
+  const items =
+    transport === "local"
+      ? service === "asr"
+        ? [
+            "无需填写接口地址与密钥。",
+            "先运行 pnpm asr:start，默认地址 ws://127.0.0.1:5580/v1/asr/stream。",
+            "识别引擎在本机服务内选择；服务未启动时对话会回退浏览器识别。",
+          ]
+        : [
+            "无需填写接口地址与密钥。",
+            "先运行 pnpm tts:start，默认地址 http://127.0.0.1:5578。",
+            "音色在本机服务内选择；服务未启动时对话会回退浏览器合成。",
+          ]
+      : transport === "api"
+        ? [
+            "必填：接口地址，填服务根地址，系统会追加 /audio/speech 或 /audio/transcriptions。",
+            service === "tts"
+              ? "可选：模型、API 密钥、音色；本机回环适配器的密钥保存在服务端。"
+              : "可选：模型、API 密钥；本机回环适配器的密钥保存在服务端。",
+            "本机适配器地址：ElevenLabs http://127.0.0.1:5583/v1，Fish Audio http://127.0.0.1:5584/v1。",
+          ]
+        : ["无需填写任何字段。", "直接使用浏览器自带语音能力。"]
+
+  return (
+    <div className="rounded-md border border-dashed px-3 py-2">
+      <p className="text-[11px] font-medium text-foreground">配置清单</p>
+      <ul className="mt-1 grid gap-1 text-[11px] leading-5 text-muted-foreground">
+        {items.map((item) => (
+          <li key={item} className="flex gap-1.5">
+            <span
+              className="mt-[7px] size-1 shrink-0 rounded-full bg-primary/60"
+              aria-hidden="true"
+            />
+            <span className="min-w-0">{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function SpeechEndpointFields({
   endpoint,
   idPrefix,
   onChange,
-  readyIds,
+  probeStates,
   service,
   stored,
 }: {
   endpoint: SpeechEndpoint
   idPrefix: SpeechService
   onChange: (patch: Partial<SpeechEndpoint>) => void
-  readyIds: ReadonlySet<string>
+  probeStates: ReadonlyMap<string, LocalSpeechServiceState>
   service: SpeechService
   stored: SpeechEndpoint
 }) {
@@ -500,6 +642,24 @@ function SpeechEndpointFields({
   const policy = getSpeechFieldPolicy(service, endpoint.transport)
   const loopbackEndpoint = isLoopbackSpeechEndpoint(endpoint.endpoint)
   const presets = getServicePresets(service)
+  // 本机适配器把验证过的模型列成快捷按钮；OpenAI 兼容服务因模型名各异保持手填。
+  const modelOptions = (() => {
+    const matched = matchLocalService(service, endpoint.endpoint)
+    if (!matched) {
+      return []
+    }
+    if (matched.id === "local-api") {
+      return service === "tts"
+        ? speechRules.models.localApiTtsOptions
+        : speechRules.models.localApiAsrOptions
+    }
+    if (matched.id === "fish-audio") {
+      return service === "tts"
+        ? speechRules.models.fishAudioTtsOptions
+        : speechRules.models.fishAudioAsrOptions
+    }
+    return []
+  })()
 
   function applyPreset(preset: (typeof presets)[number]) {
     // 一键接入同时对齐接入方式、地址与模型，避免「切了 API 还要再填三个字段」。
@@ -525,7 +685,7 @@ function SpeechEndpointFields({
         <span className="text-[11px] text-muted-foreground">一键接入</span>
         {presets.map((preset) => {
           const active = endpoint.transport === "api" && endpoint.endpoint === preset.endpoint
-          const ready = preset.probeId ? readyIds.has(preset.probeId) : null
+          const probeState = preset.probeId ? probeStates.get(preset.probeId) : undefined
           return (
             <Button
               key={preset.id}
@@ -537,11 +697,14 @@ function SpeechEndpointFields({
               aria-label={`使用${serviceLabels[service]}${preset.label}`}
               onClick={() => applyPreset(preset)}
             >
-              {ready === null ? null : (
+              {probeState === undefined ? null : (
                 <span
                   className={cn(
                     "size-1.5 rounded-full",
-                    ready ? "bg-[var(--success)]" : "bg-muted-foreground/40",
+                    probeState === "ready" && "bg-[var(--success)]",
+                    // 空心警示点：适配器在线但缺密钥，与「未启动」的灰点区分开。
+                    probeState === "unconfigured" && "border border-destructive/70",
+                    probeState === "down" && "bg-muted-foreground/40",
                   )}
                   aria-hidden="true"
                 />
@@ -585,6 +748,8 @@ function SpeechEndpointFields({
         </FieldDescription>
       </Field>
 
+      <SpeechRequirements service={service} transport={endpoint.transport} />
+
       {policy.endpoint !== "hidden" ? (
         endpoint.transport === "api" ? (
           <Field data-invalid={endpointInvalid || undefined}>
@@ -619,6 +784,24 @@ function SpeechEndpointFields({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field>
             <FieldLabel htmlFor={`${idPrefix}-model`}>{serviceLabels[service]}模型</FieldLabel>
+            {/* 本机适配器把验证过的模型列成快捷按钮；OpenAI 兼容服务保持手填。 */}
+            {modelOptions.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {modelOptions.map((option) => (
+                  <Button
+                    key={option}
+                    type="button"
+                    size="sm"
+                    variant={endpoint.model === option ? "secondary" : "outline"}
+                    className="h-7 px-2 text-xs"
+                    aria-pressed={endpoint.model === option}
+                    onClick={() => onChange({ model: option })}
+                  >
+                    {option}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
             <Input
               id={`${idPrefix}-model`}
               value={endpoint.model}
@@ -860,11 +1043,16 @@ function ApiVoiceField({
     matched?.voices === "fishaudio"
       ? "Fish Audio 填 voice model ID（reference_id）；留空使用内置默认音色。与对话页音色选择同步。"
       : matched?.voices === "elevenlabs"
-        ? "ElevenLabs 填 voice ID 或 alloy/echo/fable/onyx/nova/shimmer 兼容别名；留空使用服务端默认音色。与对话页音色选择同步。"
+        ? "ElevenLabs 填 voice ID，或直接选下方官方预置音色（免费层已逐一验证）；留空使用服务端默认音色。与对话页音色选择同步。"
         : "OpenAI 兼容服务常用 alloy/echo/fable/onyx/nova/shimmer；本机适配器可留空使用服务端默认音色，Fish Audio 填 voice model ID（reference_id）。对话页的接口音色与此同步。"
   // 已知服务把常用音色列成快捷按钮，只有需要自定义 ID 时才动用输入框。
+  // ElevenLabs 显示官方预置音色（旧 nova/shimmer 映射指向的音色已转付费专属，不再列出）。
   const aliasOptions =
-    matched?.voices === "fishaudio" ? [] : Object.keys(speechRules.voice.aliases)
+    matched?.voices === "fishaudio"
+      ? []
+      : matched?.voices === "elevenlabs"
+        ? Object.keys(speechRules.voice.premadeElevenLabs)
+        : Object.keys(speechRules.voice.aliases)
 
   function selectVoiceValue(voice: string) {
     if (matched) {

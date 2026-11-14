@@ -77,38 +77,55 @@ class FishAudioClient:
     ) -> tuple[bytes, str]:
         output_format, content_type = resolve_output_format(response_format)
         reference_id = resolve_reference_id(voice)
-        payload: dict[str, Any] = {
-            "text": text,
-            "prosody": {
-                "speed": resolve_voice_speed(speed),
-                "volume": 0,
-                "normalize_loudness": True,
-            },
-            "format": output_format,
-            "latency": self.settings.latency or TTS_LATENCY,
-        }
-        if reference_id:
-            payload["reference_id"] = reference_id
-        try:
-            response = self._post(
-                "/v1/tts",
-                headers={TTS_MODEL_HEADER: model},
-                json=payload,
-            )
-        except httpx.TimeoutException as error:
-            raise FishAudioServiceError(
-                504,
-                "fishaudio_timeout",
-                "Fish Audio 语音合成超时，请稍后重试。",
-            ) from error
-        except httpx.RequestError as error:
-            raise FishAudioServiceError(
-                502,
-                "fishaudio_unreachable",
-                "无法连接 Fish Audio 语音合成服务。",
-            ) from error
 
-        self._ensure_success(response)
+        def build_payload(with_reference: bool) -> dict[str, Any]:
+            payload: dict[str, Any] = {
+                "text": text,
+                "prosody": {
+                    "speed": resolve_voice_speed(speed),
+                    "volume": 0,
+                    "normalize_loudness": True,
+                },
+                "format": output_format,
+                "latency": self.settings.latency or TTS_LATENCY,
+            }
+            if with_reference and reference_id:
+                payload["reference_id"] = reference_id
+            return payload
+
+        # 兜底默认参数：无效 reference_id（手误或音色已删除）去掉音色重试一次，
+        # 由 Fish Audio 内置默认音色接管，不让一次拼写错误打断语音链路。
+        with_reference = bool(reference_id)
+
+        def post_tts(payload: dict[str, Any]) -> httpx.Response:
+            try:
+                return self._post(
+                    "/v1/tts",
+                    headers={TTS_MODEL_HEADER: model},
+                    json=payload,
+                )
+            except httpx.TimeoutException as error:
+                raise FishAudioServiceError(
+                    504,
+                    "fishaudio_timeout",
+                    "Fish Audio 语音合成超时，请稍后重试。",
+                ) from error
+            except httpx.RequestError as error:
+                raise FishAudioServiceError(
+                    503,
+                    "fishaudio_unreachable",
+                    "无法连接 Fish Audio 语音合成服务，请检查网络或代理。",
+                ) from error
+
+        response = post_tts(build_payload(with_reference))
+        if (
+            not response.is_success
+            and with_reference
+            and response.status_code in {400, 404, 422}
+        ):
+            response = post_tts(build_payload(False))
+
+        self._ensure_success(response, service="tts")
         audio = response.content
         if not audio:
             raise FishAudioServiceError(
@@ -161,12 +178,12 @@ class FishAudioClient:
             ) from error
         except httpx.RequestError as error:
             raise FishAudioServiceError(
-                502,
+                503,
                 "fishaudio_unreachable",
-                "无法连接 Fish Audio 语音识别服务。",
+                "无法连接 Fish Audio 语音识别服务，请检查网络或代理。",
             ) from error
 
-        self._ensure_success(response)
+        self._ensure_success(response, service="asr")
         try:
             payload = response.json()
         except ValueError as error:
@@ -185,22 +202,26 @@ class FishAudioClient:
         return text.strip()
 
     @staticmethod
-    def _ensure_success(response: httpx.Response) -> None:
+    def _ensure_success(response: httpx.Response, service: str) -> None:
         if response.is_success:
             return
+        # 保留上游语义：凭据 401、余额 402、参数 4xx、限流 429 分别可执行，
+        # 只有真正的上游服务端故障才归为 502。
         status = response.status_code
         if status in {401, 403}:
             raise FishAudioServiceError(
-                502,
+                401,
                 "fishaudio_unauthorized",
                 "Fish Audio 凭据无效或缺少权限，请检查服务端 FISH_API_KEY。",
             )
         if status == 402:
-            raise FishAudioServiceError(
-                502,
-                "fishaudio_payment_required",
-                "Fish Audio 返回 402：当前模型需要账户充值，可改用免费模型 s2.1-pro-free。",
+            # s2.1-pro-free 只是合成的免费模型；识别没有免费模型，提示按服务区分。
+            message = (
+                "Fish Audio 返回 402：当前合成模型需要账户充值，可改用免费模型 s2.1-pro-free。"
+                if service == "tts"
+                else "Fish Audio 返回 402：识别模型需要账户充值；Fish Audio 暂无免费识别模型，可充值或先使用其他识别服务。"
             )
+            raise FishAudioServiceError(402, "fishaudio_payment_required", message)
         if status == 429:
             raise FishAudioServiceError(
                 429,
@@ -209,7 +230,7 @@ class FishAudioClient:
             )
         if status in {400, 404, 409, 422}:
             raise FishAudioServiceError(
-                502,
+                status,
                 "fishaudio_request_rejected",
                 "Fish Audio 拒绝了请求参数，请检查模型、音色或音频格式。",
             )

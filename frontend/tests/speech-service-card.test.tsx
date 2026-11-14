@@ -234,9 +234,109 @@ describe("SpeechServiceCard", () => {
     expect(screen.queryByLabelText("语音识别API 密钥")).toBeNull()
     expect(storedConfig().asr.transport).toBe("browser")
     expect(storedConfig().tts.transport).toBe("browser")
-    expect(screen.getByRole("button", { name: "测试合成接口" }).hasAttribute("disabled")).toBe(
-      true,
+    expect(
+      screen
+        .getAllByRole("button", { name: "无需测试" })
+        .every((button) => button.hasAttribute("disabled")),
+    ).toBe(true)
+  })
+
+  it("checks the local services instead of sending a request through the API route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            services: [
+              { id: "moss-asr", label: "本机 ASR 服务", kinds: ["asr"], ready: true },
+              { id: "moss-tts", label: "本机 TTS 网关", kinds: ["tts"], ready: false },
+            ],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     )
+    vi.stubGlobal("fetch", fetchMock)
+    render(<SpeechServiceCard />)
+
+    fireEvent.click(screen.getByRole("button", { name: "检测本机识别服务" }))
+
+    await waitFor(() =>
+      expect(screen.getByText("本机识别服务端口在线：本机 ASR 服务。")).toBeTruthy(),
+    )
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/speech/services")
+  })
+
+  it("explains which local service is missing when nothing is running", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              services: [
+                { id: "moss-tts", label: "本机 TTS 网关", kinds: ["tts"], ready: false },
+              ],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
+    render(<SpeechServiceCard />)
+
+    fireEvent.click(screen.getByRole("button", { name: "检测本机合成服务" }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("本机合成服务均未启动：先运行 pnpm tts:start，再点「重新检测」。"),
+      ).toBeTruthy(),
+    )
+  })
+
+  it("tells a running adapter missing its API key apart from a stopped one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              services: [
+                {
+                  id: "moss-tts",
+                  label: "本机 TTS 网关",
+                  kinds: ["tts"],
+                  ready: false,
+                  state: "down",
+                },
+                {
+                  id: "local-api",
+                  label: "ElevenLabs 适配器",
+                  kinds: ["asr", "tts"],
+                  ready: false,
+                  state: "unconfigured",
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
+    render(<SpeechServiceCard />)
+
+    fireEvent.click(screen.getByRole("button", { name: "检测本机合成服务" }))
+
+    // 徽章区分「已启动·缺密钥」与「未启动」，并指出密钥该写到哪个文件。
+    await waitFor(() => expect(screen.getByText(/已启动·缺密钥/)).toBeTruthy())
+    expect(screen.getByText(/ELEVENLABS_API_KEY/).textContent).toContain(
+      "backend/services/elevenlabs/.env.local",
+    )
+    expect(screen.getByText(/本机 TTS 网关未启动/)).toBeTruthy()
+    expect(
+      screen.getByText(
+        "本机合成适配器已启动但缺密钥：按上方「本机服务」提示补齐密钥并重启适配器，再点「重新检测」。",
+      ),
+    ).toBeTruthy()
   })
 
   it("verifies the synthesis endpoint through the diagnostic route", async () => {
@@ -363,8 +463,11 @@ describe("SpeechServiceCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "测试合成接口" }))
 
+    // 识别出本机适配器后，提示要精确到密钥所在文件，而不是泛泛地说「检查 API Key」。
     await waitFor(() =>
-      expect(screen.getByText(/上游凭据无效，请检查对应服务端的 API Key/)).toBeTruthy(),
+      expect(
+        screen.getByText(/本机适配器密钥保存在 backend\/services\/elevenlabs\/.env.local/),
+      ).toBeTruthy(),
     )
   })
 
@@ -406,9 +509,15 @@ describe("SpeechServiceCard", () => {
 
     const footer = document.querySelector('[data-slot="card-footer"]')
     expect(footer).toBeTruthy()
-    expect(footer?.contains(screen.getByRole("button", { name: "测试识别接口" }))).toBe(true)
-    expect(footer?.contains(screen.getByRole("button", { name: "测试合成接口" }))).toBe(true)
-    expect(screen.getAllByText("选择 HTTP API 接入后可验证。")).toHaveLength(2)
+    expect(footer?.contains(screen.getByRole("button", { name: "检测本机识别服务" }))).toBe(
+      true,
+    )
+    expect(footer?.contains(screen.getByRole("button", { name: "检测本机合成服务" }))).toBe(
+      true,
+    )
+    expect(
+      screen.getAllByText("直接检测本机端口是否在线，不发送合成或识别请求。"),
+    ).toHaveLength(2)
   })
 
   it("aligns transport, address and model when a loopback adapter is selected", () => {
@@ -515,10 +624,8 @@ describe("SpeechServiceCard", () => {
     vi.stubGlobal("fetch", fetchMock)
     render(<SpeechServiceCard />)
 
-    // 常驻按钮：非 HTTP API 接入时禁用，但不会从页面消失。
-    expect(screen.getByRole("button", { name: "测试识别接口" }).hasAttribute("disabled")).toBe(
-      true,
-    )
+    // 常驻按钮：本机接入显示「检测本机服务」，切到 HTTP API 后变为接口测试。
+    expect(screen.getByRole("button", { name: "检测本机识别服务" })).toBeTruthy()
     selectApiTransportForBothServices()
 
     fireEvent.click(screen.getByRole("button", { name: "测试识别接口" }))
@@ -534,5 +641,27 @@ describe("SpeechServiceCard", () => {
     fireEvent.change(screen.getByLabelText("语音合成音色"), { target: { value: "nova" } })
     expect(screen.getByText(/语音识别接口可用/)).toBeTruthy()
     expect(screen.queryByText(/语音合成接口可用/)).toBeNull()
+  })
+
+  it("shows verified ElevenLabs presets and adapter model options per provider", () => {
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.click(screen.getByRole("button", { name: "使用语音合成ElevenLabs 适配器" }))
+
+    // ElevenLabs 显示官方预置音色（免费层逐一验证）；旧 nova/shimmer 映射指向的
+    // 付费专属音色不再出现在适配器的快捷按钮里。
+    expect(screen.getByRole("button", { name: "bill" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "emma" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "shimmer" })).toBeNull()
+    // 模型快捷选项按适配器给出，默认是成本最低的 flash 档。
+    expect(screen.getByRole("button", { name: "eleven_flash_v2_5" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "eleven_v4" })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "使用语音合成Fish Audio 适配器" }))
+
+    // Fish Audio 没有公开预置音色（reference_id 是账户私有的），只有模型快捷选项。
+    expect(screen.queryByRole("button", { name: "bill" })).toBeNull()
+    expect(screen.getByRole("button", { name: "s2.1-pro-free" })).toBeTruthy()
   })
 })

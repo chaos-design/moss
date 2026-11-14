@@ -98,6 +98,120 @@ class ElevenLabsClientTest(unittest.TestCase):
             "JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128",
         )
 
+    def test_retries_with_the_default_voice_when_the_voice_is_rejected(self) -> None:
+        """voice_not_found → 兜底重试默认音色；覆盖设置页手误音色名（如 multilingual）的场景。"""
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            if len(requests) == 1:
+                return httpx.Response(
+                    404,
+                    json={
+                        "detail": {
+                            "status": "not_found",
+                            "code": "voice_not_found",
+                            "message": "voice not found",
+                        }
+                    },
+                )
+            return httpx.Response(
+                200,
+                content=b"ID3",
+                headers={"content-type": "audio/mpeg"},
+            )
+
+        client = ElevenLabsClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        audio, content_type = client.synthesize(
+            text="Hey, it has been a while!",
+            voice="multilingual",
+            model="eleven_v4",
+            response_format="mp3",
+            speed=0.92,
+        )
+
+        self.assertEqual(audio, b"ID3")
+        self.assertEqual(content_type, "audio/mpeg")
+        self.assertEqual(len(requests), 2)
+        self.assertIn("multilingual", requests[0].url.path)
+        self.assertIn("JBFqnCBsd6RMkjVDRZzb", requests[1].url.path)
+
+    def test_retries_with_the_default_model_when_the_model_is_rejected(self) -> None:
+        requests: list[httpx.Request] = []
+        bodies: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            bodies.append(json.loads(request.content))
+            if len(requests) == 1:
+                return httpx.Response(
+                    400,
+                    json={
+                        "detail": {
+                            "status": "bad_request",
+                            "code": "bad_request",
+                            "message": (
+                                "An invalid ID has been received: 'bogus-model'. "
+                                "Make sure to provide a correct model_id."
+                            ),
+                        }
+                    },
+                )
+            return httpx.Response(
+                200,
+                content=b"ID3",
+                headers={"content-type": "audio/mpeg"},
+            )
+
+        client = ElevenLabsClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        audio, _ = client.synthesize(
+            text="Hello.",
+            voice="alloy",
+            model="bogus-model",
+            response_format="mp3",
+            speed=1.0,
+        )
+
+        self.assertEqual(audio, b"ID3")
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(bodies[0]["model_id"], "bogus-model")
+        self.assertEqual(bodies[1]["model_id"], "eleven_v4")
+
+    def test_keeps_the_actionable_hint_when_the_voice_fallback_also_fails(self) -> None:
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                404,
+                json={
+                    "detail": {
+                        "status": "not_found",
+                        "code": "voice_not_found",
+                        "message": "voice not found",
+                    }
+                },
+            )
+
+        client = ElevenLabsClient(
+            create_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        with self.assertRaises(ElevenLabsServiceError) as context:
+            client.synthesize(
+                text="Hello.",
+                voice="multilingual",
+                model="eleven_v4",
+                response_format="mp3",
+                speed=1.0,
+            )
+        self.assertEqual(context.exception.status, 404)
+        self.assertEqual(context.exception.code, "elevenlabs_request_rejected")
+        self.assertIn("默认音色", context.exception.message)
+
     def test_maps_openai_voice_aliases_and_clamps_speed(self) -> None:
         captured: dict[str, object] = {}
 
@@ -230,7 +344,7 @@ class ElevenLabsClientTest(unittest.TestCase):
                 speed=1.0,
             )
 
-        self.assertEqual(context.exception.status, 502)
+        self.assertEqual(context.exception.status, 503)
         self.assertEqual(context.exception.code, "elevenlabs_unreachable")
         self.assertNotIn("test-key", context.exception.message)
 
@@ -256,10 +370,11 @@ class ElevenLabsClientTest(unittest.TestCase):
 
     def test_maps_provider_errors_to_normalized_codes(self) -> None:
         cases = [
-            (401, 502, "elevenlabs_unauthorized"),
-            (403, 502, "elevenlabs_unauthorized"),
+            (401, 401, "elevenlabs_unauthorized"),
+            (403, 401, "elevenlabs_unauthorized"),
+            (402, 402, "elevenlabs_payment_required"),
             (429, 429, "elevenlabs_rate_limited"),
-            (422, 502, "elevenlabs_request_rejected"),
+            (422, 422, "elevenlabs_request_rejected"),
             (500, 502, "elevenlabs_upstream_error"),
         ]
         for provider_status, expected_status, expected_code in cases:
@@ -310,7 +425,7 @@ class ElevenLabsClientTest(unittest.TestCase):
                 speed=1.0,
             )
 
-        self.assertEqual(context.exception.status, 502)
+        self.assertEqual(context.exception.status, 401)
         self.assertEqual(context.exception.code, "elevenlabs_unauthorized")
         # 只透传机器码，方便定位；不回传上游自由文本或密钥。
         self.assertIn("invalid_api_key", context.exception.message)

@@ -15,7 +15,7 @@ class ElevenLabsSettingsTest(unittest.TestCase):
         self.assertEqual(settings.host, "127.0.0.1")
         self.assertEqual(settings.port, 5583)
         self.assertEqual(settings.base_url, "https://api.elevenlabs.io")
-        self.assertEqual(settings.tts_model, "eleven_v4")
+        self.assertEqual(settings.tts_model, "eleven_flash_v2_5")
         self.assertEqual(settings.asr_model, "scribe_v2")
         self.assertEqual(settings.default_voice, "JBFqnCBsd6RMkjVDRZzb")
         self.assertFalse(settings.configured)

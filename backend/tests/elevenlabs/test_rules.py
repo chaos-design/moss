@@ -26,7 +26,12 @@ class SpeechRulesTest(unittest.TestCase):
         self.assertEqual(rules.DEFAULT_RESPONSE_FORMAT, self.shared["formats"]["default"])
 
     def test_voice_aliases_and_speed_ranges_match(self) -> None:
-        self.assertEqual(rules.VOICE_ALIASES, self.shared["voice"]["aliases"])
+        # OpenAI 兼容别名 + 官方预置音色合并后必须与 Python 侧完全一致。
+        merged_aliases = {
+            **self.shared["voice"]["aliases"],
+            **self.shared["voice"]["premadeElevenLabs"],
+        }
+        self.assertEqual(rules.VOICE_ALIASES, merged_aliases)
         speed = self.shared["speed"]
         self.assertEqual(rules.MIN_SPEECH_SPEED, speed["min"])
         self.assertEqual(rules.MAX_SPEECH_SPEED, speed["max"])

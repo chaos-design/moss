@@ -10,7 +10,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 DEFAULT_API_BASE_URL = "https://api.elevenlabs.io"
 # George, the stock voice used by the ElevenLabs quickstart.
 DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
-DEFAULT_TTS_MODEL = "eleven_v4"
+DEFAULT_TTS_MODEL = "eleven_flash_v2_5"
 DEFAULT_ASR_MODEL = "scribe_v2"
 
 

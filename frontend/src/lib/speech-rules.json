@@ -50,9 +50,18 @@
     }
   },
   "models": {
-    "localApi": { "tts": "eleven_v4", "asr": "scribe_v2" },
+    "localApi": { "tts": "eleven_flash_v2_5", "asr": "scribe_v2" },
     "remoteApi": { "tts": "tts-1", "asr": "whisper-1" },
     "fishAudio": { "tts": "s2.1-pro-free", "asr": "transcribe-1-pro" },
+    "localApiTtsOptions": [
+      "eleven_flash_v2_5",
+      "eleven_v4",
+      "eleven_multilingual_v2",
+      "eleven_v3"
+    ],
+    "localApiAsrOptions": ["scribe_v2"],
+    "fishAudioTtsOptions": ["s2.1-pro-free"],
+    "fishAudioAsrOptions": ["transcribe-1-pro"],
     "ttsGatewayEngines": ["kokoro", "audio8", "cosyvoice"],
     "asrEngines": ["qwen3-asr", "sensevoice"],
     "localModelIds": {
@@ -71,8 +80,23 @@
       "echo": "onwK4e9ZLuTAKqWW03F9",
       "fable": "EXAVITQu4vr4xnSDxMaL",
       "onyx": "pNInz6obpgDQGcFmaJgB",
-      "nova": "21m00Tcm4TlvDq8ikWAM",
-      "shimmer": "AZnzlk1XvdvUeBnXmlld"
+      "nova": "FGY2WhTYpPnrIDTdsKH5",
+      "shimmer": "pFZP5JQG7iQjIQuC4Bku"
+    },
+    "premadeElevenLabs": {
+      "george": "JBFqnCBsd6RMkjVDRZzb",
+      "adam": "pNInz6obpgDQGcFmaJgB",
+      "bill": "pqHfZKP75CvOlQylNhV4",
+      "brian": "nPczCjzI2devNBz1zQrb",
+      "callum": "N2lVS1w4EtoT3dr4eOWO",
+      "emma": "EXAVITQu4vr4xnSDxMaL",
+      "jessica": "cgSgspJ2msm6clMCkdW9",
+      "laura": "FGY2WhTYpPnrIDTdsKH5",
+      "liam": "TX3LPaxmHKxFdv7VOQHJ",
+      "lily": "pFZP5JQG7iQjIQuC4Bku",
+      "matilda": "XrExE9yKIg1WjnnlVkGX",
+      "river": "SAz9YHcvj6GT2YYXdXww",
+      "roger": "CwhRBWXzGAHq8TQ4Fs17"
     }
   },
   "formats": {
