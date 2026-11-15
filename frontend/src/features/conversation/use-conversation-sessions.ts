@@ -103,6 +103,10 @@ export function useConversationSessions({
     [scene.id, scene.partnerName, scene.title, updateVisibleHistory],
   )
 
+  // 本地恢复只在挂载 / 换场景时跑一次：它会把可恢复会话 dispatch 成 session-restored
+  // （reducer 会清空 draft / pending / liveTranscript）。一旦把 cloudSyncEnabled 放进依赖，
+  // auth 完成后 effect 整体重跑、本地恢复分支再次命中并二次 dispatch，就会把学习者正在
+  // 输入框里打的草稿清掉。因此本地恢复与云端加载拆成两个独立 effect。
   useEffect(() => {
     const storedHistory = readConversationHistory()
     const resumableSession = findResumableConversationSession(
@@ -119,7 +123,11 @@ export function useConversationSessions({
       messagesRef.current = resumableSession.messages
       dispatch({ type: "session-restored", session: resumableSession })
     }
+  }, [dispatch, resumeWindowMs, scene.id, updateVisibleHistory])
 
+  // 云端合并只随登录态变化：把本地会话补传、按用户键写回，并在无本地交互时恢复云端会话。
+  // 它依赖 cloudSyncEnabled，但不再触碰本地恢复分支，auth 完成时不会二次清草稿。
+  useEffect(() => {
     if (!cloudSyncEnabled || !getSupabasePublicConfig()) {
       return
     }

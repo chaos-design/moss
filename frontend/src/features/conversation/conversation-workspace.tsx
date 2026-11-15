@@ -361,6 +361,7 @@ export function ConversationWorkspace({
     speakerEnabled,
     speechPlaybackState,
     speechTargetText,
+    speechTargetMessageId,
     recognitionRetryPending,
     retryRecognition,
     stopSpeech,
@@ -673,6 +674,7 @@ export function ConversationWorkspace({
                   onRetry={retryLastReply}
                   speechState={speechPlaybackState}
                   speechTargetText={speechTargetText}
+                  speechTargetMessageId={speechTargetMessageId}
                   layout={prefs.transcriptLayout}
                 />
               ))}
@@ -1208,16 +1210,18 @@ export const TranscriptTurn = memo(function TranscriptTurn({
   onStopSpeech,
   speechState = "idle",
   speechTargetText = "",
+  speechTargetMessageId = "",
   layout,
 }: {
   message: ConversationMessage
   partnerName: string
   onDelete?: (messageId: string) => void
   onRetry: () => void
-  onSpeak: (text: string, force?: boolean) => void
+  onSpeak: (text: string, force?: boolean, messageId?: string) => void
   onStopSpeech?: () => void
   speechState?: LocalTtsPlaybackState
   speechTargetText?: string
+  speechTargetMessageId?: string
   layout: TranscriptLayout
 }) {
   const assistant = message.role === "assistant"
@@ -1228,8 +1232,13 @@ export const TranscriptTurn = memo(function TranscriptTurn({
   const [translation, setTranslation] = useState(message.translation)
   const [translating, setTranslating] = useState(false)
   // 这条回复正在被朗读（或合成）时，播放按钮变成停止控件，Agent 语音反馈由此可感知。
+  // 优先按消息 id 精确定位（两条内容相同的回复各自有独立 id，不会互相命中）；
+  // 没有 id 时（如系统 idle 提示语）回退到文本匹配。
   const speechActive =
-    speechState !== "idle" && Boolean(speechTargetText) && speechTargetText === message.content
+    speechState !== "idle" &&
+    (speechTargetMessageId !== ""
+      ? speechTargetMessageId === message.id
+      : Boolean(speechTargetText) && speechTargetText === message.content)
   // In split mode the learner's own turns hug the right edge like a chat thread. The
   // partner (assistant) always stays left so validation and examples have room to breathe.
   const alignRight = layout === "split" && !assistant
@@ -1328,7 +1337,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
                   onStopSpeech?.()
                   return
                 }
-                onSpeak(message.content, true)
+                onSpeak(message.content, true, message.id)
               }}
             >
               {speechActive && speechState === "loading" ? (

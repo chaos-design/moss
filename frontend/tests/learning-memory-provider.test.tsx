@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   getUserLearningMemoryStorageKey,
@@ -143,6 +143,31 @@ describe("LearningMemoryProvider cloud sync", () => {
       expect(screen.getByTestId("status").textContent).toBe("local")
     })
     expect(mocks.getSupabaseBrowserClient).not.toHaveBeenCalled()
+  })
+
+  it("keeps demo seed memory out of the production storage key even after an in-session edit", async () => {
+    // 演示模式在会话内改动状态后，仍不得写生产键：否则切回正式模式/登录后，
+    // 虚构条目会被当作真实记忆合并进云端。
+    mocks.isDemoMode.mockReturnValue(true)
+    mocks.getSupabaseBrowserClient.mockReturnValue(null)
+
+    render(
+      <LearningMemoryProvider>
+        <MemoryProbe />
+      </LearningMemoryProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status").textContent).toBe("local")
+    })
+    // 会话内触发一次状态变更（评分走内存，不经过持久化）。
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Rate review" }))
+    })
+
+    // 演示种子仍在工作区可见（有可评条目），但生产键始终为空。
+    expect(Number(screen.getByTestId("review-strength").textContent)).toBeGreaterThanOrEqual(0)
+    expect(window.localStorage.getItem(learningMemoryStorageKey)).toBeNull()
   })
 
   it("creates the first cloud snapshot with revision zero as the expectation", async () => {

@@ -113,8 +113,9 @@ export function AccountDataControls() {
       }
 
       clearMossLocalData()
-      // 不能追加 refresh()，否则会取消尚未完成的 replace，导致停在当前页。
-      await router.replace("/login?deleted=true")
+      // App Router 的 replace 是软导航（返回 void），直接触发即可，无需 await；
+      // 也不要在此追加 refresh()——刷新会打断刚发起的导航，停留在当前页。
+      router.replace("/login?deleted=true")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "账户删除失败")
       setDeleting(false)

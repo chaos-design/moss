@@ -143,6 +143,12 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
   const initializeCloudMemoryRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
+    // 演示模式保持内置示例记忆：不读生产存储键（避免加载到之前被污染的虚构条目），
+    // 也无需设备 id——演示路径本就跳过云端同步。
+    if (isDemoMode()) {
+      setHydrated(true)
+      return
+    }
     const storedValue = window.localStorage.getItem(learningMemoryStorageKey)
     hasStoredLocalMemoryRef.current = Boolean(storedValue)
     if (storedValue) {
@@ -162,6 +168,11 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     stateRef.current = state
+    // 演示模式的示例记忆不落生产键：否则切回正式模式或登录后，这些虚构条目会被当作
+    // 真实记忆随 union 合并进云端且删不干净。正式/演示同源复用的部署里这是唯一污染源。
+    if (isDemoMode()) {
+      return
+    }
     if (hydrated) {
       window.localStorage.setItem(localStorageKeyRef.current, JSON.stringify(state))
     }

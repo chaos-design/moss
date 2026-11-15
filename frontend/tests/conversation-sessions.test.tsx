@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
 import { act, renderHook, waitFor } from "@testing-library/react"
-import { useReducer } from "react"
+import { useCallback, useReducer } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+  type ConversationRuntimeEvent,
   conversationRuntimeReducer,
   createConversationRuntimeState,
 } from "@/features/conversation/conversation-machine"
@@ -12,6 +13,7 @@ import {
   type ConversationSession,
   conversationHistoryStorageKey,
   getUserConversationHistoryStorageKey,
+  writeConversationHistory,
 } from "@/lib/conversation-history"
 import { getConversationScene } from "@/lib/conversation-scenes"
 
@@ -307,5 +309,61 @@ describe("useConversationSessions", () => {
       expect(restoredRender.result.current.runtime.currentSessionId).toBe("historical-session"),
     )
     restoredRender.unmount()
+  })
+
+  it("does not re-dispatch the local session restore when auth resolves during the window", async () => {
+    // 本地有一个可恢复会话；auth 从 loading → authenticated 时，cloudSyncEnabled 翻转。
+    // 旧实现把本地恢复分支放在同一个依赖 cloudSyncEnabled 的 effect 里，翻转时二次
+    // dispatch session-restored，把学习者正在输入的草稿清掉。云端加载拆成独立 effect 后，
+    // 本地恢复只随场景/挂载跑一次。
+    cloud.loadHistory.mockResolvedValue(null) // 云端分支 no-op，不产生云恢复 dispatch
+    auth.status = "loading"
+    const localSession: ConversationSession = {
+      ...cloudSession,
+      id: "local-session",
+      updatedAt: new Date().toISOString(),
+    }
+    writeConversationHistory([localSession], conversationHistoryStorageKey)
+
+    const dispatchSpy = vi.fn((event: ConversationRuntimeEvent) => event)
+    const { rerender, unmount } = renderHook(() => {
+      const [runtime, realDispatch] = useReducer(
+        conversationRuntimeReducer,
+        scene,
+        createConversationRuntimeState,
+      )
+      // 稳定的 dispatch 包装：否则每次渲染新函数会让本地恢复 effect 误判依赖变化。
+      const dispatch = useCallback(
+        (event: ConversationRuntimeEvent) => {
+          dispatchSpy(event)
+          realDispatch(event)
+        },
+        [realDispatch],
+      )
+      useConversationSessions({
+        currentSessionId: runtime.currentSessionId,
+        dispatch,
+        initialMessages: runtime.messages,
+        scene,
+      })
+      return runtime
+    })
+
+    // 挂载时本地恢复 dispatch 一次。
+    const restoredCount = () =>
+      dispatchSpy.mock.calls.filter((call) => call[0].type === "session-restored").length
+    expect(restoredCount()).toBe(1)
+
+    // auth 完成：cloudSyncEnabled 翻转。云端加载因 loadHistory 返回 null 不产生新 dispatch。
+    await act(async () => {
+      auth.status = "authenticated"
+      rerender()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(cloud.loadHistory).toHaveBeenCalledTimes(1))
+
+    // 本地恢复不得被二次触发。
+    expect(restoredCount()).toBe(1)
+    unmount()
   })
 })

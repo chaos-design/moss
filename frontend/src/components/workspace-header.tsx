@@ -105,8 +105,9 @@ export function WorkspaceHeader() {
     }
 
     toast.success("已退出登录，学习记忆保留在本机")
-    // 不能追加 refresh()，否则会取消尚未完成的 replace，导致停在当前页。
-    await router.replace("/login")
+    // App Router 的 replace 是软导航（返回 void），直接触发即可，无需 await；
+    // 也不要在此追加 refresh()——刷新会打断刚发起的导航，停留在当前页。
+    router.replace("/login")
   }
 
   return (

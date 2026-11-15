@@ -193,11 +193,16 @@ export function useVoiceCallRuntime({
   const previewingVoiceRef = useRef<string | null>(null)
   // 正在朗读（或合成）的文本：转写里的播放按钮据此显示加载/停止状态。
   const [speechTargetText, setSpeechTargetText] = useState("")
+  // 正在朗读的那条消息的 id：两条内容相同的回复会各自拥有独立 id，播放按钮
+  // 据此精确定位，避免按文本匹配时两条相同回复同时显示停止态。空串表示没有
+  // 对应的转写消息（例如系统 idle 提示语）。
+  const [speechTargetMessageId, setSpeechTargetMessageId] = useState("")
 
   const stopAssistantSpeech = useCallback(() => {
     speechRequestRef.current += 1
     speakingRef.current = false
     setSpeechTargetText("")
+    setSpeechTargetMessageId("")
     echoGuardUntilRef.current = Date.now() + playbackEchoGuardMs
     stopLocalSpeech()
   }, [stopLocalSpeech])
@@ -425,7 +430,7 @@ export function useVoiceCallRuntime({
   }, [startRecognition, stopAssistantSpeech])
 
   const speak = useCallback(
-    (text: string, force = false) => {
+    (text: string, force = false, messageId = "") => {
       if (!speakerEnabledRef.current && !force) {
         startRecognition()
         return
@@ -436,6 +441,7 @@ export function useVoiceCallRuntime({
       speakingRef.current = true
       lastAssistantSpeechRef.current = text
       setSpeechTargetText(text)
+      setSpeechTargetMessageId(messageId)
       echoGuardUntilRef.current = Number.POSITIVE_INFINITY
       resetVoiceTurn()
       stopRecognition()
@@ -606,7 +612,8 @@ export function useVoiceCallRuntime({
     if (continuingSession) {
       startRecognition()
     } else {
-      speak(scene.opening.content)
+      // 开场白是一条转写消息（id `${scene.id}-opening`），带上 id 以便播放按钮精确定位。
+      speak(scene.opening.content, false, `${scene.id}-opening`)
     }
   }, [
     callSecondsRef,
@@ -782,6 +789,7 @@ export function useVoiceCallRuntime({
     speakingRef,
     speechPlaybackState,
     speechTargetText,
+    speechTargetMessageId,
     recognitionRetryPending,
     retryRecognition,
     stopSpeech,
