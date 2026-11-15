@@ -16,8 +16,13 @@ describe("GET /api/speech/services", () => {
   it("reports every loopback service and marks a stopped one as not ready", async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) =>
       Promise.resolve(
-        // 5584 模拟未启动：探活返回 503，其余适配器在线。
-        jsonResponse(url.includes(":5584") ? 503 : 200),
+        // 5584 模拟未启动：裸 503（无任何探测字段）→ down；其余适配器在线。
+        url.includes(":5584")
+          ? new Response(JSON.stringify({}), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            })
+          : jsonResponse(200),
       ),
     )
     vi.stubGlobal("fetch", fetchMock)
@@ -73,13 +78,45 @@ describe("GET /api/speech/services", () => {
     expect(body.data.services.find((service) => service.id === "moss-tts")?.state).toBe("ready")
   })
 
-  it("keeps a 503 without a configured flag as down", async () => {
-    // ASR 引擎未就绪的 503 不带 configured:false，不能误报成「缺密钥」。
-    const fetchMock = vi
-      .fn()
-      .mockImplementation((url: string) =>
-        Promise.resolve(url.includes(":5580") ? jsonResponse(503) : jsonResponse(200)),
-      )
+  it("marks a running ASR service whose engine is still loading as starting", async () => {
+    // ASR 引擎加载中的 503 带 ready:false 但不带 configured:false：是「启动中」而非缺密钥。
+    const fetchMock = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes(":5580")
+          ? new Response(JSON.stringify({ ready: false }), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            })
+          : jsonResponse(200),
+      ),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await GET()
+    const body = (await response.json()) as {
+      data: { services: Array<{ id: string; state: string }> }
+    }
+
+    expect(body.data.services.find((service) => service.id === "moss-asr")?.state).toBe(
+      "starting",
+    )
+    expect(body.data.services.find((service) => service.id === "local-api")?.state).toBe(
+      "ready",
+    )
+  })
+
+  it("keeps a 503 with no ready/configured flags as down", async () => {
+    // 裸 503（无任何探测字段）仍按未启动处理，避免把真正的 down 误报成启动中。
+    const fetchMock = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes(":5580")
+          ? new Response(JSON.stringify({}), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            })
+          : jsonResponse(200),
+      ),
+    )
     vi.stubGlobal("fetch", fetchMock)
 
     const response = await GET()
@@ -88,9 +125,6 @@ describe("GET /api/speech/services", () => {
     }
 
     expect(body.data.services.find((service) => service.id === "moss-asr")?.state).toBe("down")
-    expect(body.data.services.find((service) => service.id === "local-api")?.state).toBe(
-      "ready",
-    )
   })
 
   it("marks a service as not ready when the probe throws", async () => {

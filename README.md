@@ -109,7 +109,7 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 
 适配器监听 `127.0.0.1:5583`，不改变默认的 `5578`/`5580`。把 ASR 与 TTS 切到 HTTP API 后，
 在设置里点各自的“使用本机接口”即可填入 `http://127.0.0.1:5583/v1` 与 `scribe_v2` /
-`eleven_v4`；若适配器设置了访问令牌，把同一个值填进“API 密钥”。本机接口地址可用
+`eleven_flash_v2_5`；若适配器设置了访问令牌，把同一个值填进“API 密钥”。本机接口地址可用
 `NEXT_PUBLIC_*_LOCAL_API_URL` 改为其他本地服务。详见
 [API 文档](docs/api.md#本机-local-接口)与[适配器文档](backend/services/elevenlabs/README.md)。
 

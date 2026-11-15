@@ -45,7 +45,7 @@ curl http://127.0.0.1:5583/health
 `elevenlabs:start` 只启动本适配器；`pnpm dev:offline` 不会自动启动它。
 
 本机实例配置放在同目录 `.env.local`（gitignore），可提交模板为 `.env.local.example`，
-其中包含当前服务实际使用的本地模型 `eleven_v4` / `scribe_v2`、默认音色与默认输出格式。
+其中包含当前服务实际使用的本地模型 `eleven_flash_v2_5` / `scribe_v2`、默认音色与默认输出格式。
 未显式设置的项由 `start.mjs` 从 `frontend/src/lib/speech-rules.json` 注入，优先级为
 **规则表 < `.env.local` < shell 环境变量**；跨服务规则总结见 `docs/speech-rules.md`。
 
@@ -58,12 +58,13 @@ curl http://127.0.0.1:5583/health
 2. 打开“偏好设置 → 语音服务接入”。
 3. ASR 与 TTS 都选择“HTTP API”。
 4. 两者接口地址填写 `http://127.0.0.1:5583/v1`。
-5. ASR 模型填写 `scribe_v2`，TTS 模型填写 `eleven_v4`。
+5. ASR 模型填写 `scribe_v2`，TTS 模型填写 `eleven_flash_v2_5`。
 6. TTS 音色填写 ElevenLabs voice ID，或使用 `alloy`、`echo`、`fable`、`onyx`、`nova`、
    `shimmer` 六个兼容别名。
 
-本服务只适合本机开发或桌面运行：`/api/speech/*` 在生产环境会拒绝回环地址，Vercel
-部署也不能访问用户本机的 `5583`。生产环境应继续使用受白名单保护的远程 OpenAI 兼容
+本服务适合本机开发或桌面运行：`/api/speech/*` 允许规则表端口的回环地址，因此本机开发与
+同机自托管的生产构建都可用（生产构建要求登录会话，且仅限 5578/5580/5583/5584 端口）；
+Vercel 部署无法访问用户本机的 `5583`，生产环境应继续使用受白名单保护的远程 OpenAI 兼容
 语音端点。
 
 ## HTTP 契约
@@ -76,7 +77,7 @@ curl http://127.0.0.1:5583/health
   "configured": true,
   "service": "moss-elevenlabs",
   "provider": "elevenlabs",
-  "models": { "tts": "eleven_v4", "asr": "scribe_v2" },
+  "models": { "tts": "eleven_flash_v2_5", "asr": "scribe_v2" },
   "defaultVoice": "JBFqnCBsd6RMkjVDRZzb",
   "accessTokenRequired": false
 }
@@ -88,7 +89,7 @@ OpenAI 兼容请求：
 
 ```json
 {
-  "model": "eleven_v4",
+  "model": "eleven_flash_v2_5",
   "input": "Could I get a coffee, please?",
   "voice": "JBFqnCBsd6RMkjVDRZzb",
   "response_format": "mp3",
@@ -120,7 +121,7 @@ POST /v1/text-to-speech/{voice_id}?output_format=...
   "ok": true,
   "service": "moss-elevenlabs",
   "provider": "elevenlabs",
-  "model": "eleven_v4",
+  "model": "eleven_flash_v2_5",
   "voice": "alloy",
   "format": "mp3",
   "contentType": "audio/mpeg",
@@ -162,7 +163,7 @@ OpenAI 兼容端点都可用。
 | `MOSS_ELEVENLABS_ALLOWED_ORIGINS` | Moss 本地地址 | 额外允许的精确 Origin |
 | `MOSS_ELEVENLABS_ACCESS_TOKEN` | 空 | 可选的本地 Bearer token |
 | `MOSS_ELEVENLABS_BASE_URL` | `https://api.elevenlabs.io` | 仅 HTTPS；回环 HTTP 仅供本地 mock |
-| `MOSS_ELEVENLABS_TTS_MODEL` | `eleven_v4` | 默认 TTS 模型 |
+| `MOSS_ELEVENLABS_TTS_MODEL` | `eleven_flash_v2_5` | 默认 TTS 模型 |
 | `MOSS_ELEVENLABS_ASR_MODEL` | `scribe_v2` | 默认 ASR 模型 |
 | `MOSS_ELEVENLABS_DEFAULT_VOICE` | `JBFqnCBsd6RMkjVDRZzb` | 快速入门使用的 George |
 | `MOSS_ELEVENLABS_DEFAULT_RESPONSE_FORMAT` | `mp3` | 默认输出格式，仅接受 `mp3`/`opus`/`pcm`/`wav` |

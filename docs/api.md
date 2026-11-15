@@ -167,7 +167,7 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 | `NEXT_PUBLIC_ASR_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
 | `NEXT_PUBLIC_ASR_LOCAL_API_MODEL` | `scribe_v2` |
 | `NEXT_PUBLIC_TTS_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
-| `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | `eleven_v4` |
+| `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | `eleven_flash_v2_5` |
 | `NEXT_PUBLIC_ASR_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
 | `NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL` | `transcribe-1-pro` |
 | `NEXT_PUBLIC_TTS_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
@@ -209,12 +209,12 @@ pnpm elevenlabs:setup
 ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 ```
 
-默认模型为 `eleven_v4`（TTS）与 `scribe_v2`（ASR），默认音色为快速入门使用的 George
+默认模型为 `eleven_flash_v2_5`（TTS，免费层可用的最低成本档）与 `scribe_v2`（ASR），默认音色为快速入门使用的 George
 `JBFqnCBsd6RMkjVDRZzb`。协议、音色别名、隐私边界和全部环境变量见
 [适配服务 README](../backend/services/elevenlabs/README.md)。
 
 把两种语音来源都切到 `api` 后，可直接用设置的“使用本机接口”一键填入（默认值即
-`http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_v4`）。`/api/speech/*` 允许规则表端口的
+`http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_flash_v2_5`）。`/api/speech/*` 允许规则表端口的
 回环地址，因此本机开发与同机自托管的生产构建都可用（生产构建要求登录会话）；Vercel 等
 无本机服务的运行环境仍无法访问该端口。
 选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和计费策略。
@@ -297,7 +297,8 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
 - `endpoint` 沿用推理端点策略：远程主机必须是 HTTPS 公网地址，且生产环境的主机名需在
   `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、
   `api.anthropic.com`）；回环主机 `localhost`、`127.0.0.1`、`::1` 内置允许，用于本机 local
-  接口，在生产构建下同样可用。非回环私网主机、URL 内嵌用户名或密码一律拒绝。
+  接口，生产构建同样可用，但仅限规则表语音端口（5578/5580/5583/5584）且要求已登录会话。
+  非回环私网主机、URL 内嵌用户名或密码一律拒绝。
 - 解码后的音频不超过 8 MB，请求体不超过 12 MB，`language` 可省略。
 - 上游使用 `multipart/form-data`：`file`、`model`（配置为空时省略，由服务端默认模型接管）、
   `response_format=json`、可选 `language`。
@@ -350,7 +351,7 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
 通用规则配置（`Moss 语音接口测试成功。`、`alloy`、`1`、`mp3`）：
 
 ```json
-{ "endpoint": { "endpoint": "http://127.0.0.1:5583/v1", "apiKey": "", "model": "eleven_v4" } }
+{ "endpoint": { "endpoint": "http://127.0.0.1:5583/v1", "apiKey": "", "model": "eleven_flash_v2_5" } }
 ```
 
 成功响应（HTTP 200）：
@@ -362,7 +363,7 @@ Fish Audio voice model ID（reference_id），可留空使用内置默认音色�
   "contentType": "audio/mpeg",
   "bytes": 10240,
   "durationMs": 321,
-  "model": "eleven_v4",
+  "model": "eleven_flash_v2_5",
   "voice": "alloy",
   "format": "mp3",
   "checks": { "audioContentType": true, "plausiblePayload": true }

@@ -133,7 +133,7 @@ HTTP API 接入也可以指向本机 local 接口。设置卡片里 ASR 与 TTS 
 NEXT_PUBLIC_ASR_LOCAL_API_URL=http://127.0.0.1:5583/v1
 NEXT_PUBLIC_ASR_LOCAL_API_MODEL=scribe_v2
 NEXT_PUBLIC_TTS_LOCAL_API_URL=http://127.0.0.1:5583/v1
-NEXT_PUBLIC_TTS_LOCAL_API_MODEL=eleven_v4
+NEXT_PUBLIC_TTS_LOCAL_API_MODEL=eleven_flash_v2_5
 ```
 
 换成其他本机 OpenAI 兼容语音服务时只需改这四个值。若本机服务要求访问令牌，把令牌填进

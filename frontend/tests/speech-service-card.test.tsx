@@ -127,6 +127,26 @@ describe("SpeechServiceCard", () => {
     expect(screen.getAllByText(/（本机接口）/)).toHaveLength(2)
   })
 
+  it("keeps the API key field available on a loopback preset so an adapter access token can be filled in", () => {
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    // 先应用本机适配器预设（此路径下访问令牌字段此前被隐藏，导致无法补填）。
+    fireEvent.click(screen.getByRole("button", { name: "使用语音识别ElevenLabs 适配器" }))
+    fireEvent.click(screen.getByRole("button", { name: "使用语音合成ElevenLabs 适配器" }))
+
+    // 回环端点仍保留可选密钥字段：直接补填适配器的访问令牌。
+    fireEvent.change(screen.getByLabelText("语音识别API 密钥"), {
+      target: { value: "adapter-access-token" },
+    })
+
+    const stored = storedConfig()
+    expect(isLoopbackSpeechEndpoint(stored.asr.endpoint)).toBe(true)
+    expect(stored.asr.apiKey).toBe("adapter-access-token")
+    // 字段说明点明令牌来源，而不是笼统的「无需填写」；两个服务均为回环，说明各出现一次。
+    expect(screen.getAllByText(/访问令牌/)).toHaveLength(2)
+  })
+
   it("applies the Fish Audio preset with its own loopback address and models", () => {
     render(<SpeechServiceCard />)
     selectApiTransportForBothServices()

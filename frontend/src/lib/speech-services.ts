@@ -12,10 +12,12 @@ export type SpeechServiceKind = "asr" | "tts"
 
 /**
  * ready：服务在线且已配置；unconfigured：端口在线但适配器缺上游密钥（/health 返回
- * 503 且 `configured:false`）；down：未启动或探活失败。把「已启动但没配密钥」从
- * 「未启动」里拆出来，避免学习者在密钥没配时反复重启服务。
+ * 503 且 `configured:false`）；starting：端口在线、服务已启动但引擎/模型仍在加载
+ * （/health 返回 503 且 `ready:false`，无 `configured` 字段，典型为 ASR 服务冷启动）；
+ * down：未启动或探活失败。把「已启动但没配密钥」「正在启动」从「未启动」里拆出来，
+ * 避免学习者在密钥没配或服务正在加载时反复重启。
  */
-export type LocalSpeechServiceState = "ready" | "unconfigured" | "down"
+export type LocalSpeechServiceState = "ready" | "unconfigured" | "starting" | "down"
 
 export type LocalSpeechServiceProbe = {
   id: string
@@ -82,9 +84,20 @@ async function probe(target: ProbeTarget): Promise<LocalSpeechServiceProbe> {
       return { ...target, ready: true, state: "ready", latencyMs: Date.now() - startedAt }
     }
     // 适配器缺密钥时 /health 仍在线，只是返回 503 且 body 带 configured:false；
-    // 只有这种响应才算「已启动但缺密钥」，其余非 2xx 仍按未启动处理。
-    const body = (await response.json().catch(() => null)) as { configured?: unknown } | null
-    const state: LocalSpeechServiceState = body?.configured === false ? "unconfigured" : "down"
+    // ASR 服务引擎加载中也返回 503 且 body 带 ready:false（无 configured 字段）。
+    // 其余非 2xx 仍按未启动处理。
+    const body = (await response.json().catch(() => null)) as {
+      configured?: unknown
+      ready?: unknown
+    } | null
+    let state: LocalSpeechServiceState
+    if (body?.configured === false) {
+      state = "unconfigured"
+    } else if (body?.ready === false) {
+      state = "starting"
+    } else {
+      state = "down"
+    }
     return { ...target, ready: false, state, latencyMs: Date.now() - startedAt }
   } catch {
     return { ...target, ready: false, state: "down", latencyMs: Date.now() - startedAt }

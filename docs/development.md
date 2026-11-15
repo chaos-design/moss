@@ -256,7 +256,7 @@ curl http://127.0.0.1:5583/health
 ```
 
 在“偏好设置 → 语音服务接入”中把 ASR 与 TTS 都切到 HTTP API，再点各自的“使用本机接口”，
-即可填入 `http://127.0.0.1:5583/v1` 与 `scribe_v2` / `eleven_v4`；也可以手动填写，或用
+即可填入 `http://127.0.0.1:5583/v1` 与 `scribe_v2` / `eleven_flash_v2_5`；也可以手动填写，或用
 `NEXT_PUBLIC_*_LOCAL_API_URL`、`NEXT_PUBLIC_*_LOCAL_API_MODEL` 改指向本机其他 OpenAI 兼容
 服务。若设置了 `MOSS_ELEVENLABS_ACCESS_TOKEN`，把同一个令牌填进“API 密钥”，由同源
 `/api/speech/*` 转发。链路为：浏览器 → `/api/speech/asr|/tts` → `127.0.0.1:5583` →

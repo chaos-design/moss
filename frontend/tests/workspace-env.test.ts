@@ -45,6 +45,23 @@ describe("workspace environment loading", () => {
     })
   })
 
+  it("inlines the Fish Audio adapter configuration for the settings preset", () => {
+    expect(
+      getPublicEnvironment({
+        NEXT_PUBLIC_ASR_FISH_AUDIO_URL: "http://127.0.0.1:5584/v1",
+        NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL: "transcribe-1-pro",
+        NEXT_PUBLIC_TTS_FISH_AUDIO_URL: "http://127.0.0.1:5584/v1",
+        NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL: "s2.1-pro-free",
+        FISH_API_KEY: "never-expose",
+      }),
+    ).toEqual({
+      NEXT_PUBLIC_ASR_FISH_AUDIO_URL: "http://127.0.0.1:5584/v1",
+      NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL: "transcribe-1-pro",
+      NEXT_PUBLIC_TTS_FISH_AUDIO_URL: "http://127.0.0.1:5584/v1",
+      NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL: "s2.1-pro-free",
+    })
+  })
+
   it("force-loads the root .env.local after Next processes the frontend directory", () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "moss-env-"))
     temporaryDirectories.push(workspaceRoot)

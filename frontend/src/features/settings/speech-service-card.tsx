@@ -396,6 +396,7 @@ function LocalServiceStatus({
   onRefresh: () => void
 }) {
   const unconfigured = probes.filter((probe) => probe.state === "unconfigured")
+  const starting = probes.filter((probe) => probe.state === "starting")
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/35 px-3 py-2">
@@ -410,6 +411,8 @@ function LocalServiceStatus({
           probes.map((probe) => {
             const ready = probe.state === "ready"
             const unconfiguredProbe = probe.state === "unconfigured"
+            const startingProbe = probe.state === "starting"
+            const downProbe = probe.state === "down"
             return (
               <Badge
                 key={probe.id}
@@ -418,7 +421,8 @@ function LocalServiceStatus({
                   "gap-1 font-normal",
                   ready && "text-[var(--success)]",
                   unconfiguredProbe && "text-destructive",
-                  !ready && !unconfiguredProbe && "text-muted-foreground",
+                  startingProbe && "text-foreground",
+                  downProbe && "text-muted-foreground",
                 )}
               >
                 <span
@@ -426,12 +430,19 @@ function LocalServiceStatus({
                     "size-1.5 rounded-full",
                     ready && "bg-[var(--success)]",
                     unconfiguredProbe && "border border-destructive/70",
-                    !ready && !unconfiguredProbe && "bg-muted-foreground/40",
+                    startingProbe && "bg-foreground/60",
+                    downProbe && "bg-muted-foreground/40",
                   )}
                   aria-hidden="true"
                 />
                 {probe.label}
-                {ready ? "在线" : unconfiguredProbe ? "已启动·缺密钥" : "未启动"}
+                {ready
+                  ? "在线"
+                  : unconfiguredProbe
+                    ? "已启动·缺密钥"
+                    : startingProbe
+                      ? "启动中"
+                      : "未启动"}
               </Badge>
             )
           })
@@ -465,6 +476,13 @@ function LocalServiceStatus({
               : `${probe.label}未就绪，重启对应本机服务后再点「重新检测」。`}
         </p>
       ))}
+      {/* 「启动中」是引擎/模型仍在加载的中间态：无需重启，稍后重新检测即可。 */}
+      {starting.length > 0 ? (
+        <p className="text-[11px] leading-5 text-muted-foreground" role="status">
+          {starting.map((probe) => probe.label).join("、")} 正在加载引擎，服务进程无需重启；
+          加载完成后点「重新检测」即可变回在线。
+        </p>
+      ) : null}
     </>
   )
 }
@@ -810,7 +828,7 @@ function SpeechEndpointFields({
             />
             <FieldDescription>{speechModelFieldHint}</FieldDescription>
           </Field>
-          {policy.apiKey !== "hidden" && !loopbackEndpoint ? (
+          {policy.apiKey !== "hidden" ? (
             <Field>
               <FieldLabel htmlFor={`${idPrefix}-key`}>
                 {serviceLabels[service]}API 密钥
@@ -820,18 +838,18 @@ function SpeechEndpointFields({
                 type="password"
                 value={endpoint.apiKey}
                 onChange={(event) => onChange({ apiKey: event.target.value })}
-                placeholder="可留空"
+                placeholder={loopbackEndpoint ? "若适配器启用了访问令牌，在此填写" : "可留空"}
                 autoComplete="off"
               />
+              {loopbackEndpoint ? (
+                <FieldDescription>
+                  上游密钥由适配器在服务端持有；若启用了访问令牌 （MOSS_ELEVENLABS_ACCESS_TOKEN
+                  / MOSS_FISHAUDIO_ACCESS_TOKEN）， 请在此填写，代理会以 Bearer 转发。
+                </FieldDescription>
+              ) : null}
             </Field>
           ) : null}
         </div>
-      ) : null}
-
-      {loopbackEndpoint && endpoint.transport === "api" ? (
-        <p className="rounded-md border border-dashed px-3 py-2 text-xs leading-5 text-muted-foreground">
-          本机回环接口由适配器在服务端持有密钥，这里无需填写 API Key。
-        </p>
       ) : null}
 
       {policy.voice !== "hidden" && endpoint.transport === "api" ? (
