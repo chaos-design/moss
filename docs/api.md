@@ -180,10 +180,17 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 `Authorization: Bearer ...` 转发。请求始终经同源 `/api/speech/asr` 与 `/api/speech/tts`
 转发，浏览器不直连本机端口；根地址会自动追加 `/audio/transcriptions` 或 `/audio/speech`。
 
-回环主机（`localhost`、`127.0.0.1`、`::1`）在所有构建环境下都允许，因此
-`pnpm build && pnpm start` 的同机自托管部署也能连本机服务。非回环私网主机仍被拒绝，
-`local` 接入的 WebSocket/HTTP sidecar 地址也仍只允许回环。Vercel 等无本机服务的运行环境
-无法使用该链路，应使用白名单内的远程语音端点。
+回环主机（`localhost`、`127.0.0.1`、`::1`）在所有构建环境下都允许，但生产构建（`pnpm
+build && pnpm start`）只放行规则表中的语音服务端口（5578/5580/5583/5584），且要求已登录
+会话——回环代理背后是部署主机自己的端口与适配器配额，不向匿名访客开放。未配置认证服务
+的自托管部署可以设置 `MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true` 显式开启匿名回环访问
+（默认关闭，失败关闭）。开发环境（`pnpm dev`）不要求登录、不限端口，便于本地调试。
+非回环私网主机仍被拒绝，`local` 接入的 WebSocket/HTTP sidecar 地址也仍只允许回环。
+Vercel 等无本机服务的运行环境无法使用该链路，应使用白名单内的远程语音端点。
+
+`/api/speech/*` 的限流键跟随请求者而不是请求体里的 endpoint：登录用户按用户 ID 分桶，
+匿名请求按来源 IP（`x-forwarded-for` / `x-real-ip`）分桶。换端口或在地址里加路径段都
+不能绕过限流。
 
 `api` 识别按段上传：接口没有中间结果和语音起点信号，因此该接入方式不提供实时字幕，也不支持用
 说话打断 AI 播报，需要打断时使用文字输入。`browser` 识别由浏览器实现决定行为，静默一段时间后
@@ -207,8 +214,9 @@ ELEVENLABS_API_KEY=... pnpm elevenlabs:start
 [适配服务 README](../backend/services/elevenlabs/README.md)。
 
 把两种语音来源都切到 `api` 后，可直接用设置的“使用本机接口”一键填入（默认值即
-`http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_v4`）。`/api/speech/*` 允许回环地址，
-因此本机开发与同机自托管的生产构建都可用；Vercel 等无本机服务的运行环境仍无法访问该端口。
+`http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_v4`）。`/api/speech/*` 允许规则表端口的
+回环地址，因此本机开发与同机自托管的生产构建都可用（生产构建要求登录会话）；Vercel 等
+无本机服务的运行环境仍无法访问该端口。
 选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和计费策略。
 
 ### 可选：Fish Audio 本机适配服务

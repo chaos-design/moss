@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server"
 import { isRateLimited } from "@/lib/server/rate-limit"
 import {
+  authorizeLoopbackSpeech,
   maximumAsrAudioBytes,
   parseSpeechApiEndpoint,
   SpeechGatewayError,
+  speechRateLimitKey,
   transcribeSpeechAudio,
 } from "@/lib/server/speech-gateway"
 
@@ -62,9 +64,14 @@ export async function POST(request: Request) {
     return errorResponse("request_too_large", "单段语音不能超过 8 MB。", 413)
   }
 
+  const access = await authorizeLoopbackSpeech(endpoint.endpoint)
+  if (!access.ok) {
+    return errorResponse(access.error.code, access.error.message, access.error.status)
+  }
+
   if (
     isRateLimited({
-      key: `speech-asr:${endpoint.endpoint}`,
+      key: speechRateLimitKey(request, "asr", access.userId),
       limit: 120,
       windowMs: 60_000,
     })

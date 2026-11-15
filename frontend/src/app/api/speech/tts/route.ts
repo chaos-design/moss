@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server"
 import { isRateLimited } from "@/lib/server/rate-limit"
 import {
+  authorizeLoopbackSpeech,
   maximumTtsTextLength,
   parseSpeechApiEndpoint,
   SpeechGatewayError,
+  speechRateLimitKey,
   synthesizeSpeechAudio,
 } from "@/lib/server/speech-gateway"
 import { speechRules } from "@/lib/speech-rules"
@@ -46,6 +48,14 @@ export async function POST(request: Request) {
     )
   }
 
+  const authError = await authorizeLoopbackSpeech(endpoint.endpoint)
+  if (!authError.ok) {
+    return errorResponse(authError.error.code, authError.error.message, authError.error.status)
+  }
+
+  // 限流键跟随请求者：登录用户按用户分桶，匿名按 IP，与 endpoint 无关。
+  const rateLimitKey = speechRateLimitKey(request, "tts", authError.userId)
+
   const text = typeof candidate.text === "string" ? candidate.text.trim() : ""
   if (!text || text.length > maximumTtsTextLength) {
     return errorResponse("invalid_request", "合成文本为空或超出长度限制。", 400)
@@ -65,7 +75,7 @@ export async function POST(request: Request) {
 
   if (
     isRateLimited({
-      key: `speech-tts:${endpoint.endpoint}`,
+      key: rateLimitKey,
       limit: speechRules.limits.ttsRateLimitPerMinute,
       windowMs: 60_000,
     })

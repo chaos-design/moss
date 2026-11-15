@@ -138,8 +138,14 @@ NEXT_PUBLIC_TTS_LOCAL_API_MODEL=eleven_v4
 
 换成其他本机 OpenAI 兼容语音服务时只需改这四个值。若本机服务要求访问令牌，把令牌填进
 设置的“API 密钥”，由同源 `/api/speech/*` 以 Bearer 转发；密钥仍只保存在浏览器
-`moss:speech-config:v1`。回环主机在生产构建下也内置允许，因此同机自托管的
-`pnpm start` 可用；Vercel 等无本机服务的环境不可用该链路。
+`moss:speech-config:v1`。回环主机在生产构建下内置允许，但只限规则表语音端口
+（5578/5580/5583/5584），且要求已登录会话——回环代理背后是部署主机自己的端口与适配器
+配额，不向匿名访客开放。未配置认证服务的自托管部署可显式设置
+`MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true` 开启匿名回环访问（默认关闭，失败关闭）。
+同机自托管的 `pnpm start` 登录后可用；Vercel 等无本机服务的环境不可用该链路。
+
+`/api/speech/*` 的限流键跟随请求者（登录用户按用户 ID，匿名按来源 IP），而不是请求体里
+的 endpoint，换端口或路径段无法绕过限流。
 
 设置卡片还提供“使用 Fish Audio”一键填入，对应下列变量（默认指向 5584 的 Fish Audio
 适配器）：
@@ -159,7 +165,7 @@ AI_ALLOWED_BROWSER_SPEECH_HOSTS=speech.example.com
 ```
 
 `api.openai.com`、`api.anthropic.com` 与回环主机 `localhost`、`127.0.0.1`、`::1` 默认在
-白名单内（回环用于本机 local 接口，无需额外配置）。该白名单与模型服务使用的
+白名单内（回环用于本机 local 接口，无需额外主机配置；端口与登录约束见上文）。该白名单与模型服务使用的
 `AI_ALLOWED_BROWSER_MODEL_HOSTS` 相互独立，两者都要配置才能同时支持远程推理与远程语音。
 浏览器语音引擎依赖操作系统与浏览器支持（Chrome、Edge、macOS Safari 可用，识别质量由浏览器
 实现决定）；不具备该能力的浏览器保持文字模式，并在对话中明确提示。

@@ -1,5 +1,6 @@
 import {
   getSpeechRequestUrl,
+  isLoopbackSpeechEndpoint,
   isValidSpeechEndpoint,
   maximumSpeechApiKeyLength,
   maximumSpeechEndpointLength,
@@ -7,6 +8,8 @@ import {
   type SpeechService,
 } from "@/lib/speech-config"
 import { speechRules } from "@/lib/speech-rules"
+import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 export type SpeechApiEndpoint = {
   endpoint: string
@@ -25,6 +28,17 @@ const allowedBrowserSpeechHosts = [
   "api.anthropic.com",
   ...speechRules.loopbackHosts,
 ]
+
+// 回环代理只允许规则表里的语音服务端口：端口单一事实来源是规则表，换端口就能绕过限流键的
+// 问题因此一起被堵住。侧车（5581/5582）私有于 TTS 网关，前端自身（5577）不在代理范围内。
+const allowedLoopbackSpeechPorts = new Set(
+  [
+    speechRules.services.ttsGateway.port,
+    speechRules.services.asr.port,
+    speechRules.services.localApi.port,
+    speechRules.services.fishAudio.port,
+  ].map(String),
+)
 
 export class SpeechGatewayError extends Error {
   readonly code: string
@@ -66,8 +80,9 @@ function localStartCommand(endpoint: string): string {
 
 // Browser-supplied endpoints reach the server as request payloads, so they follow the same policy
 // as browser-supplied inference endpoints: HTTPS remote hosts on the production allowlist, plus
-// loopback hosts for a local ASR/TTS gateway. Loopback works in production builds too, so a
-// self-hosted workspace can use `pnpm start` with the local speech service.
+// loopback hosts for a local ASR/TTS gateway restricted to the rule-table speech ports. Loopback
+// works in production builds too, so a self-hosted workspace can use `pnpm start` with the local
+// speech service; unrestricted port access would turn the proxy into a local port scanner.
 export function isAllowedBrowserSpeechEndpoint(value: string) {
   if (!isValidSpeechEndpoint(value)) {
     return false
@@ -76,15 +91,75 @@ export function isAllowedBrowserSpeechEndpoint(value: string) {
     return true
   }
   try {
-    const hostname = new URL(value).hostname.toLowerCase().replace(/^\[|\]$/g, "")
+    const url = new URL(value)
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
+    if (speechRules.loopbackHosts.includes(hostname)) {
+      return allowedLoopbackSpeechPorts.has(url.port)
+    }
     const configured = (process.env.AI_ALLOWED_BROWSER_SPEECH_HOSTS ?? "")
       .split(",")
       .map((host) => host.trim().toLowerCase())
       .filter(Boolean)
-    return new Set([...allowedBrowserSpeechHosts, ...configured]).has(hostname)
+    return configured.includes(hostname) || allowedBrowserSpeechHosts.includes(hostname)
   } catch {
     return false
   }
+}
+
+// 限流键跟随请求者而不是请求体里的 endpoint：换端口、加 ./ 段都改变不了桶。登录用户按用户
+// 分桶，匿名请求按来源 IP（网关会注入 x-forwarded-for / x-real-ip）分桶。
+// "tts-test" 是诊断合成端点的独立桶（见 tts/test 路由），与正常合成配额分离。
+export function speechRateLimitKey(
+  request: Request,
+  service: SpeechService | "tts-test",
+  userId: string | null,
+) {
+  if (userId) {
+    return `speech-${service}:${userId}`
+  }
+  const forwarded = request.headers.get("x-forwarded-for")
+  const clientIp = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim()
+  return `speech-${service}:${clientIp || "unknown"}`
+}
+
+export type LoopbackSpeechAccess =
+  | { ok: true; userId: string | null }
+  | { ok: false; error: SpeechGatewayError }
+
+// 生产环境访问本机回环语音服务要求已登录会话：回环代理背后是部署主机自己的端口与适配器
+// 配额，不应向匿名访客开放。未配置认证服务的自托管部署可以显式设置
+// MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true 开启匿名访问（默认关闭，失败关闭）。
+// 开发环境与公网 HTTPS 端点不受影响；登录用户的 id 同时供限流键复用，避免二次鉴权。
+export async function authorizeLoopbackSpeech(endpoint: string): Promise<LoopbackSpeechAccess> {
+  if (process.env.NODE_ENV !== "production" || !isLoopbackSpeechEndpoint(endpoint)) {
+    return { ok: true, userId: null }
+  }
+  const client = await getSupabaseServerClient()
+  if (!client) {
+    if (process.env.MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH === "true") {
+      return { ok: true, userId: null }
+    }
+    return {
+      ok: false,
+      error: new SpeechGatewayError(
+        "speech_unauthorized",
+        "本机回环语音服务要求登录，或由部署方显式开启匿名访问（MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true）。",
+        401,
+      ),
+    }
+  }
+  const user = await resolveSessionUser(client)
+  if (!user) {
+    return {
+      ok: false,
+      error: new SpeechGatewayError(
+        "speech_unauthorized",
+        "使用本机回环语音服务前请先登录。",
+        401,
+      ),
+    }
+  }
+  return { ok: true, userId: user.id }
 }
 
 export function parseSpeechApiEndpoint(value: unknown): SpeechApiEndpoint | null {

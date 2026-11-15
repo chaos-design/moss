@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server"
 import { isRateLimited } from "@/lib/server/rate-limit"
 import {
+  authorizeLoopbackSpeech,
   maximumTtsTextLength,
   parseSpeechApiEndpoint,
   SpeechGatewayError,
+  speechRateLimitKey,
   synthesizeSpeechAudio,
 } from "@/lib/server/speech-gateway"
 import { isLoopbackSpeechEndpoint } from "@/lib/speech-config"
@@ -90,9 +92,13 @@ export async function POST(request: Request) {
       : testSynthesisDefaults.speed
 
   // 测试请求单独计数，避免验证操作占满正常合成的配额。
+  const access = await authorizeLoopbackSpeech(endpoint.endpoint)
+  if (!access.ok) {
+    return errorResponse(access.error.code, access.error.message, access.error.status)
+  }
   if (
     isRateLimited({
-      key: `speech-tts-test:${endpoint.endpoint}`,
+      key: speechRateLimitKey(request, "tts-test", access.userId),
       limit: speechRules.limits.ttsRateLimitPerMinute,
       windowMs: 60_000,
     })
