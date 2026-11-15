@@ -21,11 +21,11 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 85 文件，659 测试通过；本机默认 10s 上限下有 1 个重型用例偶发超时，放宽到 30s 全通过 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 92 文件，764 测试通过；跟读计时用例在本机 10s 上限下负载敏感偶发超时，单独复跑通过 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
-| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 40 测试通过 |
-| `pnpm fishaudio:test` | Fish Audio 适配器配置、路由、上游映射与测试合成探针 | 48 测试通过 |
+| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 48 测试通过 |
+| `pnpm fishaudio:test` | Fish Audio 适配器配置、路由、上游映射与测试合成探针 | 56 测试通过 |
 | `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 15 测试通过 |
 | `pnpm memory:test` | 评估集校验、召回排序、参数网格和学习指标 | 6 测试通过 |
 | `pnpm test:coverage` | 核心学习算法 | 语句/函数/行 100%，分支 94.73% |
@@ -698,7 +698,9 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
    回环适配器隐藏 API 密钥输入并说明密钥在服务端，音色提供默认与六个兼容别名快捷按钮。
 3. **数据扩充**：默认学习记忆由 5 条增至 50 条（表达 / 词汇 / 语法 / 发音四类，覆盖 20+
    场景，强度与到期时间错开，含迁移目标）；精讲地道表达由 100 条增至 140 条并补齐
-   `exampleTranslation`，全库 1040 条；精讲条目按习语 / 固定搭配 / 短语动词 / 句型标注类型。
+   `exampleTranslation`，全库 1040 条；精讲条目带类型标注（习语 / 固定搭配 / 短语动词 / 句型），
+   其中后 40 条显式标注 `kind`，前 100 条经 `note.kind ?? "idiom"`（`expression-library.ts`）
+   默认按「习语」展示。
 4. **演示模式**：`NEXT_PUBLIC_DEMO_MODE=true` 时用默认记忆填充工作区，正式环境仍从空记忆开始。
 
 自动化结果：
@@ -994,3 +996,48 @@ TTS「音色」字段（与对话页接口音色同一存储）、本机接入�
 
 自动化结果：新增 2 个用例（骨架先渲染且重定向期间保持 / 同场景直接渲染内容）；
 对话工作区套件 36 用例通过；biome、tsc、`pnpm build` 通过。
+
+## 2026-11-16 PR #9 评审修复（P1/P2/P3 全量收尾，T-331）
+
+依据 4 轮 PR 评审（`ac75658` → `9abf573` → `a9e24f0`）对 22 项遗留问题按 7 个批次修复并
+回归。逐条修复与验证：
+
+- **P1 语音网关 loopback 加固**：生产构建回环语音代理仅限规则表端口（5578/5580/5583/5584），
+  且要求已登录会话；无认证服务的自托管可用 `MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true`
+  显式开启匿名（默认关闭、失败关闭）；`/api/speech/*` 限流键改按请求者（登录用户 ID，
+  匿名取来源 IP），换端口 / 加路径段不再绕过限流。speech-routes 新增端口白名单、登录门控、
+  限流键 3 组用例。
+- **P2 对话可靠性**：契约修复改为按 `maxDuration(120s) - 已耗时 - 5s 余量` 收窄每次修复
+  超时，预算 <15s 直接跳过（此前最坏 110+45+45=200s 会顶穿函数上限、连降级回复一起丢失）；
+  api 识别逐句上传走单条串行队列按断句顺序提交（后一句不会反超先一句写反消息顺序），
+  重试耗尽即暂停采集、手动重试成功后恢复。conversation-route 新增预算收窄/跳过 2 用例，
+  browser-asr 新增乱序提交与耗尽即停 2 用例。
+- **P2 设置与配置**：回环端点保留可选 API 密钥字段并说明适配器访问令牌
+  （MOSS_ELEVENLABS_ACCESS_TOKEN / MOSS_FISHAUDIO_ACCESS_TOKEN）可在此填写；
+  `NEXT_PUBLIC_*_FISH_AUDIO_*` 四项补进 next.config 客户端内联列表并加断言；探活新增
+  「启动中」态（503 + ready:false 且无 configured）与「未启动」区分；ElevenLabs 默认 TTS
+  模型在 env 模板与文档统一为 `eleven_flash_v2_5`。
+- **P3 会话与记忆**：`useConversationSessions` 把本地恢复与云端加载拆成两个 effect，auth
+  完成（loading→authenticated）不再二次 dispatch `session-restored` 清空正在输入的草稿；
+  演示模式不再读写 `moss:learning-memory:v1`，虚构种子不会随 union 合并进云端；
+  两处 `await router.replace`（Next 16 返回 void）去掉无意义 await 并更正注释；
+  转写播放按钮按消息 id 精确定位（`speechTargetMessageId`），两条相同回复不再同时显示停止态。
+- **P3 适配器后端（Python）**：非 ASCII / 不可打印 model 在入口拦成 400 `invalid_model`
+  （此前作为 HTTP 头冒泡成未处理 500）；Bearer / ASR-WS token 改按字节比较，非 ASCII token
+  失败关闭回 401 而非 500；413 文案改为反映实际可配置上限（`MOSS_*_MAX_AUDIO_BYTES`）而非
+  写死 8 MB；`{"text": null}` 按省略处理回退默认探测文本而非 400 invalid_text。
+  elevenlabs / fishaudio 套件各补对应回归用例。
+- **P3 跟读 / 高亮 / 杂项**：例句高亮补 5 条例目（had/would → 'd 缩约、多词所有格、
+  主语代词替换、play it by ear 动宾插入）使 140 条精讲例句全部可高亮；`useIncrementalList`
+  哨兵改按节点身份重挂 observer（同总数筛选切换不再停在旧节点）；记忆定制跟读不再覆盖
+  共享预设位置键；随机连续换场前移到「自动接话」守卫之前（关闭自动接话仍生效）；
+  中文句子中间的识别标注替换为空串（不留「今天 很热」空格）；`readShadowingLevelFilter`
+  改经 `readJson` 读取（与 `writeJson` 对称、localStorage 异常兜底「全部」）。
+
+自动化结果（2026-11-16）：`pnpm lint`、`pnpm typecheck` 通过；`pnpm --dir frontend test`
+92 文件 764 用例通过；Python 套件 tts 15 / asr 35 / elevenlabs 48 / fishaudio 56 / db 15 /
+memory 6 全部通过；`pnpm build` 通过。
+
+未执行：真实麦克风端到端（三种 ASR/TTS 通道）、live provider 往返、390px 视觉验收与
+marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。跟读计时用例在 10s 上限下负载
+敏感偶发超时，单独复跑稳定通过，已在门禁表注明。

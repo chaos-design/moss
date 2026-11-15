@@ -302,6 +302,16 @@ pnpm db:test:remote
 该检查要求所有业务表和记忆 RPC 对匿名角色返回 PostgreSQL `42501` 权限错误。它不会写入
 数据；新建、升级和认证用户 RLS 仍需在隔离项目中验证。
 
+**认证降级的信任边界**：服务端 API 路由与 `/workspace` 守卫共用 `resolveSessionUser`
+（`frontend/src/lib/supabase/session.ts`）。当 Node 侧 `getUser()` 连不上 Supabase Auth
+（`AuthRetryableFetchError` 等网络不可达）时，降级为读取本地会话 cookie 的 `getSession()`；
+凭证无效（401）或无会话（400）仍按未登录处理。因此：
+
+- 降级路径下的**页面守卫是提示性的**——它决定跳转/提示，不是数据边界。
+- **数据安全始终依赖 PostgREST/RLS**：所有数据读写经 PostgREST 或 `check_rate_limit`
+  等 RPC，JWT 由 Supabase 服务端验签。伪造的会话 cookie 读不到真实数据。
+- 部署方应确保 `pnpm db:test`（及远端 `db:test:remote`）在上线前通过，匿名访问被拒。
+
 准备两个仅用于验收且已确认邮箱的账户，并配置
 `SUPABASE_TEST_USER_A_EMAIL`、`SUPABASE_TEST_USER_A_PASSWORD`、
 `SUPABASE_TEST_USER_B_EMAIL` 和 `SUPABASE_TEST_USER_B_PASSWORD` 后运行：
