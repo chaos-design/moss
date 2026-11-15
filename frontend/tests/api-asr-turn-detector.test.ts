@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
+  type ApiAsrTurnEnd,
   apiBargeInThresholdBoost,
+  apiMinUtteranceMs,
   apiTurnEndSilenceMs,
   apiTurnMaxDurationMs,
   createApiAsrTurnTracker,
@@ -30,10 +32,10 @@ describe("createApiAsrTurnTracker", () => {
 
   it("emits speech-start after sustained speech and speech-end after silence", () => {
     const speechStarts: number[] = []
-    const speechEnds: string[] = []
+    const speechEnds: ApiAsrTurnEnd[] = []
     const tracker = createApiAsrTurnTracker({
       onSpeechStart: () => speechStarts.push(1),
-      onSpeechEnd: (reason) => speechEnds.push(reason),
+      onSpeechEnd: (end) => speechEnds.push(end),
     })
     feedFrames(tracker, 0.01, 6) // 先校准到安静环境
     const events = feedFrames(tracker, 0.2, 40)
@@ -42,9 +44,11 @@ describe("createApiAsrTurnTracker", () => {
     expect(speechStarts).toHaveLength(1)
     expect(events.filter((event) => event === "speech-start")).toHaveLength(1)
 
-    // 静音超过 apiTurnEndSilenceMs 后触发一次 end。
+    // 静音超过 apiTurnEndSilenceMs 后触发一次 end，且发声时长达到上传标准。
     feedFrames(tracker, 0.005, Math.ceil(apiTurnEndSilenceMs / FRAME_MS))
-    expect(speechEnds).toEqual(["silence"])
+    expect(speechEnds).toHaveLength(1)
+    expect(speechEnds[0].reason).toBe("silence")
+    expect(speechEnds[0].utteranceMs).toBeGreaterThanOrEqual(apiMinUtteranceMs)
   })
 
   it("does not treat a short blip as speech", () => {
@@ -56,6 +60,23 @@ describe("createApiAsrTurnTracker", () => {
     feedFrames(tracker, 0.2, 2) // 200ms，低于 320ms 的说话确认
     feedFrames(tracker, 0.01, 20)
     expect(speechStarts).toHaveLength(0)
+  })
+
+  it("reports sub-minimum utterances so the consumer can discard them as noise", () => {
+    const speechStarts: number[] = []
+    const speechEnds: ApiAsrTurnEnd[] = []
+    const tracker = createApiAsrTurnTracker({
+      onSpeechStart: () => speechStarts.push(1),
+      onSpeechEnd: (end) => speechEnds.push(end),
+    })
+    feedFrames(tracker, 0.01, 6)
+    feedFrames(tracker, 0.2, 4) // 400ms：足以确认说话，但低于最小发声时长
+    feedFrames(tracker, 0.005, Math.ceil(apiTurnEndSilenceMs / FRAME_MS))
+
+    expect(speechStarts).toHaveLength(1)
+    expect(speechEnds).toHaveLength(1)
+    expect(speechEnds[0].reason).toBe("silence")
+    expect(speechEnds[0].utteranceMs).toBeLessThan(apiMinUtteranceMs)
   })
 
   it("barge-in boost keeps playback echo silent while real speech triggers", () => {
@@ -72,21 +93,21 @@ describe("createApiAsrTurnTracker", () => {
   })
 
   it("force-ends an utterance that exceeds the max duration", () => {
-    const speechEnds: string[] = []
+    const speechEnds: ApiAsrTurnEnd[] = []
     const tracker = createApiAsrTurnTracker({
-      onSpeechEnd: (reason) => speechEnds.push(reason),
+      onSpeechEnd: (end) => speechEnds.push(end),
     })
     feedFrames(tracker, 0.01, 6)
     feedFrames(tracker, 0.2, Math.ceil(apiTurnMaxDurationMs / FRAME_MS))
-    expect(speechEnds).toContain("max-duration")
+    expect(speechEnds.map((end) => end.reason)).toContain("max-duration")
     // 强制断句后状态清零：继续说话需要重新确认 speech-start。
     expect(tracker.feed(0.2, FRAME_MS)).toBe("none")
   })
 
   it("reset clears an active utterance", () => {
-    const speechEnds: string[] = []
+    const speechEnds: ApiAsrTurnEnd[] = []
     const tracker = createApiAsrTurnTracker({
-      onSpeechEnd: (reason) => speechEnds.push(reason),
+      onSpeechEnd: (end) => speechEnds.push(end),
     })
     feedFrames(tracker, 0.01, 6)
     feedFrames(tracker, 0.2, 6)

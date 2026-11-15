@@ -69,8 +69,11 @@ const providerTimeoutMs = 110_000
 export const maxDuration = 120
 
 // 契约修复：模型偶尔不按输出契约返回 JSON（弱模型 / 免费档常见，图1 的
-// 「未按输出契约返回」即此）。用一次聚焦请求把回复重排成解析器真正消费的最小 JSON
-// 契约；修复失败（限流 / 超时 / 仍不合规）时保持既有降级展示，不阻塞回复本身。
+// 「未按输出契约返回」即此）。允许重试几次：每次用聚焦请求把回复重排成解析器真正
+// 消费的最小 JSON 契约，任一次成功即采用；全部失败（限流 / 超时 / 仍不合规）时保持
+// 既有降级展示，不阻塞回复本身。修复是轻量重排，用短超时避免总时长顶穿路由时限。
+const conversationContractRepairAttempts = 2
+const conversationContractRepairTimeoutMs = 45_000
 const conversationContractRepairPrompt = `You repair a previous reply for an English-learning chat. Output ONLY one JSON object, no prose and no code fences, with exactly these fields:
 {"reply": string — the English reply for the learner (reuse the given reply text verbatim when it is already good), "translation": string — Simplified Chinese translation of the reply, "recall": string — empty unless a recall hint is needed, "inputAnalysis": {"intent": "scene_reply" | "translation_request" | "language_question"}, "validation": {"status": "improve" | "accurate" | "guidance", "corrected": string — an improved version of the learner's original message (identical to it when it was already fine), "explanation": string — Simplified Chinese rationale, "issues": Array<{kind: "clarity" | "expression" | "task_coverage", original: string, corrected: string, explanation: string}>, "examples": Array<{english: string, chinese: string}>}}`
 
@@ -93,7 +96,7 @@ async function repairConversationContract(input: {
           content: `Learner's original message:\n${input.originalInput}\n\nAssistant reply to reformat:\n${input.rawReply}`,
         },
       ],
-      signal: AbortSignal.timeout(providerTimeoutMs),
+      signal: AbortSignal.timeout(conversationContractRepairTimeoutMs),
     })
     const parsed = parseProviderConversation(
       repaired,
@@ -511,14 +514,21 @@ export async function POST(request: Request) {
       scene.tags[0],
     )
     if (!parsed.contractApplied) {
-      parsed =
-        (await repairConversationContract({
-          config: providerConfig,
-          rawReply: content,
-          originalInput: latestUserContent,
-          suggestedPhrase: scene.focusPhrases[0]?.[1],
-          sceneTag: scene.tags[0],
-        })) ?? parsed
+      // 未按输出契约返回时聚焦重排最多重试几次；任一次成功即采用，全部失败保持降级。
+      for (
+        let attempt = 0;
+        attempt < conversationContractRepairAttempts && !parsed.contractApplied;
+        attempt += 1
+      ) {
+        parsed =
+          (await repairConversationContract({
+            config: providerConfig,
+            rawReply: content,
+            originalInput: latestUserContent,
+            suggestedPhrase: scene.focusPhrases[0]?.[1],
+            sceneTag: scene.tags[0],
+          })) ?? parsed
+      }
     }
 
     await saveConversationMemory({

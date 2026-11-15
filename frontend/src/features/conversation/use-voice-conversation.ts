@@ -15,7 +15,10 @@ import {
 } from "@/features/conversation/conversation-transport"
 import { useConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { useConversationSessions } from "@/features/conversation/use-conversation-sessions"
-import { useVoiceCallRuntime } from "@/features/conversation/use-voice-call-runtime"
+import {
+  useVoiceCallRuntime,
+  type VoiceSubmitRef,
+} from "@/features/conversation/use-voice-call-runtime"
 import { formatCallDuration, normalizeSpeechTranscript } from "@/lib/call-runtime"
 import {
   analyzeConversationInput,
@@ -102,9 +105,10 @@ export function useVoiceConversation({
   const pendingRef = useRef(false)
   const conversationRequestRef = useRef(0)
   const conversationAbortRef = useRef<AbortController | null>(null)
-  const submitMessageRef = useRef<
-    (content: string, inputMode?: ConversationInputMode) => Promise<void>
-  >(async () => {})
+  const voiceSubmitRef = useRef<VoiceSubmitRef>({
+    commit: () => {},
+    requestReply: async () => {},
+  })
 
   const cancelRequest = useCallback(() => {
     conversationRequestRef.current += 1
@@ -155,20 +159,14 @@ export function useVoiceConversation({
     pendingRef,
     persistSession,
     scene,
-    submitMessageRef,
+    voiceSubmitRef,
     voiceSentenceDelayMs: prefs.voiceSentenceDelayMs,
   })
 
-  const submitMessage = useCallback(
-    async (rawContent: string, inputMode: ConversationInputMode = "text", retry = false) => {
-      const content = normalizeSpeechTranscript(rawContent)
-      if (!content) {
-        return
-      }
-
-      if (pendingRef.current || speakingRef.current) {
-        interruptAssistant()
-      }
+  // 共用的回复请求路径：为 messagesRef 里最近的学习者轮次请求回复、追加回复并播报。
+  // 文字发送、重试与语音静默触发器都汇到这里，差别只在请求前的等待与消息提交方式。
+  const runReplyRequest = useCallback(
+    async (content: string, delayMs: number) => {
       const requestId = conversationRequestRef.current + 1
       conversationRequestRef.current = requestId
       const abortController = new AbortController()
@@ -176,31 +174,14 @@ export function useVoiceConversation({
       pendingRef.current = true
       dispatch({ type: "request-started" })
 
-      const requestMessages = retry
-        ? messagesRef.current.filter((message) => !message.transient)
-        : [
-            ...messagesRef.current,
-            createUserMessage(content, inputMode, callSecondsRef.current),
-          ]
-      messagesRef.current = requestMessages
-      dispatch({
-        type: "message-committed",
-        messages: requestMessages,
-        clearInput: !retry,
-      })
-      if (!retry) {
-        persistSession(requestMessages)
-      }
-      // 重试复用同一条学习者消息，因此回合身份在重试前后保持不变。
+      // 瞬态错误轮只是降级提示，不作为上下文发给模型；回合身份取过滤后最近的学习者消息。
+      const requestMessages = messagesRef.current.filter((message) => !message.transient)
       const turnMessage = requestMessages.findLast((message) => message.role === "user")
       const turnId = turnMessage?.id ?? createMessageId("user")
       const localInputAnalysis = analyzeConversationInput(content)
 
       try {
-        await waitForQuestionWindow(
-          inputMode === "text" ? prefs.consecutiveQuestionDelayMs : 0,
-          abortController.signal,
-        )
+        await waitForQuestionWindow(delayMs, abortController.signal)
         const result = await requestConversationReply({
           scene,
           memoryContext,
@@ -293,12 +274,10 @@ export function useVoiceConversation({
       }
     },
     [
-      interruptAssistant,
       memoryContext,
       onTurnComplete,
       persistSession,
       prefs.conversationPrompt,
-      prefs.consecutiveQuestionDelayMs,
       prefs.tutorMode,
       scene,
       speak,
@@ -306,7 +285,85 @@ export function useVoiceConversation({
     ],
   )
 
-  submitMessageRef.current = submitMessage
+  const submitMessage = useCallback(
+    async (rawContent: string, inputMode: ConversationInputMode = "text", retry = false) => {
+      const content = normalizeSpeechTranscript(rawContent)
+      if (!content) {
+        return
+      }
+
+      if (pendingRef.current || speakingRef.current) {
+        interruptAssistant()
+      }
+      if (!retry) {
+        const requestMessages = [
+          ...messagesRef.current,
+          createUserMessage(content, inputMode, callSecondsRef.current),
+        ]
+        messagesRef.current = requestMessages
+        dispatch({
+          type: "message-committed",
+          messages: requestMessages,
+          clearInput: true,
+        })
+        persistSession(requestMessages)
+      }
+      await runReplyRequest(
+        content,
+        inputMode === "text" ? prefs.consecutiveQuestionDelayMs : 0,
+      )
+    },
+    [
+      callSecondsRef,
+      interruptAssistant,
+      messagesRef,
+      persistSession,
+      prefs.consecutiveQuestionDelayMs,
+      runReplyRequest,
+    ],
+  )
+
+  // 语音逐句提交：每句识别结果立即成为独立消息并持久化；回答不在这里发起，
+  // 由运行时的静默触发器在学习者说完后统一请求一次（打断语义由语音起点负责）。
+  const commitVoiceTurn = useCallback(
+    (rawContent: string) => {
+      const content = normalizeSpeechTranscript(rawContent)
+      if (!content) {
+        return
+      }
+      if (pendingRef.current || speakingRef.current) {
+        interruptAssistant()
+      }
+      const requestMessages = [
+        ...messagesRef.current,
+        createUserMessage(content, "voice", callSecondsRef.current),
+      ]
+      messagesRef.current = requestMessages
+      dispatch({
+        type: "message-committed",
+        messages: requestMessages,
+        clearInput: true,
+      })
+      persistSession(requestMessages)
+    },
+    [callSecondsRef, interruptAssistant, messagesRef, persistSession],
+  )
+
+  // 静默触发器的回答请求：不追加新消息，为已提交的最近一条学习者消息请求回复。
+  const requestReplyForLastTurn = useCallback(async () => {
+    const turnMessage = messagesRef.current
+      .filter((message) => !message.transient)
+      .findLast((message) => message.role === "user")
+    if (!turnMessage) {
+      return
+    }
+    await runReplyRequest(turnMessage.content, 0)
+  }, [messagesRef, runReplyRequest])
+
+  voiceSubmitRef.current = {
+    commit: commitVoiceTurn,
+    requestReply: requestReplyForLastTurn,
+  }
 
   const sendDraft = useCallback(() => {
     if (callActiveRef.current) {

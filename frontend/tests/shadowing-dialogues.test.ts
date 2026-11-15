@@ -125,4 +125,44 @@ describe("shadowing dialogues", () => {
       }),
     ).toEqual({ cue: null, next: null, reply: null })
   })
+
+  it("covers every non-locked core scene with a complete hand-written preset", () => {
+    const dialogues = getShadowingDialogues()
+    // 核心场景逐一手写（presentation 是锁定场景，走生成模板）。
+    const coreSceneIds = [
+      "small-talk",
+      "shopping",
+      "interview",
+      "grocery",
+      "renting",
+      "taxi",
+      "train",
+      "pharmacy",
+      "banking",
+      "bakery",
+      "customs",
+      "directions",
+      "home-repair",
+      "customer-support",
+      "emergency-help",
+      "class-discussion",
+      "one-on-one",
+    ] as const
+
+    expect(coreSceneIds.length + 12).toBeLessThanOrEqual(
+      dialogues.filter((dialogue) => dialogue.scriptKind === "preset").length,
+    )
+
+    for (const id of coreSceneIds) {
+      const dialogue = dialogues.find((candidate) => candidate.sceneId === id)
+      expect(dialogue?.scriptKind ?? "missing", id).toBe("preset")
+      expect(dialogue?.lines.length ?? 0, id).toBeGreaterThanOrEqual(6)
+      expect(dialogue?.focusWord, id).toBeTruthy()
+      expect(dialogue?.phonetic ?? "", id).not.toBe("场景表达")
+      expect(dialogue?.focusTip ?? "", id).toBeTruthy()
+      expect(dialogue?.level, id).toBe(
+        getAvailableConversationScenes("all").find((scene) => scene.id === id)?.level,
+      )
+    }
+  })
 })

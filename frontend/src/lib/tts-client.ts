@@ -365,7 +365,8 @@ async function requestApiAudio(request: AudioRequest) {
       format: "mp3",
       speed: request.speed,
       text: request.text,
-      voice: request.voice || "alloy",
+      // 空音色按字段策略整体省略，让上游使用自己的默认音色；客户端不再强推 alloy。
+      ...(request.voice ? { voice: request.voice } : {}),
     }),
   })
     .catch(() => {

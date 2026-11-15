@@ -73,6 +73,12 @@ class FakeBlob {
 }
 
 function byteLengthOf(part: unknown) {
+  if (part instanceof ArrayBuffer) {
+    return part.byteLength
+  }
+  if (ArrayBuffer.isView(part)) {
+    return part.byteLength
+  }
   if (part && typeof (part as { arrayBuffer?: unknown }).arrayBuffer === "function") {
     return (part as { size?: number }).size ?? 0
   }
@@ -80,7 +86,18 @@ function byteLengthOf(part: unknown) {
 }
 
 async function arrayBufferOf(part: unknown): Promise<ArrayBuffer> {
-  if (part && typeof (part as { arrayBuffer?: unknown }).arrayBuffer === "function") {
+  if (part instanceof ArrayBuffer) {
+    return part
+  }
+  if (ArrayBuffer.isView(part)) {
+    const copy = new ArrayBuffer(part.byteLength)
+    new Uint8Array(copy).set(new Uint8Array(part.buffer, part.byteOffset, part.byteLength))
+    return copy
+  }
+  if (
+    part &&
+    typeof (part as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer === "function"
+  ) {
     return (part as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer()
   }
   return new TextEncoder().encode(String(part)).buffer
@@ -145,6 +162,99 @@ function BrowserAsrProbe({
   )
 }
 
+type AudioProcessingEventLike = {
+  inputBuffer: { getChannelData: (channel: number) => Float32Array }
+}
+
+// api 接入的 Web Audio 采集桩：分析器能量由 meterValue 控制（128 = 静音），
+// onaudioprocess 由测试显式触发以累积 PCM 帧，其余节点只需满足连线契约。
+class ApiAudioGraphStub {
+  static latest: ApiAudioGraphStub | null = null
+  sampleRate = 48_000
+  destination = {}
+  meterValue = 128
+  private processor: {
+    onaudioprocess: ((event: AudioProcessingEventLike) => void) | null
+    connect: () => void
+    disconnect: () => void
+  } | null = null
+
+  constructor() {
+    ApiAudioGraphStub.latest = this
+  }
+
+  resume() {
+    return Promise.resolve()
+  }
+
+  createMediaStreamSource() {
+    return { connect: vi.fn(), disconnect: vi.fn() }
+  }
+
+  createAnalyser() {
+    const graph = this
+    return {
+      fftSize: 0,
+      connect: vi.fn(),
+      getByteTimeDomainData(buffer: Uint8Array) {
+        buffer.fill(graph.meterValue)
+      },
+    }
+  }
+
+  createScriptProcessor() {
+    const processor = {
+      onaudioprocess: null as ((event: AudioProcessingEventLike) => void) | null,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    }
+    this.processor = processor
+    return processor
+  }
+
+  createGain() {
+    return { gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }
+  }
+
+  close() {
+    return Promise.resolve()
+  }
+
+  pushFrame(level: number) {
+    this.processor?.onaudioprocess?.({
+      inputBuffer: { getChannelData: () => new Float32Array(4096).fill(level) },
+    })
+  }
+}
+
+function stubApiAudioGraph() {
+  vi.stubGlobal("AudioContext", ApiAudioGraphStub)
+}
+
+// 运行时在 start() 里自行 new AudioContext()：实例要在启动后再从 latest 取。
+function startedGraph() {
+  return ApiAudioGraphStub.latest as ApiAudioGraphStub
+}
+
+// 驱动 100ms 一次的能量计测循环；每个 tick 都对齐 armFeedLoop 的 apiMeterIntervalMs。
+async function advanceMeterTicks(ticks: number) {
+  for (let index = 0; index < ticks; index += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+  }
+}
+
+// 说话阶段：每个 tick 推一帧 PCM 并让分析器保持有声能量。
+async function speakForTicks(graph: ApiAudioGraphStub, ticks: number) {
+  for (let index = 0; index < ticks; index += 1) {
+    await act(async () => {
+      graph.pushFrame(0.2)
+      await vi.advanceTimersByTimeAsync(100)
+    })
+  }
+}
+
 beforeEach(() => {
   FakeRecognition.instances = []
   Object.assign(window, { SpeechRecognition: FakeRecognition })
@@ -195,6 +305,36 @@ describe("useBrowserAsr", () => {
     expect(onPartial).toHaveBeenLastCalledWith("")
     expect(onTranscript).toHaveBeenCalledWith("could I get a latte", recognition?.lang)
     expect(onProcessingChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it("strips bracketed ASR annotations from recognized speech", async () => {
+    const onPartial = vi.fn()
+    const onTranscript = vi.fn()
+    render(
+      <BrowserAsrProbe
+        endpoint={browserEndpoint}
+        onError={vi.fn()}
+        onPartial={onPartial}
+        onProcessingChange={vi.fn()}
+        onSpeechStart={vi.fn()}
+        onTranscript={onTranscript}
+      />,
+    )
+    await act(async () => {
+      screen.getByRole("button", { name: "start" }).click()
+    })
+
+    const recognition = FakeRecognition.instances[0]
+    act(() => {
+      recognition?.emit("[background noise] could I", false)
+    })
+    // 实时识别条也不出现识别标注。
+    expect(onPartial).toHaveBeenLastCalledWith("could I")
+
+    act(() => {
+      recognition?.emit("[background noise] could I get a latte [pause]", true, 1)
+    })
+    expect(onTranscript).toHaveBeenCalledWith("could I get a latte", recognition?.lang)
   })
 
   it("restarts after a silent end while the turn is still open", async () => {
@@ -263,72 +403,125 @@ describe("useBrowserAsr", () => {
     expect(onError).toHaveBeenCalledTimes(1)
   })
 
-  it("uploads recorded audio to the app endpoint for the API transport", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: { text: "hello there" } }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    )
-    vi.stubGlobal("fetch", fetchMock)
-    const stopRecorder = vi.fn()
-    // jsdom's Blob drops its payload and has no arrayBuffer(), so both the recorder chunk and the
-    // assembled request blob are minimal stand-ins for what a browser produces.
-    const audioChunk = {
-      arrayBuffer: async () => new TextEncoder().encode("audio-bytes").buffer,
-      size: 11,
-      type: "audio/webm",
-    } as unknown as Blob
-    vi.stubGlobal("Blob", FakeBlob)
-    class FakeMediaRecorder {
-      static isTypeSupported = vi.fn().mockReturnValue(true)
-      state = "recording"
-      mimeType = "audio/webm"
-      ondataavailable: ((event: { data: Blob }) => void) | null = null
-      onstop: (() => void) | null = null
-      start = vi.fn(() => {
-        this.ondataavailable?.({ data: audioChunk })
+  it("uploads a completed speech turn as WAV for the API transport", async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { text: "hello there" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      vi.stubGlobal("fetch", fetchMock)
+      // jsdom 的 Blob 丢弃载荷且没有 arrayBuffer()，用可拼接字节的替身维持上传契约。
+      vi.stubGlobal("Blob", FakeBlob)
+      stubApiAudioGraph()
+      const tracks = [{ stop: vi.fn() }]
+      Object.assign(navigator, {
+        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => tracks }) },
       })
-      stop = stopRecorder
+
+      const onTranscript = vi.fn()
+      render(
+        <BrowserAsrProbe
+          endpoint={apiEndpoint}
+          onError={vi.fn()}
+          onPartial={vi.fn()}
+          onProcessingChange={vi.fn()}
+          onSpeechStart={vi.fn()}
+          onTranscript={onTranscript}
+        />,
+      )
+      expect(screen.getByTestId("available").textContent).toBe("true")
+
+      await act(async () => {
+        screen.getByRole("button", { name: "start" }).click()
+      })
+
+      // 500ms 噪声校准（安静环境），之后保持安静一帧再开始说话。
+      await advanceMeterTicks(6)
+      const graph = startedGraph()
+
+      // 模拟说话：分析器能量抬高 + PCM 帧进入采集，700ms 足以确认并越过最小发声时长。
+      graph.meterValue = 178
+      await speakForTicks(graph, 7)
+
+      // 静音超过 apiTurnEndSilenceMs（1.2s）→ 断句上传。
+      graph.meterValue = 128
+      await advanceMeterTicks(13)
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(path).toBe("/api/speech/asr")
+      const payload = JSON.parse(String(init.body))
+      expect(payload.endpoint).toEqual({
+        apiKey: "sk-test",
+        endpoint: "https://speech.example.com/v1",
+        model: "whisper-1",
+      })
+      expect(payload.mimeType).toBe("audio/wav")
+      // WAV 以 RIFF 头开始（base64 编码后即 UklGR）。
+      expect(String(payload.audioBase64).startsWith("UklGR")).toBe(true)
+      expect(onTranscript).toHaveBeenCalledWith("hello there")
+    } finally {
+      vi.useRealTimers()
     }
-    vi.stubGlobal("MediaRecorder", FakeMediaRecorder)
-    const tracks = [{ stop: vi.fn() }]
-    Object.assign(navigator, {
-      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => tracks }) },
-    })
+  })
 
-    const onTranscript = vi.fn()
-    render(
-      <BrowserAsrProbe
-        endpoint={apiEndpoint}
-        onError={vi.fn()}
-        onPartial={vi.fn()}
-        onProcessingChange={vi.fn()}
-        onSpeechStart={vi.fn()}
-        onTranscript={onTranscript}
-      />,
-    )
-    expect(screen.getByTestId("available").textContent).toBe("true")
+  it("discards a sub-minimum utterance as noise and keeps the next turn intact", async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { text: "hello there" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      vi.stubGlobal("fetch", fetchMock)
+      vi.stubGlobal("Blob", FakeBlob)
+      stubApiAudioGraph()
+      Object.assign(navigator, {
+        mediaDevices: {
+          getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
+        },
+      })
 
-    await act(async () => {
-      screen.getByRole("button", { name: "start" }).click()
-    })
+      const onTranscript = vi.fn()
+      render(
+        <BrowserAsrProbe
+          endpoint={apiEndpoint}
+          onError={vi.fn()}
+          onPartial={vi.fn()}
+          onProcessingChange={vi.fn()}
+          onSpeechStart={vi.fn()}
+          onTranscript={onTranscript}
+        />,
+      )
 
-    await act(async () => {
-      screen.getByRole("button", { name: "pause" }).click()
-    })
+      await act(async () => {
+        screen.getByRole("button", { name: "start" }).click()
+      })
+      await advanceMeterTicks(6)
+      const graph = startedGraph()
 
-    expect(stopRecorder).toHaveBeenCalled()
-    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(path).toBe("/api/speech/asr")
-    const payload = JSON.parse(String(init.body))
-    expect(payload.endpoint).toEqual({
-      apiKey: "sk-test",
-      endpoint: "https://speech.example.com/v1",
-      model: "whisper-1",
-    })
-    expect(payload.audioBase64).toBe(btoa("audio-bytes"))
-    expect(onTranscript).toHaveBeenCalledWith("hello there")
-    expect(tracks[0]?.stop).not.toHaveBeenCalled()
+      // 400ms 的能量脉冲：足以确认 speech-start，但低于 apiMinUtteranceMs → 按噪声丢弃。
+      graph.meterValue = 178
+      await speakForTicks(graph, 4)
+      graph.meterValue = 128
+      await advanceMeterTicks(13)
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(onTranscript).not.toHaveBeenCalled()
+
+      // 丢弃只清空缓冲：后续真实发言仍正常上传。
+      graph.meterValue = 178
+      await speakForTicks(graph, 7)
+      graph.meterValue = 128
+      await advanceMeterTicks(13)
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(onTranscript).toHaveBeenCalledWith("hello there")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

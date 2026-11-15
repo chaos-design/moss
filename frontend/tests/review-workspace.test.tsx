@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ReviewWorkspace } from "@/features/review/review-workspace"
 import { builtInExpressionItems } from "@/lib/expression-library"
@@ -12,6 +12,7 @@ import {
   type LearningMemoryItem,
   type LearningMemoryState,
   type LearningMemorySyncStatus,
+  reviewScopeStorageKey,
 } from "@/lib/memory"
 
 const mocks = vi.hoisted(() => ({
@@ -241,5 +242,43 @@ describe("ReviewWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /记得/ }))
     expect(mocks.rateReview).toHaveBeenCalledWith(expressionItem.id, "good")
+  })
+
+  it("hides the empty expression scope and falls back to mixed instead of trapping the learner", async () => {
+    // 默认学习记忆没有任何地道表达条目；持久化偏好指向「地道表达」。
+    window.localStorage.setItem(reviewScopeStorageKey, "expression")
+    render(<ReviewWorkspace />)
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "混合" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    )
+    // 空范围不渲染按钮，但不会困在里面：自动回退到混合，场景范围仍可直接切换。
+    expect(screen.queryByRole("button", { name: "地道表达" })).toBeNull()
+    expect(screen.getByRole("button", { name: "场景" })).toBeTruthy()
+    expect(screen.queryByText("还没有加入地道表达")).toBeNull()
+  })
+
+  it("keeps every scope button when each scope has data", () => {
+    const expressionItem = expressionMemoryItem()
+    if (!mocks.state) {
+      throw new Error("Missing memory state")
+    }
+    mocks.state = { ...mocks.state, items: [expressionItem, ...mocks.state.items] }
+    render(<ReviewWorkspace />)
+
+    expect(screen.getByRole("button", { name: "混合" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "地道表达" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "场景" })).toBeTruthy()
+  })
+
+  it("hides the whole scope filter when learning memory has no items at all", () => {
+    mocks.state = createEmptyLearningMemory(new Date("2026-08-29T08:00:00.000Z"))
+    render(<ReviewWorkspace />)
+
+    expect(screen.getByText("暂无真实复习记录")).toBeTruthy()
+    // 所有范围都为空时筛选没有意义：整行（含「复习范围」标签）都不渲染。
+    expect(screen.queryByText("复习范围")).toBeNull()
   })
 })

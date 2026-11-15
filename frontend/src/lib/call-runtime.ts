@@ -52,6 +52,32 @@ export function normalizeSpeechTranscript(value: string) {
   return value.trim().replace(/\s+/g, " ")
 }
 
+// 识别引擎会把非语音事件以方括号标注混进转写：whisper 类模型输出 [background noise]/
+// [pause]，中文 ASR 输出 [噪音] 等。这些标注不该作为学习者消息发出，在语音转写入口
+// 统一剥离；整段只剩标注时剥成空串，由运行时的空值守卫丢弃。
+// 只命中已知产物关键词才剥离——用户手打的 [注意] 这类括号内容保留原样。
+const speechAnnotationPattern = /[[［（(【]([^\]］）)】]{0,32})[\]］）)】]/gu
+
+// 拉丁标注整段由字母/空格构成且包含产物词；中文标注按关键词子串命中。
+const latinSpeechAnnotationKeywords =
+  /noise|pause|silence|inaudible|unintelligible|laugh|music|applause|cough|sigh|breath|blip/i
+const chineseSpeechAnnotationKeywords =
+  /噪音|噪声|杂音|停顿|静音|笑声|音乐|掌声|咳嗽|叹气|呼吸|沉默/
+
+function isSpeechAnnotationText(inner: string) {
+  if (/[\u4e00-\u9fff]/.test(inner)) {
+    return chineseSpeechAnnotationKeywords.test(inner)
+  }
+  return /^[a-z\s'-]+$/i.test(inner) && latinSpeechAnnotationKeywords.test(inner)
+}
+
+export function stripSpeechAnnotations(value: string) {
+  const stripped = value.replace(speechAnnotationPattern, (match, inner: string) =>
+    isSpeechAnnotationText(inner) ? " " : match,
+  )
+  return normalizeSpeechTranscript(stripped)
+}
+
 function normalizeEchoText(value: string) {
   return value
     .toLocaleLowerCase()

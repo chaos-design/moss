@@ -23,8 +23,18 @@ export const apiTurnEndSilenceMs = 1_200
 export const apiTurnMaxDurationMs = 25_000
 /** 打断监听的阈值倍增：播报回声通常远低于直接说话的能量，高倍阈值区分两者。 */
 export const apiBargeInThresholdBoost = 2.5
+/** 一句话至少要累积这么多发声才算说话：更短的能量脉冲按噪声处理，不上传识别。 */
+export const apiMinUtteranceMs = 600
 
 export type ApiAsrTurnEvent = "none" | "speech-start" | "speech-end"
+
+export type ApiAsrTurnEndReason = "silence" | "max-duration"
+
+export type ApiAsrTurnEnd = {
+  reason: ApiAsrTurnEndReason
+  /** 本回合确认说话后累计的发声时长；消费方据此丢弃短噪声而不是上传。 */
+  utteranceMs: number
+}
 
 export type ApiAsrTurnTracker = {
   /** 每帧喂一次能量 RMS 与帧时长（毫秒），返回本帧产生的事件。 */
@@ -36,7 +46,7 @@ export type ApiAsrTurnTracker = {
 export function createApiAsrTurnTracker(
   options: {
     onSpeechStart?: () => void
-    onSpeechEnd?: (reason: "silence" | "max-duration") => void
+    onSpeechEnd?: (end: ApiAsrTurnEnd) => void
     /** 说话阈值的倍增系数；打断监听用高倍阈值过滤扬声器回声与杂音。 */
     thresholdBoost?: number
   } = {},
@@ -49,12 +59,13 @@ export function createApiAsrTurnTracker(
   let utteranceMs = 0
   let active = false
 
-  const finishTurn = (reason: "silence" | "max-duration") => {
+  const finishTurn = (reason: ApiAsrTurnEndReason) => {
+    const end: ApiAsrTurnEnd = { reason, utteranceMs }
     active = false
     speechMs = 0
     silenceMs = 0
     utteranceMs = 0
-    options.onSpeechEnd?.(reason)
+    options.onSpeechEnd?.(end)
   }
 
   return {

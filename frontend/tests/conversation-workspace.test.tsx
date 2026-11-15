@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { LearningMemoryProvider } from "@/components/learning-memory-provider"
 import {
@@ -75,12 +75,61 @@ vi.mock("@/lib/model-config-envelope", () => ({
   resetModelConfigPublicKey: vi.fn(),
 }))
 
+// 转写识别条测试需要驱动语音运行时收到识别事件；其余导出（能量阈值、重采样等）保留原实现。
+const offlineAsr = vi.hoisted(() => ({
+  engine: "",
+  onEngineFallback: (_engine: "qwen3-asr" | "sensevoice") => {},
+  onPartial: (_text: string) => {},
+  onSpeechStart: () => {},
+  onTranscript: (_text: string, _language?: string) => {},
+  prepare: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+}))
+
+vi.mock("@/features/speech/use-streaming-asr", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useStreamingAsr: ({
+    engine,
+    onEngineFallback,
+    onPartial,
+    onSpeechStart,
+    onTranscript,
+  }: {
+    engine?: string
+    onEngineFallback?: (engine: "qwen3-asr" | "sensevoice") => void
+    onProcessingChange: (processing: boolean) => void
+    onPartial: (transcript: string) => void
+    onSpeechStart?: () => void
+    onTranscript: (transcript: string, language?: string) => void
+  }) => {
+    offlineAsr.engine = engine ?? ""
+    offlineAsr.onEngineFallback = onEngineFallback ?? (() => {})
+    offlineAsr.onPartial = onPartial ?? (() => {})
+    offlineAsr.onSpeechStart = onSpeechStart ?? (() => {})
+    offlineAsr.onTranscript = onTranscript
+    return {
+      available: true,
+      loadingProgress: 100,
+      pause: offlineAsr.stop,
+      prepare: offlineAsr.prepare,
+      start: offlineAsr.start,
+      stop: offlineAsr.stop,
+    }
+  },
+}))
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
 beforeEach(() => {
   ttsSpies.playbackState = "idle"
+  offlineAsr.prepare.mockReset().mockResolvedValue(undefined)
+  offlineAsr.start.mockReset().mockResolvedValue(undefined)
+  offlineAsr.stop.mockReset()
+  // jsdom 没有实现 scrollIntoView：语音通话中的实时识别条滚动会调用它。
+  window.HTMLElement.prototype.scrollIntoView = vi.fn()
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => true },
     releasePointerCapture: { configurable: true, value: vi.fn() },
@@ -510,6 +559,60 @@ describe("conversation feedback UI", () => {
     )
     expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
     expect(screen.getByText("Certainly, one latte coming up.")).toBeTruthy()
+  })
+
+  it("hides the live recognition strip while a reply is pending", async () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    const deferred: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve
+          }),
+      ),
+    )
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getSupportedConstraints: () => ({}),
+        getUserMedia: vi.fn().mockResolvedValue({
+          getAudioTracks: () => [{ enabled: true, stop: vi.fn() }],
+          getTracks: () => [{ enabled: true, stop: vi.fn() }],
+        }),
+      },
+    })
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "切换到语音模式" }))
+    await waitFor(() => expect(screen.getAllByText("可以说话").length).toBeGreaterThan(0))
+
+    // 监听中：实时识别条随 partial 出现在转写里。
+    act(() => {
+      offlineAsr.onPartial("Could I get a")
+    })
+    expect(screen.getByText("Could I get a")).toBeTruthy()
+
+    // 提交后进入生成期：识别文本与「正在识别」占位条都不再出现（回答完整之前不出现识别语音）。
+    act(() => {
+      offlineAsr.onTranscript("Could I get a latte?")
+    })
+    await waitFor(() => expect(screen.getByText("正在回应")).toBeTruthy(), { timeout: 2_500 })
+    act(() => {
+      offlineAsr.onPartial("And also a croissant")
+    })
+    expect(screen.queryByText("And also a croissant")).toBeNull()
+    expect(screen.queryByText("正在识别")).toBeNull()
+    expect(screen.queryByText(/正在将这句话转换为文字/)).toBeNull()
+
+    deferred.resolve?.(null)
+    fireEvent.click(screen.getByRole("button", { name: "结束通话并切换到文字输入" }))
   })
 
   it("tracks speech playback on the transcript replay button", async () => {

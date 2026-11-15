@@ -5,8 +5,10 @@ import {
   CheckCircle2Icon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  DicesIcon,
   HeadphonesIcon,
   HistoryIcon,
+  LoaderCircleIcon,
   MicIcon,
   PauseIcon,
   PlayIcon,
@@ -17,7 +19,7 @@ import {
   Volume2Icon,
 } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { Badge } from "@/components/ui/badge"
@@ -55,6 +57,16 @@ import {
   type ShadowingSpeaker,
 } from "@/lib/shadowing-dialogues"
 import { getShadowingNextStep, getShadowingScoreDimensions } from "@/lib/shadowing-feedback"
+import {
+  readShadowingLevelFilter,
+  readShadowingPosition,
+  readShadowingRandomMode,
+  type ShadowingLevelFilter,
+  saveShadowingLevelFilter,
+  saveShadowingPosition,
+  saveShadowingRandomMode,
+  shadowingLevelFilters,
+} from "@/lib/shadowing-local-state"
 import { apiTtsVoiceOptions, getSelectedApiVoiceValue } from "@/lib/speech-config"
 import { getShadowingVoicePair } from "@/lib/tts-config"
 import { cn } from "@/lib/utils"
@@ -109,7 +121,13 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   const [selectedRole, setSelectedRole] = useState<ShadowingSpeaker>("learner")
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
   const [playingLineId, setPlayingLineId] = useState<string | null>(null)
+  // 发音焦点的试听状态：与台词播放通道分开，避免被当成「对方接话」的回合流程。
+  const [playingFocusWord, setPlayingFocusWord] = useState(false)
+  // 侧栏偏好：等级筛选与随机连续模式，本地持久化，刷新后保持。
+  const [levelFilter, setLevelFilter] = useState<ShadowingLevelFilter>("all")
+  const [randomMode, setRandomMode] = useState(false)
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null)
+  const sidebarListRef = useRef<HTMLDivElement | null>(null)
   const [playingTakeId, setPlayingTakeId] = useState<string | null>(null)
   const [takeHistory, setTakeHistory] = useState<ShadowingTake[]>([])
   const playbackRunRef = useRef(0)
@@ -121,11 +139,25 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   const requestedDialogue = requestedMemory
     ? createMemoryShadowingDialogue(requestedMemory)
     : undefined
-  const availableDialogues = requestedDialogue
+  const allDialogues = requestedDialogue
     ? [requestedDialogue, ...presetDialogues]
     : presetDialogues
+  // 等级筛选决定侧栏、计数与随机池共用的工作集；记忆定制条目始终保留。
+  // 当前对话被筛掉时派生回退到工作集第一个，切回原筛选后选中场景仍会恢复。
+  const filteredDialogues = useMemo(
+    () =>
+      levelFilter === "all"
+        ? allDialogues
+        : allDialogues.filter(
+            (item) => item.scriptKind === "memory" || item.level === levelFilter,
+          ),
+    [allDialogues, levelFilter],
+  )
+  const availableDialogues = filteredDialogues.length > 0 ? filteredDialogues : allDialogues
   const activeDialogueId =
-    selectedDialogueId ?? requestedDialogue?.id ?? availableDialogues[0]?.id
+    selectedDialogueId && availableDialogues.some((item) => item.id === selectedDialogueId)
+      ? selectedDialogueId
+      : (requestedDialogue?.id ?? availableDialogues[0]?.id)
   const selectedDialogueIndex = Math.max(
     0,
     availableDialogues.findIndex((item) => item.id === activeDialogueId),
@@ -211,6 +243,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   function stopPlayback() {
     playbackRunRef.current += 1
     setPlayingLineId(null)
+    setPlayingFocusWord(false)
     stopSpeech()
   }
 
@@ -301,6 +334,11 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     }
     const plan = getShadowingTurn(dialogue, line)
     if (!plan.next) {
+      // 随机连续模式：本场景最后一句录完自动进入下一个随机场景，保持连续学习；
+      // 评分与记忆写入已在 onComplete 完成，不受换场影响。
+      if (randomMode) {
+        selectRandomDialogue(true)
+      }
       return
     }
     recorder.reset()
@@ -360,12 +398,71 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   }
 
   function playFocusWord() {
-    void playLine({
-      id: `${dialogue.id}-focus`,
-      speaker: selectedRole,
-      text: dialogue.focusWord,
-      translation: "",
+    if (playbackState !== "idle") {
+      stopPlayback()
+      return
+    }
+    // 发音焦点只播报焦点词本身，不进入台词播放通道：不置 playingLineId，
+    // 面板不会把「听发音」误显示成「对方正在接话，听完就录下一句」——
+    // 发音试听与跟读回合是两个功能。
+    const runId = playbackRunRef.current + 1
+    playbackRunRef.current = runId
+    setPlayingFocusWord(true)
+    void speakWithVoice(dialogue.focusWord, activeVoicePair[selectedRole], {
+      speed: Number(speed),
     })
+      .catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : "TTS 播放失败")
+      })
+      .finally(() => {
+        if (playbackRunRef.current === runId) {
+          setPlayingFocusWord(false)
+        }
+      })
+  }
+
+  // 媒体按钮点击后主动失焦：本工作区的主录音手势是长按空格，焦点留在按钮上时空格
+  // keyup 会原生「激活」聚焦按钮——落在录音按钮上就是一次意外录音。失焦让随后的
+  // 空格回到快捷键；键盘用户 Tab 聚焦后空格仍可激活一次。
+  function blurForPushToTalk(event: MouseEvent<HTMLButtonElement>) {
+    event.currentTarget.blur()
+  }
+
+  // 在当前筛选的工作集里随机换一个场景（排除记忆定制与当前场景）。
+  // keepStage 供随机连续模式使用：录完最后一句自动进入下一个场景时保持在跟读阶段，
+  // 不把用户踢回「听对话」。
+  function selectRandomDialogue(keepStage = false) {
+    const pool = availableDialogues.filter(
+      (item) => item.id !== activeDialogueId && item.scriptKind !== "memory",
+    )
+    if (pool.length === 0) {
+      return
+    }
+    const next = pool[Math.floor(Math.random() * pool.length)]
+    if (keepStage) {
+      recorder.reset()
+      cuedLineIdsRef.current.clear()
+      stopPlayback()
+      setSelectedDialogueId(next.id)
+      setSelectedRole("learner")
+      setSelectedLineId(null)
+      return
+    }
+    selectDialogue(next.id)
+  }
+
+  // 侧栏定位：把当前选中的场景条目滚动到可视区。恢复上次学习位置后自动调用一次，
+  // 点击「N/M」计数器可随时再次定位。
+  function scrollActiveDialogueIntoView() {
+    const list = sidebarListRef.current
+    if (!list || !activeDialogueId) {
+      return
+    }
+    const escaped =
+      typeof CSS !== "undefined" && CSS.escape ? CSS.escape(activeDialogueId) : activeDialogueId
+    list
+      .querySelector<HTMLElement>(`[data-shadowing-dialogue-id="${escaped}"]`)
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" })
   }
 
   async function playTake(take: ShadowingTake) {
@@ -411,6 +508,56 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     onStop: recorder.stop,
   })
 
+  // 恢复上次学习位置：刷新后回到上次的场景/目标句/扮演角色。?memory= 的记忆定制
+  // 会话优先，不做恢复。恢复值逐项校验，任一失效就忽略整条位置记录。
+  const restoredPositionRef = useRef(false)
+  const shouldAutoLocateRef = useRef(false)
+  useEffect(() => {
+    if (restoredPositionRef.current) {
+      return
+    }
+    restoredPositionRef.current = true
+    setLevelFilter(readShadowingLevelFilter())
+    setRandomMode(readShadowingRandomMode())
+    if (requestedDialogue) {
+      return
+    }
+    const position = readShadowingPosition()
+    if (!position) {
+      return
+    }
+    const restoredDialogue = presetDialogues.find((item) => item.id === position.dialogueId)
+    if (!restoredDialogue) {
+      return
+    }
+    shouldAutoLocateRef.current = true
+    setSelectedDialogueId(restoredDialogue.id)
+    setSelectedRole(position.role)
+    setSelectedLineId(
+      position.lineId && restoredDialogue.lines.some((line) => line.id === position.lineId)
+        ? position.lineId
+        : null,
+    )
+  }, [requestedDialogue])
+
+  // 学习位置在导航变化时保存：被动写本地导航状态，不是学习事件。
+  useEffect(() => {
+    saveShadowingPosition({
+      dialogueId: dialogue.id,
+      lineId: activeLine.id,
+      role: selectedRole,
+    })
+  }, [activeLine.id, dialogue.id, selectedRole])
+
+  // 恢复完成后的首次渲染把侧栏滚动到当前场景；点击「N/M」计数器可随时再次定位。
+  useEffect(() => {
+    if (!shouldAutoLocateRef.current) {
+      return
+    }
+    shouldAutoLocateRef.current = false
+    scrollActiveDialogueIntoView()
+  })
+
   return (
     <div className="grid min-h-0 min-w-0 items-stretch gap-4 lg:h-full lg:overflow-hidden lg:grid-cols-[220px_minmax(0,1fr)_260px] xl:grid-cols-[248px_minmax(0,1fr)_300px]">
       <aside className="flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card lg:h-full lg:min-h-0">
@@ -420,17 +567,63 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
               <HeadphonesIcon className="size-4 text-primary" aria-hidden="true" />
               <h2 className="text-sm font-semibold">场景跟读</h2>
             </div>
-            <Badge variant="secondary">
-              {selectedDialogueIndex + 1}/{availableDialogues.length}
-            </Badge>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="随机选择一个场景"
+                title="随机选择一个场景"
+                className="grid size-7 place-items-center rounded-md border text-muted-foreground transition-colors hover:bg-muted"
+                onClick={() => selectRandomDialogue()}
+              >
+                <DicesIcon className="size-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="定位当前学习的场景"
+                title="定位当前学习的场景"
+                className="flex"
+                onClick={scrollActiveDialogueIntoView}
+              >
+                <Badge variant="secondary">
+                  {selectedDialogueIndex + 1}/{availableDialogues.length}
+                </Badge>
+              </button>
+            </div>
           </div>
           <Progress
             value={((selectedDialogueIndex + 1) / availableDialogues.length) * 100}
             className="mt-3"
             aria-label={`跟读场景进度 ${selectedDialogueIndex + 1} / ${availableDialogues.length}`}
           />
+          <fieldset
+            aria-label="按等级筛选场景"
+            className="mt-2 flex flex-wrap gap-1 border-0 p-0"
+          >
+            {shadowingLevelFilters.map((level) => (
+              <button
+                key={level}
+                type="button"
+                aria-pressed={levelFilter === level}
+                className={cn(
+                  "rounded-md border px-2 py-1 text-[10px] font-medium transition-colors",
+                  levelFilter === level
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted",
+                )}
+                onClick={() => {
+                  setLevelFilter(level)
+                  saveShadowingLevelFilter(level)
+                }}
+              >
+                {level === "all" ? "全部" : level}
+              </button>
+            ))}
+          </fieldset>
         </div>
-        <div className="flex gap-1 overflow-x-auto overscroll-contain p-2 pt-0 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto">
+        <div
+          ref={sidebarListRef}
+          className="flex gap-1 overflow-x-auto overscroll-contain p-2 pt-0 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto"
+        >
           {availableDialogues.map((item, index) => (
             <Button
               key={item.id}
@@ -438,6 +631,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
               variant={item.id === dialogue.id ? "secondary" : "ghost"}
               className="h-auto min-w-[218px] justify-start px-2 py-2.5 text-left lg:min-w-0"
               aria-pressed={item.id === dialogue.id}
+              data-shadowing-dialogue-id={item.id}
               onClick={() => selectDialogue(item.id)}
             >
               <span className="grid size-7 shrink-0 place-items-center rounded-md border bg-background font-mono text-[10px]">
@@ -500,6 +694,18 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                 checked={autoTurn}
                 onCheckedChange={setAutoTurn}
                 aria-label="录完后自动播放对方台词"
+              />
+            </div>
+            <div className="flex h-7 items-center gap-2 rounded-lg border bg-background px-2.5">
+              <span className="whitespace-nowrap text-xs text-muted-foreground">随机</span>
+              <Switch
+                size="sm"
+                checked={randomMode}
+                onCheckedChange={(next) => {
+                  setRandomMode(next)
+                  saveShadowingRandomMode(next)
+                }}
+                aria-label="随机连续学习"
               />
             </div>
             <Button type="button" variant="outline" size="sm" onClick={swapRole}>
@@ -654,7 +860,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button
                   disabled={recorder.processing || playing || speechLoading}
-                  onClick={handleRecord}
+                  onClick={(event) => {
+                    blurForPushToTalk(event)
+                    void handleRecord()
+                  }}
                 >
                   {recorder.recording ? (
                     <PauseIcon data-icon="inline-start" />
@@ -676,7 +885,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                 <Button
                   variant="outline"
                   disabled={speechLoading}
-                  onClick={() => void playLine(activeLine)}
+                  onClick={(event) => {
+                    blurForPushToTalk(event)
+                    void playLine(activeLine)
+                  }}
                 >
                   <Volume2Icon data-icon="inline-start" />
                   听示范
@@ -685,7 +897,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                   <Button
                     variant="outline"
                     disabled={recorder.playing}
-                    onClick={() => void playCurrentRecording()}
+                    onClick={(event) => {
+                      blurForPushToTalk(event)
+                      void playCurrentRecording()
+                    }}
                   >
                     <PlayIcon data-icon="inline-start" />
                     {recorder.playing ? "正在回放" : "回放本次"}
@@ -889,7 +1104,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
                       size="icon-sm"
                       aria-label={`回放${index === 0 ? "本次录音" : `之前录音 ${activeLineTakes.length - index}`}`}
                       disabled={recorder.playing}
-                      onClick={() => void playTake(take)}
+                      onClick={(event) => {
+                        blurForPushToTalk(event)
+                        void playTake(take)
+                      }}
                     >
                       {playingTakeId === take.id ? <PauseIcon /> : <PlayIcon />}
                     </Button>
@@ -913,9 +1131,17 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
               variant="ghost"
               size="icon-xs"
               aria-label={`播放 ${dialogue.focusWord} 发音`}
-              onClick={playFocusWord}
+              aria-pressed={playingFocusWord}
+              onClick={(event) => {
+                blurForPushToTalk(event)
+                playFocusWord()
+              }}
             >
-              <Volume2Icon />
+              {playingFocusWord ? (
+                <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Volume2Icon />
+              )}
             </Button>
           </div>
           <p className="mt-3 text-xs leading-5 text-muted-foreground">{dialogue.focusTip}</p>
@@ -1032,7 +1258,8 @@ function Waveform({
           key={`${height}-${index}`}
           className={cn(
             "min-w-1 flex-1 rounded-full bg-background/45 transition-all",
-            active && "animate-pulse bg-background",
+            // 录音时用品牌色高亮：形状保持参考波形，靠颜色 + pulse 让「正在录音」足够醒目。
+            active && "animate-pulse bg-primary",
           )}
           style={{ height: `${height}%`, animationDelay: `${index * 35}ms` }}
         />

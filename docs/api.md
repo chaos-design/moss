@@ -84,6 +84,10 @@ OpenAI 兼容模型若因推理过程耗尽输出预算而返回 `finish_reason=
 因此单连接支持多次发言。`stop` 提交后关闭，`ping` 返回 `pong`。完整协议、错误码和部署参数见
 [`backend/services/asr/README.md`](../backend/services/asr/README.md)。
 
+各识别通道返回的转写里可能混入方括号系非语音标注（whisper 类模型的 `[background noise]`、
+`[pause]`，中文引擎的 `[噪音]` 等）。客户端在语音转写入口统一剥离这些已知产物标注；整段
+只剩标注时不作为消息提交。文字输入不经过该剥离，用户手打的括号内容保留原样。
+
 ## FunASR 2-pass WebSocket
 
 对话设置中的 `FunASR` 选项直接连接标准 FunASR WebSocket 服务，默认地址为
@@ -144,7 +148,9 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 当前会话内自动回退到浏览器引擎并提示一次，不改写用户已保存的接入方式。`api` 接入的默认
 根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与 `NEXT_PUBLIC_TTS_API_URL`，模型来自
 `NEXT_PUBLIC_ASR_API_MODEL` 与 `NEXT_PUBLIC_TTS_API_MODEL`；环境模型未设置时模型字段保持
-为空，由服务端默认模型接管；`tts.voice` 留空时使用 `alloy`。
+为空，由服务端默认模型接管；对话等播放链路的 `tts.voice` 始终发送同一个具体音色（未配置时
+客户端固定使用 `alloy`），保证配置未变时逐句音色一致；`/api/speech/tts` 路由本身仍按字段
+策略转发——测试入口空音色省略字段，交由服务端默认音色接管。
 
 设置卡片为 ASR 与 TTS 各提供一个独立的「测试识别接口」「测试合成接口」按钮，分别验证本服务
 已配置地址与对应服务是否正常；两个按钮的结果、测试中状态与异常状态互不覆盖。本机服务下拉、

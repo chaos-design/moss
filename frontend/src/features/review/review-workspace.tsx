@@ -40,6 +40,7 @@ import {
   parseReviewScope,
   type ReviewScope,
   reviewScopeStorageKey,
+  reviewScopes,
 } from "@/lib/memory"
 import { cn } from "@/lib/utils"
 
@@ -181,6 +182,22 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     }
   }, [initialSyncSettled])
 
+  // 只显示有数据的范围按钮；当前持久化的范围一条数据都没有时，自动回到「混合」，
+  // 避免困在空范围里。回退不写回 localStorage：用户偏好的范围一旦有数据仍会生效。
+  const availableScopes = useMemo(
+    () =>
+      reviewScopes.filter((candidate) =>
+        state.items.some((item) => matchesReviewScope(item, candidate)),
+      ),
+    [state.items],
+  )
+  const scopeHasData = availableScopes.includes(scope)
+  useEffect(() => {
+    if (memoryReady && !scopeHasData && scope !== "mixed") {
+      setScope("mixed")
+    }
+  }, [memoryReady, scope, scopeHasData])
+
   function resetForScope(nextScope: ReviewScope) {
     setScope(nextScope)
     try {
@@ -293,7 +310,7 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     return (
       <section className="flex min-h-[520px] flex-col items-center justify-center border-y px-5 py-12 text-center">
         <div className="mb-6 w-full max-w-md">
-          <ReviewScopeSwitch scope={scope} onChange={resetForScope} />
+          <ReviewScopeSwitch scope={scope} scopes={availableScopes} onChange={resetForScope} />
         </div>
         <BrainCircuitIcon className="size-10 text-primary" aria-hidden="true" />
         <h2 className="mt-4 font-serif text-2xl font-semibold">{empty.title}</h2>
@@ -377,7 +394,11 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
             aria-label={`本组复习进度 ${Math.round(progress)}%`}
           />
           <div className="mt-4 border-t pt-3">
-            <ReviewScopeSwitch scope={scope} onChange={resetForScope} />
+            <ReviewScopeSwitch
+              scope={scope}
+              scopes={availableScopes}
+              onChange={resetForScope}
+            />
           </div>
         </header>
 

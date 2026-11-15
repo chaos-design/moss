@@ -8,12 +8,16 @@ import {
   voiceIdleReminderDelayMs,
   voiceIdleReminderLimit,
 } from "@/features/conversation/use-voice-conversation"
+import { getResolvedSpeechEndpoint, setSpeechConfig } from "@/features/speech/use-speech-config"
+import { getTtsConfig, setTtsConfig } from "@/features/speech/use-tts-config"
 import {
   type ConversationSession,
   conversationHistoryStorageKey,
 } from "@/lib/conversation-history"
 import { defaultConversationPrefs } from "@/lib/conversation-prefs"
 import { getConversationScene } from "@/lib/conversation-scenes"
+import { defaultSpeechConfig } from "@/lib/speech-config"
+import { defaultTtsConfig } from "@/lib/tts-config"
 import { networkFailureMessage } from "@/lib/user-error"
 
 const localTts = vi.hoisted(() => ({
@@ -26,6 +30,7 @@ const localTts = vi.hoisted(() => ({
 const offlineAsr = vi.hoisted(() => ({
   engine: "",
   onEngineFallback: (_engine: "qwen3-asr" | "sensevoice") => {},
+  onPartial: (_text: string) => {},
   onSpeechStart: () => {},
   onTranscript: (_text: string, _language?: string) => {},
   prepare: vi.fn(),
@@ -62,7 +67,7 @@ vi.mock("@/features/speech/use-streaming-asr", () => ({
     engine,
     onEngineFallback,
     onProcessingChange: _onProcessingChange,
-    onPartial: _onPartial,
+    onPartial,
     onSpeechStart,
     onTranscript,
   }: {
@@ -75,6 +80,7 @@ vi.mock("@/features/speech/use-streaming-asr", () => ({
   }) => {
     offlineAsr.engine = engine ?? ""
     offlineAsr.onEngineFallback = onEngineFallback ?? (() => {})
+    offlineAsr.onPartial = onPartial ?? (() => {})
     offlineAsr.onSpeechStart = onSpeechStart ?? (() => {})
     offlineAsr.onTranscript = onTranscript
     return {
@@ -688,6 +694,38 @@ describe("useVoiceConversation", () => {
     unmount()
   })
 
+  it("routes voice selection by transport: api voices to speech-config, local voices to tts-config", async () => {
+    setSpeechConfig(() => defaultSpeechConfig)
+    setTtsConfig(() => defaultTtsConfig)
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    act(() => {
+      result.current.selectTtsTransport("api")
+    })
+    act(() => {
+      result.current.selectVoice("api:onyx")
+    })
+    // 接口音色写入 speech-config 的 tts 配置——播放链路从这里读取。
+    expect(getResolvedSpeechEndpoint("tts")).toMatchObject({ transport: "api", voice: "onyx" })
+
+    act(() => {
+      result.current.selectTtsTransport("local")
+    })
+    act(() => {
+      result.current.selectVoice("kokoro:af_bella")
+    })
+    // 本机音色库仍写 tts-config。
+    expect(getTtsConfig()).toMatchObject({ engine: "kokoro", voice: "af_bella" })
+
+    setSpeechConfig(() => defaultSpeechConfig)
+    setTtsConfig(() => defaultTtsConfig)
+    act(() => {
+      result.current.endCall()
+    })
+    unmount()
+  })
+
   it("runs a voice turn and restores listening after the AI response", async () => {
     const scene = getConversationScene("coffee")
     const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
@@ -766,7 +804,7 @@ describe("useVoiceConversation", () => {
     unmount()
   })
 
-  it("combines consecutive recognized segments before requesting one AI reply", async () => {
+  it("commits each recognized utterance as its own message and answers once after silence", async () => {
     const scene = getConversationScene("coffee")
     const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
 
@@ -778,6 +816,63 @@ describe("useVoiceConversation", () => {
       offlineAsr.onTranscript("And make it decaf, please.")
     })
 
+    // 每句识别结果立即成为独立消息；静默 1.8s 后统一请求一次回复。
+    await waitFor(
+      () => {
+        expect(result.current.messages).toHaveLength(4)
+      },
+      { timeout: 2_500 },
+    )
+
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      scene.opening.content,
+      "Could I get a latte?",
+      "And make it decaf, please.",
+      "Would you like it hot or iced?",
+    ])
+    expect(result.current.messages[1]).toMatchObject({ role: "user", inputMode: "voice" })
+    expect(result.current.messages[2]).toMatchObject({ role: "user", inputMode: "voice" })
+    expect(fetchMock.mock.calls.filter((call) => call[0] === "/api/conversation")).toHaveLength(
+      1,
+    )
+    // 一次回答覆盖两条消息的完整上下文。
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(requestBody.messages.slice(-2)).toEqual([
+      { role: "user", content: "Could I get a latte?" },
+      { role: "user", content: "And make it decaf, please." },
+    ])
+
+    act(() => {
+      result.current.endCall()
+    })
+    unmount()
+  })
+
+  it("answers each utterance separately when silence exceeds the settle delay", async () => {
+    // 回复会请求两次：每次调用都需要一个未被读取过的 Response 实例。
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              content: "Would you like it hot or iced?",
+              translation: "你想要热的还是冰的？",
+              recall: "继续使用礼貌请求。",
+            },
+          }),
+          { status: 200 },
+        ),
+    )
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    await act(async () => {
+      await result.current.startCall()
+    })
+    act(() => {
+      offlineAsr.onTranscript("Could I get a latte?")
+    })
+
     await waitFor(
       () => {
         expect(result.current.messages).toHaveLength(3)
@@ -785,14 +880,61 @@ describe("useVoiceConversation", () => {
       { timeout: 2_500 },
     )
 
-    expect(result.current.messages[1]).toMatchObject({
-      role: "user",
-      content: "Could I get a latte? And make it decaf, please.",
-      inputMode: "voice",
+    act(() => {
+      offlineAsr.onTranscript("And one croissant, please.")
     })
-    expect(fetchMock.mock.calls.filter((call) => call[0] === "/api/conversation")).toHaveLength(
-      1,
+
+    await waitFor(
+      () => {
+        expect(result.current.messages).toHaveLength(5)
+      },
+      { timeout: 2_500 },
     )
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      scene.opening.content,
+      "Could I get a latte?",
+      "Would you like it hot or iced?",
+      "And one croissant, please.",
+      "Would you like it hot or iced?",
+    ])
+    expect(fetchMock.mock.calls.filter((call) => call[0] === "/api/conversation")).toHaveLength(
+      2,
+    )
+
+    act(() => {
+      result.current.endCall()
+    })
+    unmount()
+  })
+
+  it("keeps recognized speech out of the live transcript while a reply is pending", async () => {
+    fetchMock.mockReturnValueOnce(new Promise<Response>(() => {}))
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    await act(async () => {
+      await result.current.startCall()
+    })
+    act(() => {
+      offlineAsr.onTranscript("What sizes do you have?")
+    })
+    await waitFor(() => expect(result.current.pending).toBe(true), { timeout: 2_500 })
+
+    act(() => {
+      offlineAsr.onPartial("and also a croissant")
+    })
+    // 回答生成期间识别文本不进入转写（回答完整之前不出现识别语音）。
+    expect(result.current.liveTranscript).toBe("")
+
+    // 打断生成后恢复展示：保持打断语义。
+    act(() => {
+      offlineAsr.onSpeechStart()
+    })
+    expect(result.current.pending).toBe(false)
+    act(() => {
+      offlineAsr.onPartial("and also a croissant")
+    })
+    expect(result.current.liveTranscript).toBe("and also a croissant")
 
     act(() => {
       result.current.endCall()
@@ -820,6 +962,48 @@ describe("useVoiceConversation", () => {
     expect(result.current.callStatus).toBe("listening")
 
     act(() => result.current.endCall())
+    unmount()
+  })
+
+  it("strips bracketed ASR annotations and drops annotation-only utterances", async () => {
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    await act(async () => {
+      await result.current.startCall()
+    })
+
+    // 整段只剩识别标注：剥成空串后直接丢弃，不发消息、不请求回复。
+    act(() => {
+      offlineAsr.onTranscript("[pause]")
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 1_300))
+    })
+    expect(result.current.messages).toHaveLength(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    // 混合内容：标注剥离后只提交真实语音。
+    act(() => {
+      offlineAsr.onTranscript(
+        "[background noise] What do you mean about [pause] seeing you for ages?",
+      )
+    })
+    await waitFor(
+      () => {
+        expect(result.current.messages).toHaveLength(3)
+      },
+      { timeout: 2_500 },
+    )
+    expect(result.current.messages[1]).toMatchObject({
+      role: "user",
+      content: "What do you mean about seeing you for ages?",
+      inputMode: "voice",
+    })
+
+    act(() => {
+      result.current.endCall()
+    })
     unmount()
   })
 

@@ -4,12 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   type ApiAsrTurnTracker,
   apiBargeInThresholdBoost,
+  apiMinUtteranceMs,
   calculateByteRms,
   createApiAsrTurnTracker,
 } from "@/features/speech/api-asr-turn-detection"
 import { resamplePcm } from "@/features/speech/use-streaming-asr"
 import { encodeWavBlob } from "@/lib/audio-wav"
-import { normalizeSpeechTranscript } from "@/lib/call-runtime"
+import { normalizeSpeechTranscript, stripSpeechAnnotations } from "@/lib/call-runtime"
 import {
   isRetryableRecognitionFailure,
   SpeechApiClientError,
@@ -257,6 +258,13 @@ export function useBrowserAsr({
     [setProcessing],
   )
 
+  // 短噪声轮（发声时长低于 apiMinUtteranceMs）按噪声丢弃：清掉已积累的 PCM，
+  // 不发起识别上传，采集继续等待下一句。
+  const discardRecordedAudio = useCallback(() => {
+    pcmFramesRef.current = []
+    pcmFrameCountRef.current = 0
+  }, [])
+
   // 重试按钮入口：把上次失败的录音重新上传。成功后恢复采集继续下一轮；
   // 仍失败则按钮保留，采集保持暂停，可以反复重试。
   // VAD 断句用：只快照已积累的 PCM 并编码上传，采集保持运行，监听不中断；
@@ -301,12 +309,17 @@ export function useBrowserAsr({
       onSpeechStart: () => {
         onSpeechStartRef.current?.()
       },
-      onSpeechEnd: () => {
+      onSpeechEnd: (end) => {
+        // 强制断句（25s 上限）一定上传；静音断句但发声过短的轮次按噪声丢弃。
+        if (end.reason === "silence" && end.utteranceMs < apiMinUtteranceMs) {
+          discardRecordedAudio()
+          return
+        }
         void flushRecordedAudio()
       },
     })
     armFeedLoop()
-  }, [armFeedLoop, flushRecordedAudio])
+  }, [armFeedLoop, discardRecordedAudio, flushRecordedAudio])
 
   // 播报期间的打断监听：与采集共用同一张 Web Audio 图，但用高倍阈值——扬声器回声
   // 经噪声底自适应后远低于直接说话的能量，只有真实发言能触发 speech-start；
@@ -387,7 +400,9 @@ export function useBrowserAsr({
         let interim = ""
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
           const result = event.results[index]
-          const text = normalizeSpeechTranscript(result?.[0]?.transcript ?? "")
+          const text = normalizeSpeechTranscript(
+            stripSpeechAnnotations(result?.[0]?.transcript ?? ""),
+          )
           if (!text) {
             continue
           }

@@ -676,7 +676,9 @@ export function ConversationWorkspace({
               ))}
             </div>
 
-            {liveTranscript || callStatus === "listening" || callStatus === "transcribing" ? (
+            {/* 回答生成期间转写里只保留骨架占位：识别文本在回答完整之前不出现 */}
+            {!pending &&
+            (liveTranscript || callStatus === "listening" || callStatus === "transcribing") ? (
               <LiveTranscriptTurn
                 layout={prefs.transcriptLayout}
                 status={callStatus}

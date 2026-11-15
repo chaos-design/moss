@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import { useTtsConfig } from "@/features/speech/use-tts-config"
+import { defaultApiTtsVoice } from "@/lib/speech-config"
 import { TtsClientPlayer, type TtsSpeakOptions } from "@/lib/tts-client"
 import type { TtsConfig, TtsEngine } from "@/lib/tts-config"
 
@@ -119,10 +120,25 @@ export function useLocalTts() {
     setPlaybackState("idle")
   }, [])
 
+  // The playback voice has one owner per transport: OpenAI-compatible endpoints read the voice
+  // configured for them in speech-config, loopback services and system speech read the local
+  // registry. Without this split the api transport would receive a local voice id (af_heart…)
+  // that the provider cannot resolve, so the configured voice never reached playback.
+  //
+  // An empty api voice never reaches the wire either: the request always carries ONE concrete
+  // name (alloy) so a provider that picks a voice per request cannot make consecutive sentences
+  // sound like different people. The voice only changes when the configuration changes.
+  const resolvePlaybackVoice = useCallback(() => {
+    const endpoint = endpointRef.current
+    if (endpoint.transport === "api") {
+      return endpoint.voice || defaultApiTtsVoice
+    }
+    return configRef.current.voice
+  }, [])
+
   const prepare = useCallback(async () => {
-    const current = configRef.current
-    await getPlayer(current.engine, current.voice).prepare()
-  }, [getPlayer])
+    await getPlayer(configRef.current.engine, resolvePlaybackVoice()).prepare()
+  }, [getPlayer, resolvePlaybackVoice])
 
   // Shared playback runner. Resolving the engine/voice per call lets the standard `speak`
   // follow the saved config while `previewVoice` auditions a specific option without
@@ -190,10 +206,13 @@ export function useLocalTts() {
 
   const speak = useCallback(
     (text: string, options: TtsSpeakOptions = {}) => {
-      const current = configRef.current
-      return run(text, { engine: current.engine, voice: current.voice }, options)
+      return run(
+        text,
+        { engine: configRef.current.engine, voice: resolvePlaybackVoice() },
+        options,
+      )
     },
-    [run],
+    [resolvePlaybackVoice, run],
   )
 
   const speakWithVoice = useCallback(
