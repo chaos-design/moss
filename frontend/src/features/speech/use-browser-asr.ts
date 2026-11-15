@@ -131,6 +131,9 @@ export function useBrowserAsr({
   const pcmFramesRef = useRef<Float32Array[]>([])
   const pcmFrameCountRef = useRef(0)
   const capturePausedRef = useRef(false)
+  // 逐句上传走一条串行队列：上一句上传（含重试）未结算前，下一句排队等待，
+  // 结果按断句顺序提交，避免后说的句子因网络更快而反超先说的句子写反消息顺序。
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
   // 重试耗尽后保留的失败录音：亮出重试按钮，等待学习者手动重试。
   const failedUploadRef = useRef<Blob | null>(null)
   const [recognitionRetryPending, setRecognitionRetryPending] = useState(false)
@@ -172,6 +175,9 @@ export function useBrowserAsr({
     pcmFramesRef.current = []
     pcmFrameCountRef.current = 0
     capturePausedRef.current = false
+    // 丢弃在途与排队上传：requestId 已失效，残留任务会因 requestId 校验直接返回，
+    // 但把队列归零可让挂着的录音 Blob 及时释放。
+    uploadQueueRef.current = Promise.resolve()
     if (turnFeedTimerRef.current !== null) {
       window.clearInterval(turnFeedTimerRef.current)
       turnFeedTimerRef.current = null
@@ -237,8 +243,10 @@ export function useBrowserAsr({
               return
             }
             if (attempt >= recognitionAttempts) {
-              // 重试耗尽：结束本次识别——暂停采集，不再往失败回合里积累音频；
-              // 保留录音并亮出重试按钮，等待学习者手动重试。
+              // 重试耗尽：结束本次识别——暂停采集，不再往失败回合里积累音频，
+              // 避免学习者继续说时新句子照常上传、把旧句子的重试结果顶到后面去；
+              // 保留录音并亮出重试按钮，等待学习者手动重试（retryRecognition 恢复采集）。
+              capturePausedRef.current = true
               failedUploadRef.current = audio
               setRecognitionRetryPending(true)
               onErrorRef.current(failure)
@@ -269,7 +277,8 @@ export function useBrowserAsr({
   // 仍失败则按钮保留，采集保持暂停，可以反复重试。
   // VAD 断句用：只快照已积累的 PCM 并编码上传，采集保持运行，监听不中断；
   // 上传与提交期间用户继续说话的内容会进入下一个快照。
-  const flushRecordedAudio = useCallback(async () => {
+  // 上传走串行队列（uploadQueueRef），断句顺序即提交顺序。
+  const flushRecordedAudio = useCallback(() => {
     const graph = audioGraphRef.current
     const frames = pcmFramesRef.current
     const frameCount = pcmFrameCountRef.current
@@ -285,7 +294,11 @@ export function useBrowserAsr({
       offset += frame.length
     }
     const resampled = resamplePcm(samples, graph.context.sampleRate, apiUploadSampleRate)
-    await uploadRecordedAudio(encodeWavBlob(resampled, apiUploadSampleRate))
+    const audio = encodeWavBlob(resampled, apiUploadSampleRate)
+    // 串行提交：上传任务在前一个任务结算后执行；catch 兜底保证队列永不卡死。
+    uploadQueueRef.current = uploadQueueRef.current
+      .then(() => uploadRecordedAudio(audio))
+      .catch(() => {})
   }, [uploadRecordedAudio])
 
   const armFeedLoop = useCallback(() => {
@@ -315,7 +328,7 @@ export function useBrowserAsr({
           discardRecordedAudio()
           return
         }
-        void flushRecordedAudio()
+        flushRecordedAudio()
       },
     })
     armFeedLoop()
@@ -455,13 +468,18 @@ export function useBrowserAsr({
     }
     failedUploadRef.current = null
     setRecognitionRetryPending(false)
-    void uploadRecordedAudio(audio).finally(() => {
-      // 重试成功：恢复采集继续下一轮；仍失败：按钮保留，采集保持暂停。
-      capturePausedRef.current = failedUploadRef.current !== null
-      if (!capturePausedRef.current) {
+    // 重试也走同一条串行队列，避免与新的断句上传交错乱序。
+    uploadQueueRef.current = uploadQueueRef.current
+      .then(() => uploadRecordedAudio(audio))
+      .catch(() => {})
+    void uploadQueueRef.current.finally(() => {
+      if (failedUploadRef.current === null) {
+        // 重试成功：恢复采集继续下一轮。
+        capturePausedRef.current = false
         armCaptureTracker()
         armFeedLoop()
       }
+      // 仍失败：uploadRecordedAudio 的耗尽分支已保留重试按钮并保持采集暂停。
     })
   }, [armCaptureTracker, armFeedLoop, uploadRecordedAudio])
 
@@ -478,7 +496,9 @@ export function useBrowserAsr({
       window.clearInterval(turnFeedTimerRef.current)
       turnFeedTimerRef.current = null
     }
-    void flushRecordedAudio().then(() => {
+    flushRecordedAudio()
+    // 已排队的上传结算后再挂高阈值监听（保留原语义：先把已积累音频传完）。
+    void uploadQueueRef.current.then(() => {
       if (activeRef.current && bargeInRef.current) {
         armBargeInMonitor()
       }

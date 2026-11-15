@@ -524,4 +524,149 @@ describe("useBrowserAsr", () => {
       vi.useRealTimers()
     }
   })
+
+  it("commits consecutive turns in order even when the later turn's upload resolves first", async () => {
+    vi.useFakeTimers()
+    try {
+      // 第一句上传挂起（受控延迟），第二句立即返回：没有串行队列时第二句会反超第一句。
+      let resolveFirst: ((response: Response) => void) | null = null
+      const firstPending = new Promise<Response>((resolve) => {
+        resolveFirst = resolve
+      })
+      const jsonResponse = (text: string) =>
+        new Response(JSON.stringify({ data: { text } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      const fetchMock = vi.fn((...args: unknown[]) => {
+        void args
+        const callNumber = fetchMock.mock.calls.length // 1-based
+        if (callNumber === 1) {
+          return firstPending
+        }
+        return Promise.resolve(jsonResponse("second line"))
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      vi.stubGlobal("Blob", FakeBlob)
+      stubApiAudioGraph()
+      Object.assign(navigator, {
+        mediaDevices: {
+          getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
+        },
+      })
+
+      const onTranscript = vi.fn()
+      render(
+        <BrowserAsrProbe
+          endpoint={apiEndpoint}
+          onError={vi.fn()}
+          onPartial={vi.fn()}
+          onProcessingChange={vi.fn()}
+          onSpeechStart={vi.fn()}
+          onTranscript={onTranscript}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByRole("button", { name: "start" }).click()
+      })
+      await advanceMeterTicks(6)
+      const graph = startedGraph()
+
+      // 第一句：说话 + 静音断句 → 上传排队（挂起中）。
+      graph.meterValue = 178
+      await speakForTicks(graph, 7)
+      graph.meterValue = 128
+      await advanceMeterTicks(13)
+
+      // 第二句：说话 + 静音断句 → 上传排在第一句之后。
+      graph.meterValue = 178
+      await speakForTicks(graph, 7)
+      graph.meterValue = 128
+      await advanceMeterTicks(13)
+
+      // 两句都已排队，但第一句还没结算：此刻不应有任何提交。
+      expect(onTranscript).not.toHaveBeenCalled()
+
+      // 放行第一句上传：串行队列先提交第一句，再启动第二句上传并提交。
+      act(() => {
+        resolveFirst?.(jsonResponse("first line"))
+      })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(onTranscript.mock.calls.map((call) => call[0])).toEqual([
+        "first line",
+        "second line",
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("pauses capture when retries are exhausted so new speech is not uploaded out of order", async () => {
+    vi.useFakeTimers()
+    try {
+      // 上游持续 502：三连同次全部耗尽后应暂停采集，新的断句不再发起上传。
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: "speech_unavailable" } }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      vi.stubGlobal("fetch", fetchMock)
+      vi.stubGlobal("Blob", FakeBlob)
+      stubApiAudioGraph()
+      Object.assign(navigator, {
+        mediaDevices: {
+          getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
+        },
+      })
+
+      const onError = vi.fn()
+      const onTranscript = vi.fn()
+      render(
+        <BrowserAsrProbe
+          endpoint={apiEndpoint}
+          onError={onError}
+          onPartial={vi.fn()}
+          onProcessingChange={vi.fn()}
+          onSpeechStart={vi.fn()}
+          onTranscript={onTranscript}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByRole("button", { name: "start" }).click()
+      })
+      await advanceMeterTicks(6)
+      const graph = startedGraph()
+
+      // 第一句：说话 + 静音断句 → 触发上传，三次重试全部 502。
+      graph.meterValue = 178
+      await speakForTicks(graph, 7)
+      graph.meterValue = 128
+      await advanceMeterTicks(13)
+
+      // 退避 700ms / 1400ms 走完后三次尝试耗尽，进入暂停采集。
+      await vi.advanceTimersByTimeAsync(700)
+      await vi.advanceTimersByTimeAsync(1400)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(onError).toHaveBeenCalledTimes(1)
+
+      // 继续说话：采集已暂停，新句子的断句不再产生上传。
+      graph.meterValue = 178
+      await speakForTicks(graph, 7)
+      graph.meterValue = 128
+      await advanceMeterTicks(13)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(onTranscript).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

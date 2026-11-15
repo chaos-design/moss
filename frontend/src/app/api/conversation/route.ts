@@ -74,6 +74,12 @@ export const maxDuration = 120
 // 既有降级展示，不阻塞回复本身。修复是轻量重排，用短超时避免总时长顶穿路由时限。
 const conversationContractRepairAttempts = 2
 const conversationContractRepairTimeoutMs = 45_000
+// 修复只占用剩余时间预算：平台函数总时长被 maxDuration（120s）封顶，初次请求最坏已耗 110s，
+// 若再跑满两次 45s 修复会顶到 200s，函数在修复途中被平台终止，连已就绪的降级回复一起丢失。
+// 每次修复前扣除 5s 收尾余量计算剩余预算；预算不足 15s 时直接放弃修复，保留降级回复。
+const conversationRepairTimeMarginMs = 5_000
+const conversationMinimumRepairBudgetMs = 15_000
+const conversationMaxDurationMs = maxDuration * 1_000
 const conversationContractRepairPrompt = `You repair a previous reply for an English-learning chat. Output ONLY one JSON object, no prose and no code fences, with exactly these fields:
 {"reply": string — the English reply for the learner (reuse the given reply text verbatim when it is already good), "translation": string — Simplified Chinese translation of the reply, "recall": string — empty unless a recall hint is needed, "inputAnalysis": {"intent": "scene_reply" | "translation_request" | "language_question"}, "validation": {"status": "improve" | "accurate" | "guidance", "corrected": string — an improved version of the learner's original message (identical to it when it was already fine), "explanation": string — Simplified Chinese rationale, "issues": Array<{kind: "clarity" | "expression" | "task_coverage", original: string, corrected: string, explanation: string}>, "examples": Array<{english: string, chinese: string}>}}`
 
@@ -83,6 +89,7 @@ async function repairConversationContract(input: {
   originalInput: string
   suggestedPhrase?: string
   sceneTag?: string
+  timeoutMs: number
 }): Promise<ConversationResponseData | null> {
   try {
     const repaired = await requestAiText({
@@ -96,7 +103,7 @@ async function repairConversationContract(input: {
           content: `Learner's original message:\n${input.originalInput}\n\nAssistant reply to reformat:\n${input.rawReply}`,
         },
       ],
-      signal: AbortSignal.timeout(conversationContractRepairTimeoutMs),
+      signal: AbortSignal.timeout(input.timeoutMs),
     })
     const parsed = parseProviderConversation(
       repaired,
@@ -304,6 +311,8 @@ export async function PUT(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // 修复的时间预算从请求进入路由起算（见 conversationRepairTimeMarginMs 的注释）。
+  const requestStartedAt = Date.now()
   const demoMode = isDemoMode()
 
   // The browser sends only an encrypted model-config envelope. Plaintext modelConfig payloads
@@ -515,11 +524,19 @@ export async function POST(request: Request) {
     )
     if (!parsed.contractApplied) {
       // 未按输出契约返回时聚焦重排最多重试几次；任一次成功即采用，全部失败保持降级。
+      // 每次修复先按「剩余时间预算」取预算：不足最小预算直接放弃，避免顶穿 maxDuration。
       for (
         let attempt = 0;
         attempt < conversationContractRepairAttempts && !parsed.contractApplied;
         attempt += 1
       ) {
+        const remainingBudgetMs =
+          conversationMaxDurationMs -
+          (Date.now() - requestStartedAt) -
+          conversationRepairTimeMarginMs
+        if (remainingBudgetMs < conversationMinimumRepairBudgetMs) {
+          break
+        }
         parsed =
           (await repairConversationContract({
             config: providerConfig,
@@ -527,6 +544,7 @@ export async function POST(request: Request) {
             originalInput: latestUserContent,
             suggestedPhrase: scene.focusPhrases[0]?.[1],
             sceneTag: scene.tags[0],
+            timeoutMs: Math.min(conversationContractRepairTimeoutMs, remainingBudgetMs),
           })) ?? parsed
       }
     }
