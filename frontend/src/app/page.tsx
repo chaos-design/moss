@@ -289,7 +289,7 @@ export default function HomePage() {
       </section>
 
       <footer className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-7 text-xs text-muted-foreground sm:px-6 lg:px-8">
-        <span>Moss Language Lab</span>
+        <span>Moss · Memory-driven Optimized Smart Study</span>
         <span className="flex items-center gap-2">
           <AudioLinesIcon className="size-3.5 text-primary" aria-hidden="true" />
           对话 · 跟读 · 复习

@@ -24,8 +24,9 @@ export function Brand({
       </span>
       <span className={cn("flex flex-col leading-none", compact && "sr-only")}>
         <strong className="font-serif text-lg font-semibold">Moss</strong>
-        <span className="mt-1 font-mono text-[9px] uppercase text-muted-foreground">
-          Language Lab
+        {/* 全称来自 README：Memory-driven Optimized Smart Study。 */}
+        <span className="mt-1 whitespace-nowrap font-mono text-[9px] uppercase tracking-tight text-muted-foreground">
+          Memory-driven Optimized Smart Study
         </span>
       </span>
     </Link>

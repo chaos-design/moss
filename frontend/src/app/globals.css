@@ -163,3 +163,31 @@
   border-radius: var(--radius);
   background: var(--border);
 }
+
+/* 语音识别条的长文本滚动：转写超过一行时水平匀速循环，提示可以继续说。
+   内容在 JS 里复制两份，translation 让循环无缝衔接。 */
+.speech-marquee {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
+}
+
+.speech-marquee-track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: speech-marquee-scroll var(--speech-marquee-duration, 18s) linear infinite;
+}
+
+@keyframes speech-marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speech-marquee-track {
+    animation: none;
+  }
+}

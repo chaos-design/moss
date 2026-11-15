@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import {
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   memo,
@@ -456,7 +457,8 @@ export function ConversationWorkspace({
   }, [latestMessageId, messages.length])
 
   // 语音通话期间把正在识别的轮次滚进可视区：浮动输入面板盖住转写底部，
-  // 「最近消息对齐顶部」的滚动不保证这一轮可见。
+  // 「最近消息对齐顶部」的滚动不保证这一轮可见。每个 partial 都会触发本效果，
+  // 必须用瞬时滚动——平滑动画会互相打断，识别条长句时会肉眼可见地卡顿。
   useEffect(() => {
     if (!callActive) {
       return
@@ -466,7 +468,7 @@ export function ConversationWorkspace({
     if (!transcript || !liveTurn) {
       return
     }
-    liveTurn.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    liveTurn.scrollIntoView({ block: "nearest" })
     const panelTop = composerRef.current?.getBoundingClientRect().top
     const liveBottom = liveTurn.getBoundingClientRect().bottom
     if (typeof panelTop === "number" && liveBottom > panelTop - 8) {
@@ -1440,6 +1442,8 @@ export const TranscriptTurn = memo(function TranscriptTurn({
 })
 
 // Interim speech recognition results, shown while the learner is still speaking.
+// 两种文案状态：「准备就绪」（麦克风已开、还没听到语音）与「识别中」（正在转写本句话）。
+// 识别中的长文本在固定宽度内水平滚动（marquee），并常驻「可以继续说」提示。
 function LiveTranscriptTurn({
   layout,
   status,
@@ -1450,7 +1454,10 @@ function LiveTranscriptTurn({
   text: string
 }) {
   const alignRight = layout === "split"
-  const transcribing = status === "transcribing"
+  const recognizing = Boolean(text) || status === "transcribing"
+  const marquee = text.length > 40
+  // 时长随文本长度缩放，保持匀速可读；内容渲染两份以无缝循环。
+  const marqueeDuration = `${Math.max(10, Math.min(30, Math.round(text.length / 3)))}s`
   return (
     <article
       data-live-transcript-turn
@@ -1470,21 +1477,44 @@ function LiveTranscriptTurn({
           <p className="text-xs font-semibold">你</p>
           <span className="flex items-center gap-1 text-[11px] text-[var(--success)]">
             <span className="size-1.5 animate-pulse rounded-full bg-[var(--success)]" />
-            {transcribing ? "正在识别" : "语音识别就绪"}
+            {recognizing ? "识别中" : "准备就绪"}
           </span>
         </div>
         {text ? (
-          <p className="mt-2 text-base leading-7 text-muted-foreground">{text}</p>
+          <div className="mt-2">
+            {marquee ? (
+              <div className="speech-marquee w-full">
+                <div
+                  className="speech-marquee-track text-base leading-7 text-muted-foreground"
+                  style={{ "--speech-marquee-duration": marqueeDuration } as CSSProperties}
+                >
+                  <span className="pr-12">{text}</span>
+                  <span className="pr-12" aria-hidden="true">
+                    {text}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-base leading-7 text-muted-foreground">{text}</p>
+            )}
+            {recognizing ? (
+              <p className="mt-1 text-[11px] text-primary">
+                可以继续说，我们会一直听完整句话。
+              </p>
+            ) : null}
+          </div>
         ) : (
           <p className="mt-2 flex items-center gap-2 text-sm leading-7 text-muted-foreground">
             <span
               className={cn(
                 "size-1.5 shrink-0 animate-pulse rounded-full",
-                transcribing ? "bg-[var(--chart-3)]" : "bg-primary/70",
+                recognizing ? "bg-[var(--chart-3)]" : "bg-primary/70",
               )}
               aria-hidden="true"
             />
-            {transcribing ? "正在将这句话转换为文字…" : "可以说中文、英文或中英混合内容…"}
+            {recognizing
+              ? "正在将这句话转换为文字… 可以继续说。"
+              : "麦克风已就绪，随时可以开口。"}
           </p>
         )}
       </div>

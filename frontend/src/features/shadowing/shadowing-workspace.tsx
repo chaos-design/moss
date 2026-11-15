@@ -19,7 +19,7 @@ import {
   Volume2Icon,
 } from "lucide-react"
 import Link from "next/link"
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react"
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { Badge } from "@/components/ui/badge"
@@ -451,9 +451,9 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     selectDialogue(next.id)
   }
 
-  // 侧栏定位：把当前选中的场景条目滚动到可视区。恢复上次学习位置后自动调用一次，
-  // 点击「N/M」计数器可随时再次定位。
-  function scrollActiveDialogueIntoView() {
+  // 侧栏定位：把当前选中的场景条目平滑滚动到可视区。恢复上次学习位置、随机跳换、
+  // 上一场景/下一场景都会经过这个入口；点击「N/M」计数器可随时再次定位。
+  const scrollActiveDialogueIntoView = useCallback(() => {
     const list = sidebarListRef.current
     if (!list || !activeDialogueId) {
       return
@@ -463,7 +463,7 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     list
       .querySelector<HTMLElement>(`[data-shadowing-dialogue-id="${escaped}"]`)
       ?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-  }
+  }, [activeDialogueId])
 
   async function playTake(take: ShadowingTake) {
     setPlayingTakeId(take.id)
@@ -511,7 +511,6 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   // 恢复上次学习位置：刷新后回到上次的场景/目标句/扮演角色。?memory= 的记忆定制
   // 会话优先，不做恢复。恢复值逐项校验，任一失效就忽略整条位置记录。
   const restoredPositionRef = useRef(false)
-  const shouldAutoLocateRef = useRef(false)
   useEffect(() => {
     if (restoredPositionRef.current) {
       return
@@ -530,7 +529,6 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     if (!restoredDialogue) {
       return
     }
-    shouldAutoLocateRef.current = true
     setSelectedDialogueId(restoredDialogue.id)
     setSelectedRole(position.role)
     setSelectedLineId(
@@ -549,14 +547,11 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     })
   }, [activeLine.id, dialogue.id, selectedRole])
 
-  // 恢复完成后的首次渲染把侧栏滚动到当前场景；点击「N/M」计数器可随时再次定位。
+  // 当前场景变化（随机跳换/随机连续换场/上一场景、下一场景/恢复位置）都把侧栏
+  // 滚动到该场景；点击「N/M」计数器可随时再次定位。
   useEffect(() => {
-    if (!shouldAutoLocateRef.current) {
-      return
-    }
-    shouldAutoLocateRef.current = false
     scrollActiveDialogueIntoView()
-  })
+  }, [activeDialogueId, scrollActiveDialogueIntoView])
 
   return (
     <div className="grid min-h-0 min-w-0 items-stretch gap-4 lg:h-full lg:overflow-hidden lg:grid-cols-[220px_minmax(0,1fr)_260px] xl:grid-cols-[248px_minmax(0,1fr)_300px]">

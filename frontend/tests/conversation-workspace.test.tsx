@@ -599,7 +599,7 @@ describe("conversation feedback UI", () => {
     })
     expect(screen.getByText("Could I get a")).toBeTruthy()
 
-    // 提交后进入生成期：识别文本与「正在识别」占位条都不再出现（回答完整之前不出现识别语音）。
+    // 提交后进入生成期：识别文本与「识别中」占位条都不再出现（回答完整之前不出现识别语音）。
     act(() => {
       offlineAsr.onTranscript("Could I get a latte?")
     })
@@ -608,10 +608,55 @@ describe("conversation feedback UI", () => {
       offlineAsr.onPartial("And also a croissant")
     })
     expect(screen.queryByText("And also a croissant")).toBeNull()
-    expect(screen.queryByText("正在识别")).toBeNull()
+    expect(screen.queryByText("识别中")).toBeNull()
     expect(screen.queryByText(/正在将这句话转换为文字/)).toBeNull()
 
     deferred.resolve?.(null)
+    fireEvent.click(screen.getByRole("button", { name: "结束通话并切换到文字输入" }))
+  })
+
+  it("shows distinct ready and recognizing copy with a scrolling hint for long text", async () => {
+    const scene = getConversationScene("cafe-order")
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getSupportedConstraints: () => ({}),
+        getUserMedia: vi.fn().mockResolvedValue({
+          getAudioTracks: () => [{ enabled: true, stop: vi.fn() }],
+          getTracks: () => [{ enabled: true, stop: vi.fn() }],
+        }),
+      },
+    })
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "切换到语音模式" }))
+    await waitFor(() => expect(screen.getAllByText("可以说话").length).toBeGreaterThan(0))
+
+    // 准备就绪：麦克风已开、还没有听到语音。
+    expect(screen.getByText("准备就绪")).toBeTruthy()
+    expect(screen.getByText("麦克风已就绪，随时可以开口。")).toBeTruthy()
+
+    // 识别中：有 partial 后状态切到识别中，短文本静态显示。
+    act(() => {
+      offlineAsr.onPartial("Could I get a")
+    })
+    expect(screen.getByText("识别中")).toBeTruthy()
+    expect(screen.getByText("Could I get a")).toBeTruthy()
+    expect(screen.getByText("可以继续说，我们会一直听完整句话。")).toBeTruthy()
+
+    // 长文本进入滚动轨道，内容渲染两份以无缝循环。
+    const longPartial =
+      "Could I get a large latte with oat milk, a blueberry muffin if it is still warm, and a glass of water?"
+    act(() => {
+      offlineAsr.onPartial(longPartial)
+    })
+    expect(screen.getAllByText(longPartial).length).toBe(2)
+    expect(document.querySelector(".speech-marquee-track")).toBeTruthy()
+
     fireEvent.click(screen.getByRole("button", { name: "结束通话并切换到文字输入" }))
   })
 

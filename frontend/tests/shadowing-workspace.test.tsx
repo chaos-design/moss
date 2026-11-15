@@ -342,6 +342,9 @@ describe("ShadowingWorkspace", () => {
     for (const [index, expectedLine] of [
       "Iced, please, and could I have it to go?",
       "That's right. Thank you.",
+      "It's Alex. Could I also get a cup of hot water on the side?",
+      "Card, please. Oh — could you make the latte with less ice?",
+      "Thanks a lot. I'll grab a seat by the window.",
     ].entries()) {
       await act(async () => {
         mocks.onComplete?.({
@@ -360,6 +363,9 @@ describe("ShadowingWorkspace", () => {
       "Good morning! What can I get started for you today?",
       "Of course. Would you like that hot or iced?",
       "Absolutely. A medium iced oat latte to go.",
+      "Great choice. That will be four fifty, and what name for the order?",
+      "Of course. Card or cash today?",
+      "No problem, easy on the ice. We'll call your name in a few minutes.",
     ])
     await waitFor(() =>
       expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
@@ -375,9 +381,9 @@ describe("ShadowingWorkspace", () => {
         waveform: Array.from({ length: 20 }, () => 50),
       })
     })
-    expect(mocks.speakWithVoice).toHaveBeenCalledTimes(3)
+    expect(mocks.speakWithVoice).toHaveBeenCalledTimes(6)
     expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
-      "That's right. Thank you.",
+      "Thanks a lot. I'll grab a seat by the window.",
     )
   })
 
@@ -419,7 +425,7 @@ describe("ShadowingWorkspace", () => {
   it("uses two voices for a multi-turn script and keeps translations off by default", async () => {
     render(<ShadowingWorkspace />)
 
-    expect(screen.getByRole("list", { name: "咖啡店点单预设对话" }).children).toHaveLength(6)
+    expect(screen.getByRole("list", { name: "咖啡店点单预设对话" }).children).toHaveLength(12)
     expect(screen.getByText("Could I get a latte with oat milk, please?")).toBeTruthy()
     expect(screen.queryByText("早上好！今天想先来点什么？")).toBeNull()
 
@@ -427,7 +433,7 @@ describe("ShadowingWorkspace", () => {
     expect(screen.getByText("早上好！今天想先来点什么？")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "播放整段" }))
-    await waitFor(() => expect(mocks.speakWithVoice).toHaveBeenCalledTimes(6))
+    await waitFor(() => expect(mocks.speakWithVoice).toHaveBeenCalledTimes(12))
     expect(mocks.speakWithVoice.mock.calls[0]?.[1]).toMatchObject({
       value: "kokoro:af_heart",
     })
@@ -563,6 +569,12 @@ describe("ShadowingWorkspace", () => {
       window.localStorage.getItem("moss:shadowing-position:v1") ?? "{}",
     ) as { dialogueId?: string }
     expect(position.dialogueId).not.toBe("coffee")
+    // 随机跳换后侧栏平滑滚动到新场景。
+    expect(
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mock.calls.at(-1)?.[0],
+    ).toMatchObject({
+      behavior: "smooth",
+    })
 
     fireEvent.click(screen.getByRole("switch", { name: "随机连续学习" }))
     expect(
@@ -578,7 +590,9 @@ describe("ShadowingWorkspace", () => {
 
     // 咖啡场景的最后一句学习者台词（coffee-6），录完没有下一句。
     fireEvent.click(
-      screen.getByRole("button", { name: "选择学习者台词：That's right. Thank you." }),
+      screen.getByRole("button", {
+        name: "选择学习者台词：Thanks a lot. I'll grab a seat by the window.",
+      }),
     )
     act(() => {
       mocks.onComplete?.({
