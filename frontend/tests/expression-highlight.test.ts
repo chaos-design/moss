@@ -49,4 +49,45 @@ describe("expression highlight", () => {
     const segments = splitExpressionHighlights("This sentence has no target.", "hit the road")
     expect(segments).toEqual([{ text: "This sentence has no target.", highlighted: false }])
   })
+
+  it("highlights the built-in examples that swap pronouns, objects and contractions", () => {
+    // play it by ear：宾语 it 落到具体名词短语（the afternoon）。
+    expect(
+      highlightedText(
+        "We may finish early, so let's play the afternoon by ear.",
+        "play it by ear",
+      ),
+    ).toEqual(["play the afternoon by ear"])
+    // cross that bridge…：主语 you 换成 we。
+    expect(
+      highlightedText(
+        "We may need a larger venue, but we will cross that bridge when we come to it.",
+        "cross that bridge when you come to it",
+      ),
+    ).toEqual(["cross that bridge when we come to it"])
+    // on someone's radar：占位符展开成多词所有格名词短语。
+    expect(
+      highlightedText(
+        "The accessibility issue is now on the leadership team's radar.",
+        "on someone's radar",
+      ),
+    ).toEqual(["on the leadership team's radar"])
+    // had better / would rather：缩约为 'd。
+    expect(highlightedText("You'd better check the numbers again.", "had better")).toEqual([
+      "You'd better",
+    ])
+    expect(
+      highlightedText("I'd rather wait than send the wrong file.", "would rather"),
+    ).toEqual(["I'd rather"])
+  })
+
+  it("keeps the verb-swap tail fallback for content-word heads", () => {
+    // 动词换用（cost → paid）时靠尾部兜底高亮，这是词库覆盖要求的既有行为。
+    expect(
+      highlightedText(
+        "I paid an arm and a leg for the last-minute ticket.",
+        "cost an arm and a leg",
+      ),
+    ).toEqual(["an arm and a leg"])
+  })
 })

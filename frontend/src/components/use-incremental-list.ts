@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 /**
  * 分批呈现长列表：首批只渲染 `initial` 条，底部哨兵进入视口后再追加 `step` 条。
@@ -18,7 +18,13 @@ export function useIncrementalList({
   step?: number
 }) {
   const [visibleCount, setVisibleCount] = useState(initial)
-  const sentinelRef = useRef<HTMLDivElement>(null)
+  // 哨兵节点存进 state（ref callback）而不是 ref：筛选切换时若总数相同、用户未滚动，
+  // [step, total, visibleCount] 都不变，只靠 ref 读一次会挂在旧节点上，新哨兵永不触发。
+  // 节点身份进入依赖后，重挂载的新哨兵会重新挂 observer。
+  const [sentinelNode, setSentinelNode] = useState<HTMLDivElement | null>(null)
+  const sentinelRefCallback = useCallback((node: HTMLDivElement | null) => {
+    setSentinelNode(node)
+  }, [])
 
   // 数据变少（例如切换筛选）时收敛渲染窗口，避免停在旧的更大的值上。
   useEffect(() => {
@@ -26,8 +32,7 @@ export function useIncrementalList({
   }, [initial, total])
 
   useEffect(() => {
-    const node = sentinelRef.current
-    if (!node || visibleCount >= total || typeof IntersectionObserver === "undefined") {
+    if (!sentinelNode || visibleCount >= total || typeof IntersectionObserver === "undefined") {
       return
     }
     const observer = new IntersectionObserver(
@@ -38,13 +43,13 @@ export function useIncrementalList({
       },
       { rootMargin: "360px 0px" },
     )
-    observer.observe(node)
+    observer.observe(sentinelNode)
     return () => observer.disconnect()
-  }, [step, total, visibleCount])
+  }, [step, total, visibleCount, sentinelNode])
 
   return {
     reset: () => setVisibleCount(initial),
-    sentinelRef,
+    sentinelRef: sentinelRefCallback,
     visibleCount: Math.min(visibleCount, total),
   }
 }

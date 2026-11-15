@@ -34,6 +34,10 @@ describe("voice call runtime", () => {
     expect(stripSpeechAnnotations("[background noise]")).toBe("")
     // 其他括号族同样命中：全角与圆括号。
     expect(stripSpeechAnnotations("（噪声）你好")).toBe("你好")
+    // 中文句子中间的标注：两侧都是汉字时替换成空串，不留「今天 很热」的空格。
+    expect(stripSpeechAnnotations("今天[噪音]很热")).toBe("今天很热")
+    // 拉丁词缝仍保留空格（由 normalize 压缩）。
+    expect(stripSpeechAnnotations("hello [noise] world")).toBe("hello world")
     expect(stripSpeechAnnotations("(laughter) nice one")).toBe("nice one")
     // 非产物括号内容保留原样（用户手打的标注不受影响）。
     expect(stripSpeechAnnotations("[注意] 保留这一段")).toBe("[注意] 保留这一段")

@@ -616,4 +616,37 @@ describe("ShadowingWorkspace", () => {
     expect(position.dialogueId).not.toBe("coffee")
     expect(mocks.speakWithVoice).toHaveBeenCalled()
   })
+
+  it("still switches randomly after the last line when auto-turn is off but random mode is on", () => {
+    render(<ShadowingWorkspace />)
+    // 关闭「自动接话」，再打开「随机连续」：两个开关独立，随机换场不应被 autoTurn 挡住。
+    fireEvent.click(screen.getByRole("switch", { name: "录完后自动播放对方台词" }))
+    fireEvent.click(screen.getByRole("switch", { name: "随机连续学习" }))
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "选择学习者台词：Thanks a lot. I'll grab a seat by the window.",
+      }),
+    )
+    act(() => {
+      mocks.onComplete?.({
+        assessment: {
+          overallScore: 82,
+          clarityScore: 84,
+          fluencyScore: 79,
+          rhythmScore: 83,
+          durationSeconds: 4.2,
+          voicedRatio: 0.68,
+        },
+        audioUrl: "blob:final",
+        waveform: [],
+      })
+    })
+
+    const position = JSON.parse(
+      window.localStorage.getItem("moss:shadowing-position:v1") ?? "{}",
+    ) as { dialogueId?: string }
+    expect(position.dialogueId).not.toBe("coffee")
+  })
 })

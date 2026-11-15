@@ -329,16 +329,17 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
 
   // 完成一轮跟读：对方按脚本接话，跟读目标推进到本角色的下一句。
   async function advanceTurn(line: ShadowingDialogueLine) {
-    if (!autoTurn) {
-      return
-    }
     const plan = getShadowingTurn(dialogue, line)
     if (!plan.next) {
       // 随机连续模式：本场景最后一句录完自动进入下一个随机场景，保持连续学习；
-      // 评分与记忆写入已在 onComplete 完成，不受换场影响。
+      // 评分与记忆写入已在 onComplete 完成，不受换场影响。两个开关相互独立，
+      // 关闭「自动接话」仍允许随机连续换场，因此该分支先于 autoTurn 守卫执行。
       if (randomMode) {
         selectRandomDialogue(true)
       }
+      return
+    }
+    if (!autoTurn) {
       return
     }
     recorder.reset()
@@ -539,13 +540,19 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   }, [requestedDialogue])
 
   // 学习位置在导航变化时保存：被动写本地导航状态，不是学习事件。
+  // 记忆定制对话（id 形如 memory-*）不在 presetDialogues 里，恢复逻辑只查预设：
+  // 若把它的 id 写进共享位置键，会覆盖上次预设场景的位置，回到普通跟读时
+  // 恢复不到、退回默认场景。因此记忆对话跳过保存。
   useEffect(() => {
+    if (dialogue.scriptKind === "memory") {
+      return
+    }
     saveShadowingPosition({
       dialogueId: dialogue.id,
       lineId: activeLine.id,
       role: selectedRole,
     })
-  }, [activeLine.id, dialogue.id, selectedRole])
+  }, [activeLine.id, dialogue.id, dialogue.scriptKind, selectedRole])
 
   // 当前场景变化（随机跳换/随机连续换场/上一场景、下一场景/恢复位置）都把侧栏
   // 滚动到该场景；点击「N/M」计数器可随时再次定位。

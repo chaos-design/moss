@@ -78,10 +78,13 @@ export function parseShadowingLevelFilter(value: string | null): ShadowingLevelF
 }
 
 export function readShadowingLevelFilter(): ShadowingLevelFilter {
-  if (typeof window === "undefined") {
-    return "all"
-  }
-  return parseShadowingLevelFilter(window.localStorage.getItem(shadowingLevelFilterStorageKey))
+  // 与写入（writeJson）对称：按 JSON 读取，隐私模式 / 存储策略禁用时 readJson 已兜底
+  // 返回 null，未知值或无值都回退到「全部」。
+  return (
+    readJson(shadowingLevelFilterStorageKey, (value) =>
+      typeof value === "string" ? parseShadowingLevelFilter(value) : null,
+    ) ?? "all"
+  )
 }
 
 export function saveShadowingLevelFilter(filter: ShadowingLevelFilter) {

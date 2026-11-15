@@ -72,8 +72,18 @@ function isSpeechAnnotationText(inner: string) {
 }
 
 export function stripSpeechAnnotations(value: string) {
-  const stripped = value.replace(speechAnnotationPattern, (match, inner: string) =>
-    isSpeechAnnotationText(inner) ? " " : match,
+  const isCjk = (char: string) => /[一-鿿]/.test(char)
+  const stripped = value.replace(
+    speechAnnotationPattern,
+    (match, inner: string, offset: number) => {
+      if (!isSpeechAnnotationText(inner)) {
+        return match
+      }
+      // 标注两侧都是汉字时替换成空串（避免「今天 很热」），否则保留一个空格给拉丁词缝。
+      const before = offset > 0 ? value[offset - 1] : ""
+      const after = value[offset + match.length] ?? ""
+      return isCjk(before) && isCjk(after) ? "" : " "
+    },
   )
   return normalizeSpeechTranscript(stripped)
 }

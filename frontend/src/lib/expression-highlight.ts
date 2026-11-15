@@ -74,9 +74,15 @@ const irregularHeadForms: Record<string, readonly string[]> = {
 }
 
 const placeholderPattern = "[A-Za-z][A-Za-z'’-]*"
-// 身体部位类习语常把 your 换成 my/her/his，例句里的人称不应让高亮失效。
-const possessivePattern = "(?:my|your|his|her|our|their|someone's|somebody's)"
+// 所有格占位符（your/my/someone's）在例句里可能落到多词所有格名词短语
+// （pull my leg、on the leadership team's radar）。
+const multiWordPossessivePattern =
+  "(?:my|your|his|her|our|their|(?:the\\s+)?[A-Za-z][A-Za-z'’\\-]*(?:\\s+[A-Za-z][A-Za-z'’\\-]*)*'s)"
 const reflexivePattern = "(?:myself|yourself|himself|herself|ourselves|themselves)"
+// 主语占位符常被具体代词替换（cross that bridge when you come to it → when we come to it）。
+const subjectPronounPattern = "(?:you|we|I|they|he|she)"
+// play it by ear 里的 it 在例句里可能落到具体名词短语（play the afternoon by ear）。
+const itObjectPattern = "(?:it|the\\s+[A-Za-z][A-Za-z'’\\-]*(?:\\s+[A-Za-z][A-Za-z'’\\-]*)?)"
 const inflectionSuffix = "(?:s|es|ed|d|ing)?"
 
 // 短语末尾是虚词时不做词形扩展（keep tabs on 不能匹配 keeps tabs ons）；
@@ -138,7 +144,10 @@ function buildTailPattern(token: string) {
     normalized === "someone's" ||
     normalized === "somebody's"
   ) {
-    return possessivePattern
+    return multiWordPossessivePattern
+  }
+  if (normalized === "you") {
+    return subjectPronounPattern
   }
   if (normalized === "someone" || normalized === "somebody") {
     return placeholderPattern
@@ -147,6 +156,9 @@ function buildTailPattern(token: string) {
     // something 在例句里可能展开成两三个词（如 “the delivery window”），
     // 允许最多两个词，但必须以单词边界收住。
     return `${placeholderPattern}(?:\\s+${placeholderPattern})?`
+  }
+  if (normalized === "it") {
+    return itObjectPattern
   }
   return escapeApostrophes(token)
 }
@@ -194,6 +206,11 @@ function buildPatterns(phrase: string) {
             ...(/[^aeiou]y$/i.test(head) ? [`${escapeApostrophes(head).slice(0, -1)}ied`] : []),
             ...(irregularHeadForms[normalizedHead] ?? []).map(escapeApostrophes),
           ]
+  // had better / would rather 在例句里常缩约为 'd（You'd better / I'd rather），
+  // 头词补上「代词 + 'd」的变体。
+  if (normalizedHead === "had" || normalizedHead === "would") {
+    headVariants.push(`(?:\\w+['’]d|${escapeApostrophes(head)})`)
+  }
   const patterns = headVariants.map(
     (headPattern) => new RegExp(`\\b${headPattern}${suffix}\\b`, "gi"),
   )
