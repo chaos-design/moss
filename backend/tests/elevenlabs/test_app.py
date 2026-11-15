@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from backend.services.elevenlabs.app import create_app
+from backend.services.elevenlabs.app import _ensure_authorized, create_app
 from backend.services.elevenlabs.config import ElevenLabsSettings
 from backend.services.elevenlabs.errors import ElevenLabsServiceError
 
@@ -173,6 +173,10 @@ class ElevenLabsAppTest(unittest.TestCase):
         self.assertEqual(empty.json()["error"]["code"], "invalid_audio")
         self.assertEqual(oversized.status_code, 413)
         self.assertEqual(oversized.json()["error"]["code"], "request_too_large")
+        # 413 文案要反映实际可配置的上限（这里设为 4 字节），而不是写死的 8 MB。
+        self.assertEqual(
+            oversized.json()["error"]["message"], "单段语音不能超过 4 字节。"
+        )
         self.assertEqual(missing.status_code, 400)
         self.assertEqual(missing.json()["error"]["code"], "invalid_audio")
 
@@ -199,6 +203,30 @@ class ElevenLabsAppTest(unittest.TestCase):
         self.assertEqual(authorized.status_code, 200)
         self.assertEqual(wrong.status_code, 401)
         self.assertEqual(len(self.client.synthesis), 1)
+
+    def test_rejects_a_non_ascii_model_without_calling_the_provider(self) -> None:
+        # 非 ASCII model 过去会作为 HTTP 头/参数冒泡成 UnicodeEncodeError → 500；
+        # 现在在入口拦成 400 invalid_model，不触达上游。
+        with TestClient(self.app) as client:
+            response = client.post(
+                "/v1/audio/speech", json={"input": "Hello.", "model": "中文模型"}
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "invalid_model")
+        self.assertEqual(self.client.synthesis, [])
+
+    def test_rejects_a_non_ascii_access_token_with_a_401_not_a_500(self) -> None:
+        # ASGI 把请求头按 latin-1 解码，非 ASCII token 能到达鉴权比较逻辑。旧的 str 版
+        # compare_digest 会抛 TypeError → 未处理 500；bytes 版失败关闭、统一回 401。
+        # 直接调用 _ensure_authorized（TestClient 的 httpx 无法发送非 ASCII 头）。
+        settings = create_settings(access_token="令牌-token")
+        fake_request = type("FakeRequest", (), {"headers": {"authorization": "Bearer 错误的令牌"}})()
+        with self.assertRaises(ElevenLabsServiceError) as context:
+            _ensure_authorized(fake_request, settings)  # type: ignore[arg-type]
+
+        self.assertEqual(context.exception.status, 401)
+        self.assertEqual(context.exception.code, "unauthorized")
 
     def test_rejects_unknown_browser_origins(self) -> None:
         with TestClient(self.app) as client:

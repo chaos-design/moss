@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from backend.services.fishaudio.app import create_app
+from backend.services.fishaudio.app import _ensure_authorized, create_app
 from backend.services.fishaudio.config import FishAudioSettings
 from backend.services.fishaudio.errors import FishAudioServiceError
 
@@ -145,6 +145,33 @@ class SpeechEndpointTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"]["code"], "invalid_text")
 
+    def test_rejects_a_non_ascii_model_without_calling_the_provider(self) -> None:
+        # 非 ASCII model 过去会作为 HTTP 头冒泡成 UnicodeEncodeError → 500；
+        # 现在在入口拦成 400 invalid_model，不触达上游。
+        response = self.request({"input": "Hello.", "model": "中文模型"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "invalid_model")
+        self.assertEqual(self.client.synthesis, [])
+
+    def test_rejects_an_unprintable_model_character(self) -> None:
+        response = self.request({"input": "Hello.", "model": "s2.1\tno"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "invalid_model")
+        self.assertEqual(self.client.synthesis, [])
+
+    def test_rejects_a_non_ascii_access_token_with_a_401_not_a_500(self) -> None:
+        # 直接调用 _ensure_authorized（TestClient 的 httpx 无法发送非 ASCII 头）：
+        # 非 ASCII token 下 bytes 版 compare_digest 失败关闭回 401，而不是抛 TypeError → 500。
+        settings = create_settings(access_token="令牌-token")
+        fake_request = type("FakeRequest", (), {"headers": {"authorization": "Bearer 错误的令牌"}})()
+        with self.assertRaises(FishAudioServiceError) as context:
+            _ensure_authorized(fake_request, settings)  # type: ignore[arg-type]
+
+        self.assertEqual(context.exception.status, 401)
+        self.assertEqual(context.exception.code, "unauthorized")
+
     def test_requires_a_configured_api_key(self) -> None:
         self.app = create_app(create_settings(api_key=""), self.client)
 
@@ -218,6 +245,8 @@ class TranscriptionEndpointTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 413)
         self.assertEqual(response.json()["error"]["code"], "request_too_large")
+        # 413 文案要反映实际可配置的上限（这里设为 1 KB），而不是写死的 8 MB。
+        self.assertEqual(response.json()["error"]["message"], "单段语音不能超过 1 KB。")
 
 
 if __name__ == "__main__":

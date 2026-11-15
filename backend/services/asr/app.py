@@ -267,7 +267,8 @@ def create_app(
                                     "start must be sent before audio",
                                 )
                             if resolved_settings.api_key and not hmac.compare_digest(
-                                command.token or "", resolved_settings.api_key
+                                (command.token or "").encode(),
+                                resolved_settings.api_key.encode(),
                             ):
                                 await websocket.send_json(
                                     event(

@@ -43,8 +43,10 @@ def _ensure_authorized(request: Request, settings: ElevenLabsSettings) -> None:
     if not settings.access_token:
         return
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    # 按字节比较：ASGI 头按 latin-1 解码，非 ASCII token 在 str 版 compare_digest 会抛
+    # TypeError → 500；bytes 版失败关闭且只回 401，保持统一错误契约。
     if scheme.lower() != "bearer" or not hmac.compare_digest(
-        token.strip(), settings.access_token
+        token.strip().encode(), settings.access_token.encode()
     ):
         raise _error(401, "unauthorized", "本机 ElevenLabs 适配服务需要访问令牌。")
 
@@ -94,7 +96,24 @@ def _parse_model(payload: dict[str, object], default: str) -> str:
     value = raw.strip() if isinstance(raw, str) else ""
     if len(value) > 120:
         raise _error(400, "invalid_model", "model 过长。")
+    _ensure_printable_model(value)
     return value or default
+
+
+def _ensure_printable_model(value: str) -> None:
+    # model 会作为 HTTP 头/请求参数转发。非 ASCII 或控制字符会让 httpx 抛
+    # UnicodeEncodeError（不是 httpx.RequestError），冒泡成未处理 500。
+    if value and (not value.isascii() or any(ord(c) < 0x20 or ord(c) == 0x7F for c in value)):
+        raise _error(400, "invalid_model", "model 不能包含非 ASCII 或不可打印字符。")
+
+
+def _human_bytes(limit: int) -> str:
+    # 413 提示要给出实际可配置的上限（MOSS_ELEVENLABS_MAX_AUDIO_BYTES），而不是写死的 8 MB。
+    if limit >= 1_000_000:
+        return f"{limit / 1_000_000:.0f} MB"
+    if limit >= 1_000:
+        return f"{limit / 1_000:.0f} KB"
+    return f"{limit} 字节"
 
 
 def _parse_speed(payload: dict[str, object]) -> float:
@@ -271,7 +290,7 @@ def create_app(
             **defaults,
             **{key: value for key, value in payload.items() if value is not None},
         }
-        if "input" not in payload and "text" in payload:
+        if "input" not in payload and payload.get("text") is not None:
             merged["input"] = payload["text"]
 
         text = _parse_text(merged, resolved_settings)
@@ -338,7 +357,11 @@ def create_app(
         if not audio:
             raise _error(400, "invalid_audio", "没有收到可识别的语音数据。")
         if len(audio) > resolved_settings.max_audio_bytes:
-            raise _error(413, "request_too_large", "单段语音不能超过 8 MB。")
+            raise _error(
+                413,
+                "request_too_large",
+                f"单段语音不能超过 {_human_bytes(resolved_settings.max_audio_bytes)}。",
+            )
 
         content_type = (file.content_type or "application/octet-stream").lower()
         if not content_type.startswith("audio/") and content_type not in ALLOWED_AUDIO_CONTENT_TYPES:
@@ -347,6 +370,7 @@ def create_app(
         resolved_model = model.strip() or resolved_settings.asr_model
         if len(resolved_model) > 120:
             raise _error(400, "invalid_model", "model 过长。")
+        _ensure_printable_model(resolved_model)
         resolved_language = language.strip().lower()
         if resolved_language and not LANGUAGE_CODE_PATTERN.fullmatch(resolved_language):
             raise _error(400, "invalid_language", "language 必须是 ISO 639 语言代码。")

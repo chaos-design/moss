@@ -128,6 +128,16 @@ class SynthesisProbeTest(unittest.TestCase):
         self.assertFalse(body["checks"]["minimumBytes"])
         self.assertEqual(body["bytes"], 3)
 
+    def test_a_null_text_falls_back_to_the_default_probe_text(self) -> None:
+        # {"text": null} 不应被当成「显式传入空文本」而回 400 invalid_text，
+        # 而应与省略 text 一样回退到默认探测文本。
+        response = self.probe({"text": None})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.client.synthesis[0]["text"], rules.TEST_SYNTHESIS_TEXT
+        )
+
     def test_rejects_an_unsupported_format(self) -> None:
         response = self.probe({"response_format": "flac"})
 
