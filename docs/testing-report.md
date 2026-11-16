@@ -1075,3 +1075,19 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
 - 未执行：真实麦克风的通话阶段配色观感（连接/识别/思考需要真实 ASR 通道驱动）、
   整段播放居中跟随的手感与 marquee 流畅度，待人工验证；跟读计时类用例在 10s 上限下
   负载敏感偶发超时，单独复跑稳定通过。
+
+## 2026-11-16 Fish Audio 免费模型链路验证（经本机代理）
+
+- 本机出口到 `api.fish.audio` 直连被路由阻断（2026-11-16 实测：3 个 DNS 解析器给出的
+  9+ 个边缘 IP 全部连接超时，同时 cloudflare / api.github.com 正常；非 SNI 过滤——
+  同 IP 换 SNI 也超时，判定为 IP 级不可达）。
+- 发现本机 Clash Verge（mihomo）mixed 端口 `127.0.0.1:7897` 可到达 Fish：直连
+  `POST /v1/tts`（`s2.1-pro-free` + reference 音色）返回 200 / 27KB mp3（2.4s）。
+- 5584 适配器经 `pnpm fishaudio:start` 读取本地（gitignored）`.env.local` 的
+  `HTTPS_PROXY=http://127.0.0.1:7897` 后，`POST /v1/audio/speech` 返回 200 / 54KB mp3。
+- 设置页（5577 dev）「测试合成接口」实测绿：`语音合成接口可用，音频已正常返回。
+  audio/mpeg · 34.3 KB · 1444 ms`；生效配置为 `127.0.0.1:5584/v1 · s2.1-pro-free ·
+  音色 74c6aba5…`（浏览器 speech-config，仅存本机）。
+- 未变：直连出口仍不可达；若 Clash 端口/节点变化，需同步
+  `backend/services/fishaudio/.env.local` 的 `HTTPS_PROXY` 并重启适配器。Fish ASR
+  （`transcribe-1-pro` 付费档）未实测。
