@@ -36,11 +36,12 @@
 | ASR 引擎 | `qwen3-asr`、`sensevoice` | `MOSS_ASR_ENGINE` |
 | 真正的本地权重 | `kokoro-v1.0.onnx`、`kokoro-v1.1-zh.onnx`、`Audio8/Audio8-TTS-Preview-0.6b`、`CosyVoice-300M-SFT`、`Qwen/Qwen3-ASR-1.7B`、`iic/SenseVoiceSmall` | 由各 `setup.mjs` 下载到 `models/` |
 
-设置页对 5583/5584 的**合成（TTS）模型**提供快捷按钮，来自规则表
-`models.localApiTtsOptions`（`eleven_flash_v2_5` / `eleven_v4` / `eleven_multilingual_v2` /
-`eleven_v3`，2026-11-14 均在免费层验证可用）、`fishAudioTtsOptions`；识别（ASR）模型不出
-快捷按钮（`localApiAsrOptions` / `fishAudioAsrOptions` 仍作为预设与默认值生效），避免按钮
-行顶开模型输入框、破坏设置页两栏输入框对齐——识别模型由「一键接入」预设直接填好。
+设置页的**模型**字段（识别与合成）都只保留手填输入框，不再出快捷按钮，避免按钮行顶开模型
+输入框、破坏设置页两栏输入框对齐。规则表里的 `models.localApiTtsOptions`
+（`eleven_flash_v2_5` / `eleven_v4` / `eleven_multilingual_v2` / `eleven_v3`，2026-11-14 均在
+免费层验证可用）、`fishAudioTtsOptions`、`localApiAsrOptions`、`fishAudioAsrOptions` 只作为
+验证过的模型清单数据保留：本机适配器的模型值由「一键接入」预设直接对齐（取 `models.localApi` /
+`models.fishAudio` 默认值），学习者也可在输入框里手填其他模型名。
 
 > 「本机接口」(5583/5584) 是 loopback 代理，不加载本地权重；它们把 Moss 的 OpenAI 兼容契约
 > 翻译成 ElevenLabs / Fish Audio 云端 API。需要离线本地模型时应使用 5578 网关或浏览器引擎。

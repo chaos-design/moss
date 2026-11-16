@@ -660,24 +660,6 @@ function SpeechEndpointFields({
   const policy = getSpeechFieldPolicy(service, endpoint.transport)
   const loopbackEndpoint = isLoopbackSpeechEndpoint(endpoint.endpoint)
   const presets = getServicePresets(service)
-  // 本机适配器把验证过的模型列成快捷按钮；OpenAI 兼容服务因模型名各异保持手填。
-  const modelOptions = (() => {
-    const matched = matchLocalService(service, endpoint.endpoint)
-    if (!matched) {
-      return []
-    }
-    if (matched.id === "local-api") {
-      return service === "tts"
-        ? speechRules.models.localApiTtsOptions
-        : speechRules.models.localApiAsrOptions
-    }
-    if (matched.id === "fish-audio") {
-      return service === "tts"
-        ? speechRules.models.fishAudioTtsOptions
-        : speechRules.models.fishAudioAsrOptions
-    }
-    return []
-  })()
 
   function applyPreset(preset: (typeof presets)[number]) {
     // 一键接入同时对齐接入方式、地址与模型，避免「切了 API 还要再填三个字段」。
@@ -802,26 +784,8 @@ function SpeechEndpointFields({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field>
             <FieldLabel htmlFor={`${idPrefix}-model`}>{serviceLabels[service]}模型</FieldLabel>
-            {/* 本机适配器把验证过的模型列成快捷按钮；OpenAI 兼容服务保持手填。
-                识别（ASR）模型不出快捷按钮：一键接入预设已把模型对齐到已知值，
-                按钮行只会把模型输入框顶得比同行的密钥输入框低，破坏两栏输入框对齐。 */}
-            {service === "tts" && modelOptions.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {modelOptions.map((option) => (
-                  <Button
-                    key={option}
-                    type="button"
-                    size="sm"
-                    variant={endpoint.model === option ? "secondary" : "outline"}
-                    className="h-7 px-2 text-xs"
-                    aria-pressed={endpoint.model === option}
-                    onClick={() => onChange({ model: option })}
-                  >
-                    {option}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
+            {/* 模型只保留手填输入框：一键接入预设已把本机适配器的模型对齐到已知值，
+                按钮行只会把输入框顶得比同行密钥输入框低，破坏两栏输入框对齐。 */}
             <Input
               id={`${idPrefix}-model`}
               value={endpoint.model}

@@ -678,7 +678,7 @@ describe("SpeechServiceCard", () => {
     expect(screen.queryByText(/语音合成接口可用/)).toBeNull()
   })
 
-  it("shows verified ElevenLabs presets and adapter model options per provider", () => {
+  it("shows verified ElevenLabs presets per provider, keeping model as a free-text input", () => {
     render(<SpeechServiceCard />)
     selectApiTransportForBothServices()
 
@@ -689,18 +689,20 @@ describe("SpeechServiceCard", () => {
     expect(screen.getByRole("button", { name: "bill" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "emma" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "shimmer" })).toBeNull()
-    // 模型快捷选项按适配器给出，默认是成本最低的 flash 档。
-    expect(screen.getByRole("button", { name: "eleven_flash_v2_5" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "eleven_v4" })).toBeTruthy()
+    // 合成模型字段只保留输入框：模型快捷按钮不再渲染，模型值仍由一键接入预设对齐。
+    expect(screen.queryByRole("button", { name: "eleven_flash_v2_5" })).toBeNull()
+    expect((screen.getByLabelText("语音合成模型") as HTMLInputElement).value).toBe(
+      "eleven_flash_v2_5",
+    )
 
     fireEvent.click(screen.getByRole("button", { name: "使用语音合成Fish Audio 适配器" }))
 
-    // Fish Audio 没有公开预置音色（reference_id 是账户私有的），只有模型快捷选项。
+    // Fish Audio 没有公开预置音色（reference_id 是账户私有的），音色与模型都只保留输入框。
     expect(screen.queryByRole("button", { name: "bill" })).toBeNull()
-    expect(screen.getByRole("button", { name: "s2.1-pro-free" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "s2.1-pro-free" })).toBeNull()
   })
 
-  it("keeps the ASR model field free of quick buttons so its inputs stay aligned", () => {
+  it("keeps the model fields free of quick buttons so their inputs stay aligned", () => {
     render(<SpeechServiceCard />)
     selectApiTransportForBothServices()
 
@@ -710,8 +712,9 @@ describe("SpeechServiceCard", () => {
     expect(screen.queryByRole("button", { name: "scribe_v2" })).toBeNull()
     expect(screen.getByLabelText("语音识别模型")).toBeTruthy()
 
-    // TTS 侧不受影响：适配器模型快捷选项仍在。
+    // 合成模型字段同样只保留输入框。
     fireEvent.click(screen.getByRole("button", { name: "使用语音合成ElevenLabs 适配器" }))
-    expect(screen.getByRole("button", { name: "eleven_flash_v2_5" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "eleven_flash_v2_5" })).toBeNull()
+    expect(screen.getByLabelText("语音合成模型")).toBeTruthy()
   })
 })
