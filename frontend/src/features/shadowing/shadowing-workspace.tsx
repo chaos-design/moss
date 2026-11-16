@@ -35,7 +35,10 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { scrollShadowingLineIntoView } from "@/features/shadowing/scroll-shadowing-line"
+import {
+  scrollShadowingLineIntoView,
+  scrollShadowingLineToCenter,
+} from "@/features/shadowing/scroll-shadowing-line"
 import { useHoldToRecordShortcut } from "@/features/shadowing/use-hold-to-record-shortcut"
 import {
   type ShadowingRecording,
@@ -127,6 +130,8 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
   const [levelFilter, setLevelFilter] = useState<ShadowingLevelFilter>("all")
   const [randomMode, setRandomMode] = useState(false)
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null)
+  // 听对话阶段的转写滚动区：整段播放时把正在播的台词居中跟随。
+  const listenTranscriptRef = useRef<HTMLDivElement | null>(null)
   const sidebarListRef = useRef<HTMLDivElement | null>(null)
   const [playingTakeId, setPlayingTakeId] = useState<string | null>(null)
   const [takeHistory, setTakeHistory] = useState<ShadowingTake[]>([])
@@ -374,6 +379,20 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
     }
     scrollShadowingLineIntoView(container, playingLineId ?? activeLine.id)
   }, [activeLine.id, playingLineId, recorder.recording, stage])
+
+  // 听对话阶段整段/单句播放时，把正在播的台词居中跟随：学习者跟着 TTS 读，视线
+  // 始终在可视区中间，而不是停在上次手动滚到的位置。跟读阶段保留最小滚动
+  // （目标句可见即可，居中会拽走录音时的阅读位置），两个阶段各用各的滚动区。
+  useEffect(() => {
+    if (stage !== "listen" || !playingLineId) {
+      return
+    }
+    const container = listenTranscriptRef.current
+    if (!container) {
+      return
+    }
+    scrollShadowingLineToCenter(container, playingLineId, { smooth: true })
+  }, [stage, playingLineId])
 
   async function playLine(line: ShadowingDialogueLine) {
     if (playbackState !== "idle") {
@@ -758,7 +777,10 @@ export function ShadowingWorkspace({ initialMemoryItemId }: { initialMemoryItemI
           </div>
 
           <TabsContent value="listen" className="m-0 flex min-h-0 flex-col overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable] md:p-6">
+            <div
+              ref={listenTranscriptRef}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable] md:p-6"
+            >
               <StageIntroduction
                 eyebrow="Listen in context"
                 title="先听完整对话，再选择你要模拟的角色。"
@@ -1214,6 +1236,9 @@ function DialogueTranscript({
                 learner ? "bg-accent/45" : "bg-secondary/65",
                 activeRole && "border-primary/35",
                 selected && "border-primary bg-primary/8 ring-1 ring-primary/20",
+                // 正在播放的台词颜色稍明显一点 + 弱呼吸光晕：标出播放位置，
+                // 光晕只动 box-shadow 不动文字，闪烁保持克制不抢读。
+                playing && "shadowing-line-pulse border-primary/45 bg-primary/10",
               )}
               aria-pressed={selected}
               aria-label={`选择${learner ? "学习者" : dialogue.partnerName}台词：${line.text}`}

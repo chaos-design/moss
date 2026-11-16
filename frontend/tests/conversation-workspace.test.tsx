@@ -487,6 +487,34 @@ describe("conversation feedback UI", () => {
     expect(textarea.className).toContain("min-h-14")
   })
 
+  it("collapses the empty composer via the toggle when focus stays inside the panel", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+
+    // 点「收起」按钮时焦点移到面板内的按钮（relatedTarget 即该按钮）：
+    // 这不算离开面板，blur 不能把状态收掉，否则随后的 toggle 会互相抵消。
+    const toggle = screen.getByRole("button", { name: "收起输入框" })
+    fireEvent.blur(textarea, { relatedTarget: toggle })
+    expect(textarea.className).toContain("min-h-14")
+    fireEvent.click(toggle)
+    expect(textarea.className).toContain("min-h-8")
+
+    // 焦点真正离开面板（relatedTarget 为面板外元素或空）时仍要收起。
+    fireEvent.focus(textarea)
+    fireEvent.blur(textarea)
+    expect(textarea.className).toContain("min-h-8")
+  })
+
   it("offers a stop control while a reply is pending and clears it when stopped", () => {
     const scene = getConversationScene("cafe-order")
     setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
@@ -559,6 +587,45 @@ describe("conversation feedback UI", () => {
     )
     expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
     expect(screen.getByText("Certainly, one latte coming up.")).toBeTruthy()
+  })
+
+  it("keeps the pending reply visible while the assistant is answering", async () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    const deferred: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve
+          }),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "One latte, please." } })
+    const scrollIntoView = vi.mocked(HTMLElement.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    // 生成期「正在回应」占位要滚进可视区：浮动面板盖住转写底部，停在面板后面就没人看见。
+    await waitFor(() =>
+      expect(document.querySelector("[data-pending-reply-turn]")).toBeTruthy(),
+    )
+    const pendingTurn = document.querySelector<HTMLElement>("[data-pending-reply-turn]")
+    expect(pendingTurn).toBeTruthy()
+    // 方法调用的 this 才是被滚入可视区的元素；参数是滚动对齐选项。
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" })
+    expect(scrollIntoView.mock.instances).toContain(pendingTurn)
+    deferred.resolve?.(null)
   })
 
   it("hides the live recognition strip while a reply is pending", async () => {

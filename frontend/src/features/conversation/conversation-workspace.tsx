@@ -477,6 +477,26 @@ export function ConversationWorkspace({
     }
   }, [callActive, callStatus, liveTranscript])
 
+  // 回复生成期间把「正在回应」占位滚进可视区：浮动面板盖住转写底部，占位停在
+  // 面板后面时等待的人看不到它。与识别条同一套补偿——nearest 滚入后若仍被
+  // 面板压住，就按面板顶部再补一段滚动。
+  useEffect(() => {
+    if (!pending) {
+      return
+    }
+    const transcript = transcriptRef.current
+    const pendingTurn = transcript?.querySelector<HTMLElement>("[data-pending-reply-turn]")
+    if (!transcript || !pendingTurn) {
+      return
+    }
+    pendingTurn.scrollIntoView({ block: "nearest" })
+    const panelTop = composerRef.current?.getBoundingClientRect().top
+    const turnBottom = pendingTurn.getBoundingClientRect().bottom
+    if (typeof panelTop === "number" && turnBottom > panelTop - 8) {
+      transcript.scrollTop += turnBottom - panelTop + 8
+    }
+  }, [pending])
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     sendDraft()
@@ -525,11 +545,12 @@ export function ConversationWorkspace({
                   <span
                     className={cn(
                       "size-1.5 rounded-full",
+                      // 四种通话阶段各占一色，扫一眼就能区分卡在哪一步：
+                      // 连接=蓝、离线识别=紫、思考=琥珀、可以说话=绿、播报中=品牌色。
                       callStatus === "listening" && "bg-[var(--success)]",
-                      (callStatus === "connecting" ||
-                        callStatus === "transcribing" ||
-                        callStatus === "thinking") &&
-                        "bg-[var(--chart-3)]",
+                      callStatus === "connecting" && "bg-[var(--chart-4)]",
+                      callStatus === "transcribing" && "bg-[var(--chart-5)]",
+                      callStatus === "thinking" && "bg-[var(--chart-3)]",
                       callStatus === "speaking" && "bg-primary",
                       (!callActive || callStatus === "muted") && "bg-muted-foreground",
                     )}
@@ -701,6 +722,7 @@ export function ConversationWorkspace({
 
         <div
           ref={composerRef}
+          data-conversation-composer
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 md:px-5 md:pb-4"
         >
           <div className="pointer-events-auto mx-auto w-full max-w-lg">
@@ -743,11 +765,24 @@ export function ConversationWorkspace({
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={handleDraftKeyDown}
                     onFocus={() => setComposerExpanded(true)}
-                    onBlur={() => {
-                      // 失焦只收起空输入框：正在写的草稿保持展开，避免打断输入。
-                      if (!draft.trim()) {
-                        setComposerExpanded(false)
+                    onBlur={(event) => {
+                      // 失焦只在焦点真正离开输入面板时收起空输入框：正在写的草稿保持
+                      // 展开；焦点移到面板内的按钮（收起/语音开关）不算离开，否则
+                      // blur 收起与点击 toggle 互相抵消，空草稿时「收起」点不动。
+                      // 判据用 blur 的 relatedTarget（将获焦元素）：blur 事件按规范在
+                      // activeElement 更新之前触发，此刻读 activeElement 读到的还是
+                      // 旧的输入框，会把「真正离开面板」误判成「仍在面板内」。
+                      if (draft.trim()) {
+                        return
                       }
+                      const next = event.relatedTarget
+                      if (
+                        next instanceof Element &&
+                        next.closest("[data-conversation-composer]")
+                      ) {
+                        return
+                      }
+                      setComposerExpanded(false)
                     }}
                     placeholder={
                       pending ? "对方正在回应，可以先继续输入…" : "输入中文或英文消息…"
@@ -1484,8 +1519,18 @@ function LiveTranscriptTurn({
       <div className={cn("min-w-0", alignRight && "flex flex-col items-end text-right")}>
         <div className="flex items-center gap-2">
           <p className="text-xs font-semibold">你</p>
-          <span className="flex items-center gap-1 text-[11px] text-[var(--success)]">
-            <span className="size-1.5 animate-pulse rounded-full bg-[var(--success)]" />
+          <span
+            className={cn(
+              "flex items-center gap-1 text-[11px]",
+              recognizing ? "text-[var(--chart-5)]" : "text-[var(--success)]",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 animate-pulse rounded-full",
+                recognizing ? "bg-[var(--chart-5)]" : "bg-[var(--success)]",
+              )}
+            />
             {recognizing ? "识别中" : "准备就绪"}
           </span>
         </div>
@@ -1517,7 +1562,7 @@ function LiveTranscriptTurn({
             <span
               className={cn(
                 "size-1.5 shrink-0 animate-pulse rounded-full",
-                recognizing ? "bg-[var(--chart-3)]" : "bg-primary/70",
+                recognizing ? "bg-[var(--chart-5)]" : "bg-[var(--success)]",
               )}
               aria-hidden="true"
             />
@@ -1546,6 +1591,7 @@ function PendingReplyTurn({
 }) {
   return (
     <article
+      data-pending-reply-turn
       className={cn(
         "grid grid-cols-[40px_minmax(0,1fr)] gap-3 py-5",
         layout === "stacked" && "border-t",

@@ -39,10 +39,12 @@ export function VoiceActivity({
       className={cn(
         "relative grid shrink-0 place-items-center [perspective:220px]",
         compact ? "size-10" : "size-16",
+        // 与头部徽章共用一套状态色：连接=蓝、离线识别=紫、思考=琥珀、
+        // 可以说话=绿、播报中=品牌色，让每个阶段在头像与徽章上读作同一件事。
         status === "listening" && "text-[var(--success)]",
         status === "thinking" && "text-[var(--chart-3)]",
-        status === "connecting" && "text-[var(--chart-3)]",
-        status === "transcribing" && "text-[var(--chart-3)]",
+        status === "connecting" && "text-[var(--chart-4)]",
+        status === "transcribing" && "text-[var(--chart-5)]",
         status === "speaking" && "text-primary",
         unavailable && "text-destructive",
         (status === "idle" || status === "ended" || status === "muted") &&

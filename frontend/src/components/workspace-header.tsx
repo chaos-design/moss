@@ -113,8 +113,10 @@ export function WorkspaceHeader() {
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-3 bg-background px-4 md:px-5">
       <div className="w-auto shrink-0 sm:w-56">
-        {/* 窄于 380px 时只显示标记：品牌文字与右侧五个操作按钮合计会在 320–379px 溢出视口。 */}
-        <Brand href="/" className="max-[380px]:[&>span:last-child]:hidden" />
+        {/* 窄于 sm（640px）时只显示标记：品牌文字列里的 nowrap 全称会把
+            「Moss + 五个操作按钮」撑到 390px 视口之外（480px 实测溢出）。
+            文字列保留在 DOM 中，只是视觉隐藏。 */}
+        <Brand href="/" className="max-sm:[&>span:last-child]:hidden" />
       </div>
 
       <GlobalSearchDialog />

@@ -1041,3 +1041,37 @@ memory 6 全部通过；`pnpm build` 通过。
 未执行：真实麦克风端到端（三种 ASR/TTS 通道）、live provider 往返、390px 视觉验收与
 marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。跟读计时用例在 10s 上限下负载
 敏感偶发超时，单独复跑稳定通过，已在门禁表注明。
+
+## 2026-11-16 跟读播放跟随、通话阶段配色、回复可视区与占位符剥离（T-332）
+
+本轮改动与验证：
+
+- 跟读「听对话」阶段整段/单句播放时，正在播台词经新增 `scrollShadowingLineToCenter`
+  平滑滚到可视区中间（高于视口的台词顶对齐、目标夹取在 0）；播放行加
+  `shadowing-line-pulse` 弱呼吸光晕（只动画 box-shadow、1.8s、reduced-motion 关闭）
+  与更明显的边框/底色。scroll-shadowing-line 新增居中/平滑/顶对齐/夹取 4 用例，
+  shadowing-workspace 新增播放行居中跟随与呼吸类断言。
+- 通话四阶段独立配色：连接 `chart-4` 蓝、离线识别 `chart-5` 紫、思考 `chart-3` 琥珀、
+  可以说话 `success` 绿、播报中品牌色；头部状态徽章、`VoiceActivity` 头像与识别条
+  两态共用同一套映射（此前连接/识别/思考共用一个琥珀色）。voice-activity 新增
+  五态配色 + 中性态用例。
+- 回复生成期「正在回应」占位（`data-pending-reply-turn`）按 nearest 滚进转写可视区，
+  仍被浮动输入面板压住时按面板顶再补一段滚动（与识别条同一套补偿）。
+  conversation-workspace 新增 pending 滚入用例。
+- ASR 方括号剥离扩展到整段重复同一占位字符的产物（`[xxxx]`、`[？？]`，≥2 个才判），
+  手打单字符 `[x]` 与既有保留规则不变；call-runtime 新增 4 例。
+- 390px 溢出修复：工作台横幅品牌文字列（nowrap 全称）在 390px 下把整行撑到 480px，
+  改为 `max-sm` 视觉隐藏（32px 标记保留），workspace-header 用例同步更新。
+
+自动化与视觉记录（2026-11-16，本机）：
+
+- `pnpm check`（lint + typecheck + 前端 93 文件 / 775 用例 + 后端 6 套）通过；
+  `pnpm build`（标准与 demo 双构建）通过。
+- 390px 视觉探查（demo 构建 + `next start` 5579 + 应用内浏览器 computed-style 断言）：
+  跟读页 `body.scrollWidth === 390` 无横向溢出；播放「当前台词」时恰有 1 个
+  `shadowing-line-pulse` 元素、计算样式 `animation-name: shadowing-line-pulse`、
+  `animation-duration: 1.8s`；对话页 390px 与 1440px 桌面均无横向溢出，
+  `data-conversation-composer` 面板存在。
+- 未执行：真实麦克风的通话阶段配色观感（连接/识别/思考需要真实 ASR 通道驱动）、
+  整段播放居中跟随的手感与 marquee 流畅度，待人工验证；跟读计时类用例在 10s 上限下
+  负载敏感偶发超时，单独复跑稳定通过。

@@ -44,6 +44,16 @@ describe("voice call runtime", () => {
     expect(stripSpeechAnnotations("把[温度]调高一点")).toBe("把[温度]调高一点")
   })
 
+  it("strips placeholder annotations the engine emits for untranscribable segments", () => {
+    // 无法转写片段以 [xxxx] 这类整段重复占位符出现，按标注剥离。
+    expect(stripSpeechAnnotations("今天[xxxx]很热")).toBe("今天很热")
+    expect(stripSpeechAnnotations("[xx] what do you say")).toBe("what do you say")
+    expect(stripSpeechAnnotations("[？？]")).toBe("")
+    expect(stripSpeechAnnotations("[??]")).toBe("")
+    // 单个占位字符不构成标注（[x] 可能表示手打的「是」），保持原样。
+    expect(stripSpeechAnnotations("标记为 [x] 的行")).toBe("标记为 [x] 的行")
+  })
+
   it("detects delayed ASR echoes without blocking unrelated learner speech", () => {
     const spoken =
       "We have fresh blueberry muffins and almond croissants. Which one would you like?"

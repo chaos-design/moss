@@ -69,6 +69,8 @@ beforeEach(() => {
   window.localStorage.clear()
   // jsdom 没有实现 scrollIntoView：侧栏定位（恢复后自动定位与计数器点击）会调用它。
   window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  // jsdom 没有平滑滚动：听对话阶段的居中跟随走 element.scrollTo({ behavior: "smooth" })。
+  window.HTMLElement.prototype.scrollTo = vi.fn()
   // Match the real recorder: automatic turn advancement resets its current result.
   mocks.reset.mockImplementation(() => {
     mocks.recorder.result = null
@@ -144,6 +146,40 @@ describe("ShadowingWorkspace", () => {
 
     expect(container.scrollTop).toBe(86)
     expect(container.className).toContain("overflow-y-auto")
+  })
+
+  it("centers the playing line in the listen transcript and marks it with a soft pulse", async () => {
+    // TTS 挂起不返回：台词留在「正在播放」状态，便于断言高亮与滚动。
+    mocks.speakWithVoice.mockImplementation(() => new Promise(() => {}))
+    const view = render(<ShadowingWorkspace />)
+    const container = view.container
+      .querySelector<HTMLDivElement>('[data-shadowing-line="coffee-2"]')
+      ?.closest<HTMLDivElement>(".overflow-y-auto")
+    // 滚动助手量的是 li（data 属性所在元素），高亮类在 li 内部的台词按钮上。
+    const lineLi = view.container.querySelector<HTMLElement>('[data-shadowing-line="coffee-2"]')
+    const line = lineLi?.querySelector<HTMLElement>("button")
+    expect(container).toBeTruthy()
+    expect(line).toBeTruthy()
+    if (!container || !line || !lineLi) {
+      return
+    }
+    // 200px 视口里 40px 的台词停在 100：中心（120）要对到视口中心（100），即 +20。
+    container.getBoundingClientRect = () => ({ top: 0, bottom: 200, height: 200 }) as DOMRect
+    lineLi.getBoundingClientRect = () => ({ top: 100, bottom: 140, height: 40 }) as DOMRect
+    container.scrollTop = 0
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "播放当前台词" }))
+    })
+
+    // 正在播放的台词颜色更明显，并带弱呼吸光晕标出播放位置。
+    expect(line.className).toContain("shadowing-line-pulse")
+    expect(line.className).toContain("bg-primary/10")
+    expect(screen.getByText("正在播放")).toBeTruthy()
+    // 平滑滚动到可视区中间位置。
+    expect(vi.mocked(HTMLElement.prototype.scrollTo)).toHaveBeenCalledWith(
+      expect.objectContaining({ top: 20, behavior: "smooth" }),
+    )
   })
 
   it("advertises the hold-Space shortcut next to the record button", () => {
