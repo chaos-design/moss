@@ -699,4 +699,19 @@ describe("SpeechServiceCard", () => {
     expect(screen.queryByRole("button", { name: "bill" })).toBeNull()
     expect(screen.getByRole("button", { name: "s2.1-pro-free" })).toBeTruthy()
   })
+
+  it("keeps the ASR model field free of quick buttons so its inputs stay aligned", () => {
+    render(<SpeechServiceCard />)
+    selectApiTransportForBothServices()
+
+    fireEvent.click(screen.getByRole("button", { name: "使用语音识别ElevenLabs 适配器" }))
+
+    // 识别模型字段只保留输入框：快捷按钮不再渲染，模型输入框与同行密钥输入框保持对齐。
+    expect(screen.queryByRole("button", { name: "scribe_v2" })).toBeNull()
+    expect(screen.getByLabelText("语音识别模型")).toBeTruthy()
+
+    // TTS 侧不受影响：适配器模型快捷选项仍在。
+    fireEvent.click(screen.getByRole("button", { name: "使用语音合成ElevenLabs 适配器" }))
+    expect(screen.getByRole("button", { name: "eleven_flash_v2_5" })).toBeTruthy()
+  })
 })

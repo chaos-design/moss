@@ -802,8 +802,10 @@ function SpeechEndpointFields({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field>
             <FieldLabel htmlFor={`${idPrefix}-model`}>{serviceLabels[service]}模型</FieldLabel>
-            {/* 本机适配器把验证过的模型列成快捷按钮；OpenAI 兼容服务保持手填。 */}
-            {modelOptions.length > 0 ? (
+            {/* 本机适配器把验证过的模型列成快捷按钮；OpenAI 兼容服务保持手填。
+                识别（ASR）模型不出快捷按钮：一键接入预设已把模型对齐到已知值，
+                按钮行只会把模型输入框顶得比同行的密钥输入框低，破坏两栏输入框对齐。 */}
+            {service === "tts" && modelOptions.length > 0 ? (
               <div className="flex flex-wrap gap-1">
                 {modelOptions.map((option) => (
                   <Button
