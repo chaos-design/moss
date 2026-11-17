@@ -13,6 +13,7 @@ import {
   ConversationSettingsPopover,
   ConversationWorkspace,
   ExpressionValidationFeedback,
+  keepTurnAvatarVisible,
   scrollLatestTranscriptTurn,
   TranscriptTurn,
   VoiceCallPanel,
@@ -166,6 +167,56 @@ describe("conversation feedback UI", () => {
     scrollLatestTranscriptTurn(transcript)
 
     expect(transcript.scrollTop).toBe(240)
+  })
+
+  it("scrolls the turn avatar back inside the viewport when it is above the top edge", () => {
+    const transcript = document.createElement("div")
+    const turn = document.createElement("article")
+    const avatar = document.createElement("span")
+    avatar.dataset.turnAvatar = ""
+    turn.append(avatar)
+    transcript.append(turn)
+    transcript.scrollTop = 200
+    transcript.getBoundingClientRect = vi.fn(() => ({ top: 100, bottom: 700 }) as DOMRect)
+    avatar.getBoundingClientRect = vi.fn(() => ({ top: 60, bottom: 92 }) as DOMRect)
+
+    keepTurnAvatarVisible(transcript, turn)
+
+    // 头像顶 60 高于容器顶 100+16，需上移内容 56px（scrollTop 200→144）。
+    expect(transcript.scrollTop).toBe(144)
+  })
+
+  it("scrolls the avatar clear of the floating panel when it is under the bottom edge", () => {
+    const transcript = document.createElement("div")
+    const turn = document.createElement("article")
+    const avatar = document.createElement("span")
+    avatar.dataset.turnAvatar = ""
+    turn.append(avatar)
+    transcript.append(turn)
+    transcript.scrollTop = 200
+    transcript.getBoundingClientRect = vi.fn(() => ({ top: 100, bottom: 700 }) as DOMRect)
+    avatar.getBoundingClientRect = vi.fn(() => ({ top: 640, bottom: 672 }) as DOMRect)
+
+    // 浮动面板顶部 660，头像底 672 越过 660-16=644，需下移内容 28px。
+    keepTurnAvatarVisible(transcript, turn, 660)
+
+    expect(transcript.scrollTop).toBe(228)
+  })
+
+  it("leaves scroll alone when the avatar is already fully visible", () => {
+    const transcript = document.createElement("div")
+    const turn = document.createElement("article")
+    const avatar = document.createElement("span")
+    avatar.dataset.turnAvatar = ""
+    turn.append(avatar)
+    transcript.append(turn)
+    transcript.scrollTop = 200
+    transcript.getBoundingClientRect = vi.fn(() => ({ top: 100, bottom: 700 }) as DOMRect)
+    avatar.getBoundingClientRect = vi.fn(() => ({ top: 200, bottom: 232 }) as DOMRect)
+
+    keepTurnAvatarVisible(transcript, turn)
+
+    expect(transcript.scrollTop).toBe(200)
   })
 
   it("keeps the settings label visible and changes the controlled tutor mode", () => {
@@ -713,7 +764,8 @@ describe("conversation feedback UI", () => {
     })
     expect(screen.getByText("识别中")).toBeTruthy()
     expect(screen.getByText("Could I get a")).toBeTruthy()
-    expect(screen.getByText("可以继续说，我们会一直听完整句话。")).toBeTruthy()
+    // 识别条不再常驻「可以继续说」提示，识别阶段只由状态行呈现。
+    expect(screen.queryByText(/可以继续说/)).toBeNull()
 
     // 长文本进入滚动轨道，内容渲染两份以无缝循环。
     const longPartial =

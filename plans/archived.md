@@ -212,7 +212,17 @@
   完成 5584 端到端冒烟（health、探针、OpenAI TTS、ASR），浏览器经 demo 实例验证预设与
   「测试合成接口」链路。未配置真实 `FISH_API_KEY`，真实音质、延迟与配额未验收。对话输入框
   同步优化：草稿自动增高、Escape 收起、空草稿失焦收起、桌面自动聚焦与生成期间“停止生成
-  回复”按钮，新增 4 个交互断言；桌面与 390px 视口无横向溢出。
+  回复"按钮，新增 4 个交互断言；桌面与 390px 视口无横向溢出。
+- T-333：对话三类回复头像（已提交 assistant 首字母、生成中占位、识别条「你」）统一经
+  `keepTurnAvatarVisible` 按头像自身边界约束可视区，顶越界上移、被浮动面板压住下移，不再
+  用整条 article 顶/底边隐式推断，规避 content-visibility 测量干扰；ASR 方括号标注剥离扩展
+  到大小写不敏感且允许尾随句读的占位符（[xxx...]/[xXx]）及 unknow/unclear/clears throat/
+  groan/grunt/嗯/呃/咳/听不清，手打 [注意]/[温度]/[x] 仍保留，onPartial/onTranscript 接入
+  路径不变；识别条删除两处「可以继续说」提示，文本下方提示与无文本占位收敛为
+  「正在将这句话转换为文字…」；对话逐句与跟读同角色音色恒定已有单一来源，补测试锁定不退化。
+  conversation-workspace/call-runtime/shadowing-workspace/use-local-tts 新增 9 个用例，
+  `pnpm check`（前端 93 文件 780 用例 + 后端各套件）与 `pnpm build` 通过。真实麦克风、
+  逐句音色听感与 390px 视觉待人工验证。
 
 ## 验证规则
 

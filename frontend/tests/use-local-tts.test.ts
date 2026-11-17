@@ -109,7 +109,8 @@ describe("useLocalTts playback voice resolution", () => {
   })
 
   it("sends one concrete default voice when no API voice is configured", async () => {
-    fetchMock.mockResolvedValue(audioResponse("audio/mpeg"))
+    // 连续两次播报各需要一份新的 Response body。
+    fetchMock.mockImplementation(() => Promise.resolve(audioResponse("audio/mpeg")))
     setSpeechConfig((current) => ({
       ...current,
       tts: {
@@ -130,6 +131,13 @@ describe("useLocalTts playback voice resolution", () => {
     // 播放音色恒定：未配置时固定发 alloy，保证配置未变时逐句音色一致，
     // 不会因为省略字段而被上游按请求各自挑音色。
     expect(payload.voice).toBe("alloy")
+
+    // 同一会话的第二句复用同一音色，逐句不会因 provider 各自挑音色而漂移。
+    await act(async () => {
+      await result.current.speak("One more sentence.")
+    })
+    const secondPayload = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))
+    expect(secondPayload.voice).toBe("alloy")
   })
 
   it("keeps the local registry voice for the loopback gateway", async () => {

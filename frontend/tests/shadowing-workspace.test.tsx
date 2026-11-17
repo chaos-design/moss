@@ -477,6 +477,23 @@ describe("ShadowingWorkspace", () => {
       value: "kokoro:am_michael",
     })
 
+    // 同一角色的音色恒定：整段播放只出现两个角色音色，且同一句台词（同一角色）
+    // 无论出现多少次都复用同一个音色，不会逐句漂移。
+    const targets = mocks.speakWithVoice.mock.calls.map((call) => call[1] as { value: string })
+    expect(new Set(targets.map((target) => target.value))).toEqual(
+      new Set(["kokoro:af_heart", "kokoro:am_michael"]),
+    )
+    const voiceByText = new Map<string, string>()
+    mocks.speakWithVoice.mock.calls.forEach((call, index) => {
+      const text = call[0] as string
+      const seen = voiceByText.get(text)
+      if (seen) {
+        expect(targets[index].value).toBe(seen)
+      } else {
+        voiceByText.set(text, targets[index].value)
+      }
+    })
+
     fireEvent.click(screen.getByRole("button", { name: "互换角色" }))
 
     expect(screen.getByRole("button", { name: "扮演：咖啡店店员" })).toBeTruthy()

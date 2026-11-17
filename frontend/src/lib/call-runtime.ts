@@ -61,13 +61,14 @@ const speechAnnotationPattern = /[[［（(【]([^\]］）)】]{0,32})[\]］）)�
 
 // 拉丁标注整段由字母/空格构成且包含产物词；中文标注按关键词子串命中。
 const latinSpeechAnnotationKeywords =
-  /noise|pause|silence|inaudible|unintelligible|laugh|music|applause|cough|sigh|breath|blip/i
+  /noise|pause|silence|inaudible|unintelligible|unknow|unclear|laugh|music|applause|cough|sigh|breath|blip|throat|groan|grunt/i
 const chineseSpeechAnnotationKeywords =
-  /噪音|噪声|杂音|停顿|静音|笑声|音乐|掌声|咳嗽|叹气|呼吸|沉默/
+  /噪音|噪声|杂音|停顿|静音|笑声|音乐|掌声|咳嗽|叹气|呼吸|沉默|嗯|呃|咳|听不清|听不出|听不懂|稍等/
 
 // 占位符产物：括号内整段是同一占位字符（x、×、？、·、… 等）的重复，≥2 个才判定，
-// 避免误伤单个合法字符（如 [x] 表示「是」这类手打用法）。
-const placeholderAnnotationPattern = /^([xｘX×✕？?·…□〇])\1{1,31}$/
+// 避免误伤单个合法字符（如 [x] 表示「是」这类手打用法）。大小写不敏感、允许尾随
+// 句读（引擎常输出 [xxx...] / [XXX。]），反向引用在 i 模式下同样不区分大小写。
+const placeholderAnnotationPattern = /^([xｘX×✕？?·…□〇])\1{1,31}[.。…\s]*$/i
 
 function isSpeechAnnotationText(inner: string) {
   const trimmed = inner.trim()

@@ -54,6 +54,22 @@ describe("voice call runtime", () => {
     expect(stripSpeechAnnotations("标记为 [x] 的行")).toBe("标记为 [x] 的行")
   })
 
+  it("strips case-insensitive placeholders with trailing punctuation and more ASR products", () => {
+    // 占位符大小写不敏感、允许尾随句读（引擎常输出 [xxx...] / [Xxx]）。
+    expect(stripSpeechAnnotations("[xxx...] what do you say")).toBe("what do you say")
+    expect(stripSpeechAnnotations("[xXx] what do you say")).toBe("what do you say")
+    expect(stripSpeechAnnotations("稍等[Xxx。]再说")).toBe("稍等再说")
+    // 更多中英文产物词：unknow / clears throat / 嗯 / 咳 / 听不清。
+    expect(stripSpeechAnnotations("[ unknow ] what")).toBe("what")
+    expect(stripSpeechAnnotations("[clears throat] ok")).toBe("ok")
+    expect(stripSpeechAnnotations("[嗯]好的")).toBe("好的")
+    expect(stripSpeechAnnotations("[咳]不好意思")).toBe("不好意思")
+    expect(stripSpeechAnnotations("这句[听不清]重来")).toBe("这句重来")
+    // 手打非产物括号仍保留，单字符 [x] 保留。
+    expect(stripSpeechAnnotations("[注意] 保留")).toBe("[注意] 保留")
+    expect(stripSpeechAnnotations("标记为 [x]")).toBe("标记为 [x]")
+  })
+
   it("detects delayed ASR echoes without blocking unrelated learner speech", () => {
     const spoken =
       "We have fresh blueberry muffins and almond croissants. Which one would you like?"

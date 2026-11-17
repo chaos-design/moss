@@ -273,6 +273,32 @@ export function scrollLatestTranscriptTurn(transcript: HTMLElement) {
   }
 }
 
+// 三类回复头像（已提交回复、生成中占位、识别条）的可视区不变量：头像必须完整落在
+// 转写视口内。原先按整条 article 顶/底边推断，长回复 + nearest 对齐会把顶部头像推出
+// 视口；改按头像自身边界校正，也不受 content-visibility:auto 的占位高度干扰。
+// panelTop 是浮动输入面板顶部，传入时头像底部不得越过它。
+export function keepTurnAvatarVisible(
+  transcript: HTMLElement,
+  turn: HTMLElement,
+  panelTop?: number,
+) {
+  const avatar = turn.querySelector<HTMLElement>("[data-turn-avatar]")
+  if (!avatar) {
+    return
+  }
+  const transcriptRect = transcript.getBoundingClientRect()
+  const bottomEdge = typeof panelTop === "number" ? panelTop : transcriptRect.bottom
+  const avatarRect = avatar.getBoundingClientRect()
+  const margin = 16
+  const overflowTop = transcriptRect.top + margin - avatarRect.top
+  const overflowBottom = avatarRect.bottom - (bottomEdge - margin)
+  if (overflowTop > 0) {
+    transcript.scrollTop -= overflowTop
+  } else if (overflowBottom > 0) {
+    transcript.scrollTop += overflowBottom
+  }
+}
+
 export function ConversationWorkspace({
   focusMemoryItemId,
   restoreLastScene = false,
@@ -455,6 +481,11 @@ export function ConversationWorkspace({
     }
 
     scrollLatestTranscriptTurn(transcript)
+    const turns = transcript.querySelectorAll<HTMLElement>("[data-transcript-turn]")
+    const latestTurn = turns[turns.length - 1]
+    if (latestTurn) {
+      keepTurnAvatarVisible(transcript, latestTurn)
+    }
   }, [latestMessageId, messages.length])
 
   // 语音通话期间把正在识别的轮次滚进可视区：浮动输入面板盖住转写底部，
@@ -475,6 +506,7 @@ export function ConversationWorkspace({
     if (typeof panelTop === "number" && liveBottom > panelTop - 8) {
       transcript.scrollTop += liveBottom - panelTop + 8
     }
+    keepTurnAvatarVisible(transcript, liveTurn, panelTop)
   }, [callActive, callStatus, liveTranscript])
 
   // 回复生成期间把「正在回应」占位滚进可视区：浮动面板盖住转写底部，占位停在
@@ -495,6 +527,7 @@ export function ConversationWorkspace({
     if (typeof panelTop === "number" && turnBottom > panelTop - 8) {
       transcript.scrollTop += turnBottom - panelTop + 8
     }
+    keepTurnAvatarVisible(transcript, pendingTurn, panelTop)
   }, [pending])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1314,7 +1347,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
       data-transcript-turn={message.id}
     >
       {alignRight ? null : (
-        <Avatar>
+        <Avatar data-turn-avatar>
           <AvatarFallback
             className={cn(
               assistant
@@ -1487,7 +1520,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
 
 // Interim speech recognition results, shown while the learner is still speaking.
 // 两种文案状态：「准备就绪」（麦克风已开、还没听到语音）与「识别中」（正在转写本句话）。
-// 识别中的长文本在固定宽度内水平滚动（marquee），并常驻「可以继续说」提示。
+// 识别中的长文本在固定宽度内水平滚动（marquee），识别阶段由状态行呈现，不再额外提示。
 function LiveTranscriptTurn({
   layout,
   status,
@@ -1512,7 +1545,7 @@ function LiveTranscriptTurn({
       aria-live="polite"
     >
       {alignRight ? null : (
-        <Avatar>
+        <Avatar data-turn-avatar>
           <AvatarFallback className="bg-primary text-primary-foreground">你</AvatarFallback>
         </Avatar>
       )}
@@ -1551,11 +1584,6 @@ function LiveTranscriptTurn({
             ) : (
               <p className="text-base leading-7 text-muted-foreground">{text}</p>
             )}
-            {recognizing ? (
-              <p className="mt-1 text-[11px] text-primary">
-                可以继续说，我们会一直听完整句话。
-              </p>
-            ) : null}
           </div>
         ) : (
           <p className="mt-2 flex items-center gap-2 text-sm leading-7 text-muted-foreground">
@@ -1566,14 +1594,12 @@ function LiveTranscriptTurn({
               )}
               aria-hidden="true"
             />
-            {recognizing
-              ? "正在将这句话转换为文字… 可以继续说。"
-              : "麦克风已就绪，随时可以开口。"}
+            {recognizing ? "正在将这句话转换为文字…" : "麦克风已就绪，随时可以开口。"}
           </p>
         )}
       </div>
       {alignRight ? (
-        <Avatar>
+        <Avatar data-turn-avatar>
           <AvatarFallback className="bg-primary text-primary-foreground">你</AvatarFallback>
         </Avatar>
       ) : null}
@@ -1598,7 +1624,7 @@ function PendingReplyTurn({
       )}
       aria-live="polite"
     >
-      <Avatar>
+      <Avatar data-turn-avatar>
         <AvatarFallback className="bg-foreground text-background">
           {partnerName.slice(0, 1)}
         </AvatarFallback>
