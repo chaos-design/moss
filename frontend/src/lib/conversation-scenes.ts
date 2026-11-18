@@ -703,6 +703,286 @@ const conversationSceneDetails: Partial<Record<string, ConversationSceneDetails>
       },
     ],
   },
+  "food-delivery": {
+    partnerName: "Leo",
+    partnerRole: "外卖平台客服",
+    objective: "报出订单号与问题，追踪延迟订单并商定退款或补偿方式。",
+    focusPhrases: [
+      ["报出单号", "My order number is...", "先报订单号定位问题，客服处理更快。"],
+      [
+        "说明等待",
+        "It has been over ... minutes since I ordered.",
+        "用已等待的时长客观说明延迟程度。",
+      ],
+      [
+        "提出补偿",
+        "Could you offer a refund or a discount code?",
+        "礼貌给出退单或补偿的可选项。",
+      ],
+    ],
+    opening: {
+      content:
+        "Hi, thanks for reaching out. Could you share your order number and what went wrong?",
+      translation: "你好，感谢反馈。能告诉我订单号和遇到的问题吗？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you check on...?",
+        source: "来自餐厅用餐，适合请客服核实订单状态。",
+      },
+      {
+        phrase: "I would appreciate it if...",
+        source: "来自酒店入住，用于礼貌提出补偿期望。",
+      },
+    ],
+  },
+  "dinner-party": {
+    partnerName: "Grace",
+    partnerRole: "聚餐主人",
+    objective: "接受邀请并说明饮食禁忌，席间自然寒暄，饭后礼貌致谢或回邀。",
+    focusPhrases: [
+      ["接受邀请", "I'd love to come.", "热情接受邀请，比一句 Yes 更有温度。"],
+      [
+        "说明忌口",
+        "I don't eat... / I'm allergic to...",
+        "提前说明忌口或过敏，方便主人安排菜品。",
+      ],
+      ["致谢回邀", "Next time, dinner is on me.", "主动提出下次回请，把关系延续下去。"],
+    ],
+    opening: {
+      content:
+        "I'm so glad you can make it! Is there anything you don't eat, or any allergies I should know about?",
+      translation: "很高兴你能来！有什么忌口或过敏需要我注意的吗？",
+    },
+    recallItems: [
+      {
+        phrase: "Could I bring anything?",
+        source: "来自职场社交，做客前先问要带什么更周到。",
+      },
+      {
+        phrase: "Everything was delicious, especially...",
+        source: "来自餐厅用餐，用具体细节夸赞菜品。",
+      },
+    ],
+  },
+  "roommate-rules": {
+    partnerName: "Sam",
+    partnerRole: "室友",
+    objective: "协商作息、卫生与访客规则，把抱怨变成双方都接受的约定。",
+    focusPhrases: [
+      ["提出困扰", "It bothers me when...", "直接说出被打扰的具体行为，对事不对人。"],
+      ["提出方案", "How about we...?", "用提议句式把抱怨转成可执行的约定。"],
+      ["复述共识", "So we agreed that...", "离开对话前复述共识，避免之后各说各话。"],
+    ],
+    opening: {
+      content:
+        "Hey, do you have a minute? I wanted to talk about how we're splitting the chores.",
+      translation: "嘿，有空吗？想跟你聊聊家务怎么分工。",
+    },
+    recallItems: [
+      {
+        phrase: "Would you mind...ing?",
+        source: "来自租房看房，礼貌请求对方配合。",
+      },
+      {
+        phrase: "It has been affecting...",
+        source: "来自联系房东报修，说明问题对生活的实际影响。",
+      },
+    ],
+  },
+  "car-rental": {
+    partnerName: "Dana",
+    partnerRole: "租车门店职员",
+    objective: "确认车型、保险与取还车规则，拿到清楚的价格构成再签字。",
+    focusPhrases: [
+      ["询问车型", "What do you have available?", "先问可选车型再决定，不被动接受推销。"],
+      ["确认保险", "Does that include insurance?", "确认报价是否含保险以及免赔额多少。"],
+      ["确认还车", "Where and when do I need to return it?", "问清还车地点、油量与时间要求。"],
+    ],
+    opening: {
+      content: "Welcome! What dates do you need the car for, and how long will you keep it?",
+      translation: "欢迎！您需要哪几天用车，大概租多久？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you break down the total?",
+        source: "来自银行办事，请对方拆解费用构成。",
+      },
+      {
+        phrase: "Is there anything extra I should know about?",
+        source: "来自酒店入住，防止隐藏收费。",
+      },
+    ],
+  },
+  "flight-delay": {
+    partnerName: "Ivy",
+    partnerRole: "机场地勤",
+    objective: "核实延误原因与时长，争取改签或餐食住宿安排。",
+    focusPhrases: [
+      [
+        "核实情况",
+        "Do you know what's causing the delay?",
+        "先弄清延误原因和预计时长再决定策略。",
+      ],
+      [
+        "请求改签",
+        "Are there any other flights to...?",
+        "主动问可选航班，把话题引向解决方案。",
+      ],
+      [
+        "争取安置",
+        "Will the airline cover meals or a hotel?",
+        "确认延误期间的餐食住宿责任方。",
+      ],
+    ],
+    opening: {
+      content:
+        "I'm sorry, but flight 208 is delayed. Would you like to wait or look at other options?",
+      translation: "抱歉，208 航班延误了。您想等候还是看看其他方案？",
+    },
+    recallItems: [
+      {
+        phrase: "What are my options?",
+        source: "来自联系客服退款，把列方案的主动权交给对方。",
+      },
+      {
+        phrase: "I would appreciate it if...",
+        source: "来自酒店入住，礼貌提出诉求。",
+      },
+    ],
+  },
+  "salary-negotiation": {
+    partnerName: "Victor",
+    partnerRole: "招聘经理",
+    objective: "基于市场行情与自身贡献提出薪资期望，并谈妥整体待遇。",
+    focusPhrases: [
+      [
+        "给出区间",
+        "Based on my research, I'm looking for...",
+        "用调研过的区间开价，有依据不冒进。",
+      ],
+      ["强调价值", "In my current role, I...", "先摆出贡献再谈数字，谈判更有分量。"],
+      ["谈整体待遇", "Could we also discuss...?", "把奖金、假期、远程安排纳入整体方案。"],
+    ],
+    opening: {
+      content: "Thanks for coming in. What are your salary expectations for this role?",
+      translation: "感谢过来。你对这个职位的薪资期望是多少？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you walk me through...?",
+        source: "来自求职面试，请对方说明定薪依据。",
+      },
+      {
+        phrase: "Let's find a middle ground.",
+        source: "来自商务谈判，用于推进双方各让一步。",
+      },
+    ],
+  },
+  "status-update": {
+    partnerName: "Nora",
+    partnerRole: "项目经理",
+    objective: "按进度、风险、下一步三段式汇报，并明确需要什么支持。",
+    focusPhrases: [
+      ["汇报进度", "We're on track for...", "先给结论：按计划还是延迟，再讲细节。"],
+      ["提示风险", "The main risk is...", "主动暴露风险并附上应对建议，更显可靠。"],
+      ["请求支持", "I could use your help with...", "明确说出需要对方提供的具体支持。"],
+    ],
+    opening: {
+      content: "Let's start with your update. Where does the project stand this week?",
+      translation: "先听你的进展。这周项目到哪一步了？",
+    },
+    recallItems: [
+      {
+        phrase: "Let's follow up on...",
+        source: "来自工作会议，用于确定后续跟进事项。",
+      },
+      {
+        phrase: "I'm currently blocked by...",
+        source: "来自一对一工作沟通，说明当前阻碍。",
+      },
+    ],
+  },
+  "dentist-visit": {
+    partnerName: "Kevin",
+    partnerRole: "牙医",
+    objective: "描述牙痛的位置、时长与诱因，理解治疗方案并确认费用。",
+    focusPhrases: [
+      ["描述疼痛", "It hurts when I...", "用触发条件描述疼痛，比“很痛”更有诊断价值。"],
+      ["询问方案", "What are my treatment options?", "了解所有可选方案和利弊再做决定。"],
+      ["确认费用", "How much will that cost, and is it covered?", "治疗方式与费用一次问清。"],
+    ],
+    opening: {
+      content: "What brings you in today? How long has it been bothering you?",
+      translation: "今天哪里不舒服？这个问题持续多久了？",
+    },
+    recallItems: [
+      {
+        phrase: "It started... ago.",
+        source: "来自就医沟通，说明症状开始的时间。",
+      },
+      {
+        phrase: "Could you explain that in simpler terms?",
+        source: "来自课堂讨论，请医生用通俗语言解释方案。",
+      },
+    ],
+  },
+  "phone-plan": {
+    partnerName: "Chloe",
+    partnerRole: "营业厅店员",
+    objective: "按真实用量比较套餐与合约条款，换到合适方案并确认违约金。",
+    focusPhrases: [
+      ["说明用量", "I mostly use data for...", "按真实用量描述，方便对方推荐合适套餐。"],
+      ["比较套餐", "What's the difference between...?", "让店员把差异说清楚再做比较。"],
+      [
+        "确认合约",
+        "Is there a contract or cancellation fee?",
+        "换套餐前先确认合约期与违约金。",
+      ],
+    ],
+    opening: {
+      content: "Hi there! Are you looking to switch plans or get a new line today?",
+      translation: "您好！今天是想换套餐还是新办号码？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you break down the total?",
+        source: "来自银行办事，请对方拆解月费构成。",
+      },
+      {
+        phrase: "Is there anything extra I should know about?",
+        source: "来自酒店入住，防止隐藏条款。",
+      },
+    ],
+  },
+  "office-hours": {
+    partnerName: "Dr. Patel",
+    partnerRole: "课程教授",
+    objective: "带着具体问题请教论文思路，确认修改方向与截止时间。",
+    focusPhrases: [
+      ["说明来意", "I came to ask about...", "开门见山说明要讨论的具体问题。"],
+      [
+        "请教思路",
+        "Could you point me in the right direction?",
+        "不求答案只求方向，教授更愿意展开讲。",
+      ],
+      ["确认要求", "When is the deadline for...?", "离开前确认修改要求与时间节点。"],
+    ],
+    opening: {
+      content: "Come on in! What would you like to go over today?",
+      translation: "进来吧！今天想讨论什么？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you clarify...?",
+        source: "来自课堂讨论，请教授讲清模糊的要求。",
+      },
+      {
+        phrase: "Let's follow up on...",
+        source: "来自工作会议，约定下次跟进方式。",
+      },
+    ],
+  },
 }
 
 export type ConversationScene = AvailableSceneItem & ConversationSceneDetails

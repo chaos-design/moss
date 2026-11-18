@@ -1975,4 +1975,146 @@ export const idiomaticExpressionMemory: Record<string, IdiomaticExpressionMemory
       },
     ],
   },
+  "speak of the devil": {
+    usage: "常单独作感叹句，只说前半句即可；语气轻松，正式书面语避免使用。",
+    memoryTip: "直接对应中文的「说曹操，曹操到」：刚提到谁，谁就出现。",
+    examples: [
+      {
+        text: "We were just talking about Anna, and speak of the devil, she walked in.",
+        translation: "我们刚才正聊到安娜，说曹操曹操到，她就进来了。",
+      },
+      {
+        text: "Oh, speak of the devil — here comes your taxi now.",
+        translation: "哦，说曹操曹操到，你的出租车来了。",
+      },
+    ],
+  },
+  "back to the drawing board": {
+    usage: "常与 go、be 搭配（go back to the drawing board），强调推倒重来而非小修小补。",
+    memoryTip: "画面感：工程师把图纸摊回制图板，从零再画一张。",
+    examples: [
+      {
+        text: "If the experiment fails, it is back to the drawing board.",
+        translation: "如果实验失败，就从头再来。",
+      },
+      {
+        text: "The budget didn't get approved, so it's back to the drawing board for the whole team.",
+        translation: "预算没批下来，整个团队只能推倒重做。",
+      },
+    ],
+  },
+  "bite off more than you can chew": {
+    usage: "可用人称与时态变化（bit off / biting off）；劝告时常用 don't 开头。",
+    memoryTip: "嘴里塞满食物咽不下的画面：量力而「咬」。",
+    examples: [
+      {
+        text: "Don't bite off more than you can chew with side projects.",
+        translation: "接副业项目别贪多嚼不烂。",
+      },
+      {
+        text: "Taking three classes and a job — did you bite off more than you can chew?",
+        translation: "又上课又打工——你是不是贪多嚼不烂了？",
+      },
+    ],
+  },
+  "out of the woods": {
+    usage: "多用于否定句或疑问句（not out of the woods yet），语体偏口语。",
+    memoryTip: "走出森林才算真正安全：导航条走完之前都别松劲。",
+    examples: [
+      {
+        text: "With two exams left, we are not out of the woods yet.",
+        translation: "还剩两门考试，我们还没度过最难的阶段。",
+      },
+      {
+        text: "The company cut costs, but it isn't out of the woods.",
+        translation: "公司削减了成本，但还没脱离险境。",
+      },
+    ],
+  },
+  "down to earth": {
+    usage:
+      "作表语时无连字符（be down to earth）；作定语时常带连字符（a down-to-earth person）。",
+    memoryTip: "双脚踩在地上，不飘在云端——务实、不摆架子。",
+    examples: [
+      {
+        text: "Our teacher is brilliant but very down to earth.",
+        translation: "我们老师很有才华，但非常接地气。",
+      },
+      {
+        text: "I prefer advice that is practical and down to earth.",
+        translation: "我更喜欢务实、接地气的建议。",
+      },
+    ],
+  },
+  "against the clock": {
+    usage: "常与 race、work 搭配（race against the clock），多用于截止时间前的赶工。",
+    memoryTip: "把时钟当成对手：你在和它赛跑。",
+    examples: [
+      {
+        text: "The medics were racing against the clock to reach the scene.",
+        translation: "医护人员争分夺秒赶往现场。",
+      },
+      {
+        text: "We worked against the clock to hit the deadline.",
+        translation: "为了赶上截止时间，我们争分夺秒地干。",
+      },
+    ],
+  },
+  "hit the ground running": {
+    usage: "多用于新员工、新项目开局；完成时用 have hit the ground running。",
+    memoryTip: "跳伞落地不站稳、直接起跑：零缓冲开局。",
+    examples: [
+      {
+        text: "Learn the codebase this week so you can hit the ground running on Monday.",
+        translation: "这周先熟悉代码库，周一上岗就能全力投入。",
+      },
+      {
+        text: "The campaign hit the ground running with a viral video.",
+        translation: "活动靠一条爆款视频一开局就火力全开。",
+      },
+    ],
+  },
+  "on the back burner": {
+    usage:
+      "常与 put、keep 搭配（put something on the back burner）；反义是 on the front burner。",
+    memoryTip: "灶台后排小火保温：不熄火，也不占主力火力。",
+    examples: [
+      {
+        text: "Keep the international expansion on the back burner for now.",
+        translation: "国际扩张的事暂时先放一放。",
+      },
+      {
+        text: "My novel is on the back burner while I finish my degree.",
+        translation: "读完学位之前，我的小说先搁一搁。",
+      },
+    ],
+  },
+  "up in the air": {
+    usage: "多作表语（be up in the air），指时间、安排、结果尚未确定。",
+    memoryTip: "球抛到空中还没落地：结果悬着呢。",
+    examples: [
+      {
+        text: "The date of the launch is still up in the air.",
+        translation: "上线日期还没有定下来。",
+      },
+      {
+        text: "Whether we move to Berlin is up in the air.",
+        translation: "我们是否搬去柏林还没定。",
+      },
+    ],
+  },
+  "butterflies in my stomach": {
+    usage: "常用 have/get butterflies (in one's stomach)；口语里常省略 in one's stomach。",
+    memoryTip: "胃里有蝴蝶扑腾：又轻又慌的那种紧张。",
+    examples: [
+      {
+        text: "She gets butterflies in her stomach every time she speaks on stage.",
+        translation: "每次登台发言她都紧张得心里七上八下。",
+      },
+      {
+        text: "Walking into the exam hall, I had butterflies in my stomach.",
+        translation: "走进考场时，我紧张得心怦怦跳。",
+      },
+    ],
+  },
 }

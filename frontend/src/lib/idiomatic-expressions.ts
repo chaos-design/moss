@@ -1356,6 +1356,102 @@ const reviewedIdiomaticExpressionNotes: readonly IdiomaticExpressionNote[] = [
     context: "通用",
     kind: "sentence-pattern",
   },
+  {
+    phrase: "speak of the devil",
+    meaning: "说曹操，曹操到",
+    why: "完整的谚语是 Speak of the devil and he appears（说到魔鬼，魔鬼就到），日常口语只说前半句：刚提到某人，某人就出现了。",
+    origin:
+      "源自欧洲「提魔召魔」的古老迷信，18 世纪进入英语口语；完整谚语仍在使用，日常对话已缩短为前半句。",
+    example: "Speak of the devil! We were just talking about you.",
+    exampleTranslation: "说曹操，曹操到！我们刚才正提到你。",
+    context: "日常",
+  },
+  {
+    phrase: "back to the drawing board",
+    meaning: "从头再来；推倒重做",
+    why: "drawing board 指工程师绘制图纸的制图板。方案被否决后回到制图板重新画图，引申为放弃现有方案、从零再来。",
+    origin:
+      "第二次世界大战期间《纽约客》漫画：飞机设计被推翻后，工程师说「回到制图板」，此后成为固定表达。",
+    example: "The client rejected the proposal, so we are back to the drawing board.",
+    exampleTranslation: "客户否了方案，我们只能从头再来。",
+    context: "职场",
+  },
+  {
+    phrase: "bite off more than you can chew",
+    meaning: "贪多嚼不烂；揽下超出能力的事",
+    why: "一口咬得太多，嚼不动也咽不下，比喻一次承担的任务或承诺超出自己的能力与时间。",
+    origin:
+      "19 世纪美国英语中的口语表达，1878 年的报纸上已有类似用法；与农活、饮食的「一口量」意象相关。",
+    example: "I bit off more than I could chew by taking three courses this term.",
+    exampleTranslation: "这学期选三门课，我有点贪多嚼不烂了。",
+    context: "通用",
+  },
+  {
+    phrase: "out of the woods",
+    meaning: "脱离险境；度过最难阶段",
+    why: "迷路或被追赶时，走出树林才算真正安全。引申为度过危险期或最不确定的阶段，多用于否定句和疑问句。",
+    origin:
+      "16 世纪起见于英语文献，与迷路出林的意象相关；现代用法常见于康复、财务与项目进度话题。",
+    example: "The surgery went well, but he is not out of the woods yet.",
+    exampleTranslation: "手术很顺利，但他还没脱离危险期。",
+    context: "通用",
+  },
+  {
+    phrase: "down to earth",
+    meaning: "接地气的；务实的",
+    why: "与「飘在云端」相对：双脚踩在地上，形容人务实、不摆架子，或形容方案切合实际。",
+    origin: "20 世纪进入大众口语，与「脚踏实地」的意象相关；确切出处已难考证。",
+    example: "She is a famous director, but very down to earth.",
+    exampleTranslation: "她是知名导演，但非常接地气。",
+    context: "日常",
+  },
+  {
+    phrase: "against the clock",
+    meaning: "争分夺秒；赶截止时间",
+    why: "与时钟竞赛，把时间拟作对手，强调在截止时间前的紧迫感，常与 race、work、finish 搭配。",
+    origin: "19 世纪后期体育报道里的计时赛用语，后来泛化为赶工与赶截止时间的场景。",
+    example: "We are racing against the clock to fix the bug before release.",
+    exampleTranslation: "发布前修掉这个 bug，我们在争分夺秒。",
+    context: "职场",
+  },
+  {
+    phrase: "hit the ground running",
+    meaning: "一上手就全力投入",
+    why: "跳下行进的列车时落地即跑、不耽误一步，比喻入职或接手新任务的当天就进入状态、零缓冲开局。",
+    origin: "20 世纪初美国军事与政治语境中流行，早年与空降作战相关，后用于形容新官上任。",
+    example: "The new manager hit the ground running on her first day.",
+    exampleTranslation: "新经理第一天上任就全力进入了状态。",
+    context: "职场",
+  },
+  {
+    phrase: "on the back burner",
+    meaning: "暂缓；先放一放",
+    why: "炉灶后排的小火眼保温但不烹煮。任务被放到 back burner 就是「还热着但不占主力火力」，与 front burner（优先处理）相对。",
+    origin: "源自 20 世纪美国家庭厨房的炉灶布局，后成为描述任务优先级的常用语。",
+    example: "We put the redesign on the back burner until the launch is done.",
+    exampleTranslation: "上线完成之前，改版的事先放一放。",
+    context: "职场",
+  },
+  {
+    phrase: "up in the air",
+    meaning: "悬而未决；尚未确定",
+    why: "东西抛到空中悬着不落地，比喻决定还没落定、计划仍不确定，常指时间、安排或结果。",
+    origin:
+      "19 世纪美国英语中已有「悬而未决」的用法；具体出处已难考证，现广泛用于日程与安排话题。",
+    example: "Our travel dates are still up in the air.",
+    exampleTranslation: "出行日期还没有定下来。",
+    context: "通用",
+  },
+  {
+    phrase: "butterflies in my stomach",
+    meaning: "紧张；心里七上八下",
+    why: "紧张时胃里像有蝴蝶扑腾，那种轻飘又不安的感觉被具象化成 butterflies。常用 have/get butterflies (in one's stomach)。",
+    origin:
+      "20 世纪英语里的口语表达，可能借自更早的「胃里有青蛙跳动」的说法；确切来源已难考证。",
+    example: "I had butterflies in my stomach before the interview.",
+    exampleTranslation: "面试前我紧张得心里七上八下。",
+    context: "日常",
+  },
 ]
 
 // 记忆增强内容单独维护：含义、解释、来源、主例句保持稳定，用法、记忆提示与拓展例句
