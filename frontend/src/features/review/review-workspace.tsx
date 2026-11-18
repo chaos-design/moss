@@ -45,14 +45,21 @@ import {
 import { cn } from "@/lib/utils"
 
 const ratings = [
-  { label: "忘记了", detail: "10 分钟后", value: "again", variant: "outline" as const },
-  { label: "有点难", detail: "缩短间隔", value: "hard", variant: "outline" as const },
-  { label: "记得", detail: "正常间隔", value: "good", variant: "default" as const },
-  { label: "很轻松", detail: "延长间隔", value: "easy", variant: "outline" as const },
+  {
+    label: "忘记了",
+    detail: "10 分钟后",
+    value: "again",
+    key: "1",
+    variant: "outline" as const,
+  },
+  { label: "有点难", detail: "缩短间隔", value: "hard", key: "2", variant: "outline" as const },
+  { label: "记得", detail: "正常间隔", value: "good", key: "3", variant: "default" as const },
+  { label: "很轻松", detail: "延长间隔", value: "easy", key: "4", variant: "outline" as const },
 ] satisfies Array<{
   label: string
   detail: string
   value: RecallRating
+  key: string
   variant: "default" | "outline"
 }>
 
@@ -91,6 +98,13 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
   const [revealed, setRevealed] = useState(false)
   const [examChoiceId, setExamChoiceId] = useState<string | null>(null)
   const [completed, setCompleted] = useState(false)
+  // 本组复习的自评分布：完成页给出一句可回顾的小结，而不是只说「已更新」。
+  const [ratingCounts, setRatingCounts] = useState<Record<RecallRating, number>>({
+    again: 0,
+    hard: 0,
+    good: 0,
+    easy: 0,
+  })
   // 线索呈现的时间戳让回想尝试有真实时长，而不是一个恒为 0 的占位。
   const [cueShownAt, setCueShownAt] = useState<number | null>(null)
   const [memoryReady, setMemoryReady] = useState(
@@ -105,6 +119,8 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     .map((id) => state.items.find((item) => item.id === id))
     .filter((item) => item !== undefined)
   const item = queue[index]
+  // 完成页的自评小结在提前 return 的分支里就要用，统计须在所有 return 之前算好。
+  const reviewedTotal = Object.values(ratingCounts).reduce((sum, count) => sum + count, 0)
   const completedFocus = queue[0]
   const completedTarget = completedFocus
     ? (completedFocus.transferTargets[0] ?? {
@@ -211,6 +227,7 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     setRevealed(false)
     setExamChoiceId(null)
     setCompleted(false)
+    setRatingCounts({ again: 0, hard: 0, good: 0, easy: 0 })
   }
 
   function recordAttempt() {
@@ -248,6 +265,7 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
 
     setLockedQueueIds(queue.map((candidate) => candidate.id))
     rateReview(item.id, rating.value)
+    setRatingCounts((current) => ({ ...current, [rating.value]: current[rating.value] + 1 }))
     toast.success(`已记录：${rating.label}`)
     const nextReviewedIds = Array.from(new Set([...reviewedIds, item.id]))
     setReviewedIds(nextReviewedIds)
@@ -287,6 +305,59 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     }
     playText(item.answer)
   }
+
+  // 键盘流：已揭示时数字键 1-4 直接评分；考题未作答时 1-4 / A-D 选选项；
+  // 非考题未揭示时空格或回车显示答案。手不离键盘是快速过卡的关键。
+  // 焦点落在按钮/链接上时跳过回车与空格：原生激活已经覆盖，两个来源叠加会把
+  // 一次揭示记成两次回想尝试。处理器放在 ref 里，每次渲染刷新闭包。
+  const keyboardActionRef = useRef<(event: KeyboardEvent) => void>(() => {})
+  keyboardActionRef.current = (event) => {
+    if (completed || !item || event.isComposing) {
+      return
+    }
+    const target = event.target
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+    ) {
+      return
+    }
+    const rating = ratings.find((candidate) => candidate.key === event.key)
+    if (rating && revealed) {
+      event.preventDefault()
+      handleRating(rating)
+      return
+    }
+    if (!revealed && examQuestion) {
+      const digits = ["1", "2", "3", "4"]
+      const letters = ["a", "b", "c", "d"]
+      const optionIndex =
+        digits.indexOf(event.key) >= 0
+          ? digits.indexOf(event.key)
+          : letters.indexOf(event.key.toLowerCase())
+      const option = optionIndex >= 0 ? examQuestion.options[optionIndex] : undefined
+      if (option) {
+        event.preventDefault()
+        handleExamChoice(option.id)
+      }
+      return
+    }
+    if (
+      !revealed &&
+      !examQuestion &&
+      (event.key === " " || event.key === "Enter") &&
+      !(target instanceof HTMLElement && target.closest("button, a, [role='button']"))
+    ) {
+      event.preventDefault()
+      handleReveal()
+    }
+  }
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => keyboardActionRef.current(event)
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
 
   if (!memoryReady) {
     return (
@@ -338,6 +409,22 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
         <p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
           Moss 已根据你的找回难度重排复习时间。现在进入新场景，主动使用刚刚找回的表达。
         </p>
+        {reviewedTotal > 0 ? (
+          <section
+            aria-label="本组自评分布"
+            className="mt-5 flex flex-wrap items-center justify-center gap-2"
+          >
+            <span className="text-xs text-muted-foreground">本组共 {reviewedTotal} 条</span>
+            {ratings.map((rating) => (
+              <span
+                key={rating.value}
+                className="rounded-full border bg-background px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+              >
+                {rating.label} {ratingCounts[rating.value]}
+              </span>
+            ))}
+          </section>
+        ) : null}
         <Link
           href={
             completedFocus && completedTarget
@@ -459,27 +546,37 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
 
         <footer className="shrink-0 p-4">
           {revealed ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {ratings.map((rating) => (
-                <Button
-                  key={rating.value}
-                  variant={rating.variant}
-                  className="h-14 flex-col gap-0.5 py-2.5"
-                  onClick={() => handleRating(rating)}
-                >
-                  <span>{rating.label}</span>
-                  <span className="text-[10px] font-normal opacity-65">{rating.detail}</span>
-                </Button>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {ratings.map((rating) => (
+                  <Button
+                    key={rating.value}
+                    variant={rating.variant}
+                    className="h-14 flex-col gap-0.5 py-2.5"
+                    onClick={() => handleRating(rating)}
+                  >
+                    <span>{rating.label}</span>
+                    <span className="text-[10px] font-normal opacity-65">{rating.detail}</span>
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                键盘 1-4 可直接评分
+              </p>
+            </>
           ) : examMode ? (
             <p className="text-center text-xs text-muted-foreground">
-              选一个答案，作答后立即看到结果与释义。
+              选一个答案，作答后立即看到结果与释义。可用键盘 1-4 作答。
             </p>
           ) : (
-            <Button className="w-full" size="lg" onClick={handleReveal}>
-              显示答案
-            </Button>
+            <>
+              <Button className="w-full" size="lg" onClick={handleReveal}>
+                显示答案
+              </Button>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                空格键也可显示答案
+              </p>
+            </>
           )}
         </footer>
       </div>

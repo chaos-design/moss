@@ -244,6 +244,53 @@ describe("ReviewWorkspace", () => {
     expect(mocks.rateReview).toHaveBeenCalledWith(expressionItem.id, "good")
   })
 
+  it("supports the keyboard flow: space reveals, digits rate", () => {
+    render(<ReviewWorkspace />)
+    const focus = mocks.state ? getScopedReviewQueue(mocks.state)[0] : undefined
+    if (!focus) {
+      throw new Error("Missing review memory")
+    }
+
+    fireEvent.keyDown(window, { key: " " })
+    expect(mocks.recordRecallAttempt).toHaveBeenCalledTimes(1)
+    expect(mocks.rateReview).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(window, { key: "3" })
+    expect(mocks.rateReview).toHaveBeenCalledWith(focus.id, "good")
+  })
+
+  it("answers exam options from the keyboard and rates the result", () => {
+    const expressionItem = expressionMemoryItem()
+    if (!mocks.state) {
+      throw new Error("Missing memory state")
+    }
+    mocks.state.items = [expressionItem]
+
+    render(<ReviewWorkspace initialMemoryItemId={expressionItem.id} />)
+    // 考题未作答时 1-4 / A-D 直接选选项；作答后数字键切换为评分。
+    fireEvent.keyDown(window, { key: "a" })
+    expect(mocks.recordRecallAttempt).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(window, { key: "1" })
+    expect(mocks.rateReview).toHaveBeenCalledWith(expressionItem.id, "again")
+  })
+
+  it("summarizes the rating distribution on the completion screen", () => {
+    const requested = mocks.state?.items.find((item) => item.id === "clarify-trade-off")
+    if (!mocks.state || !requested) {
+      throw new Error("Missing requested review memory")
+    }
+    mocks.state = { ...mocks.state, items: [requested] }
+
+    render(<ReviewWorkspace initialMemoryItemId="clarify-trade-off" />)
+    fireEvent.click(screen.getByRole("button", { name: "显示答案" }))
+    fireEvent.click(screen.getByRole("button", { name: /记得/ }))
+
+    expect(screen.getByLabelText("本组自评分布")).toBeTruthy()
+    expect(screen.getByText("本组共 1 条")).toBeTruthy()
+    expect(screen.getByText("记得 1")).toBeTruthy()
+  })
+
   it("hides the empty expression scope and falls back to mixed instead of trapping the learner", async () => {
     // 默认学习记忆没有任何地道表达条目；持久化偏好指向「地道表达」。
     window.localStorage.setItem(reviewScopeStorageKey, "expression")
