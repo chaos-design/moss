@@ -17,14 +17,16 @@ const noiseFloorCalibrationMs = 500
 const speechStartDurationMs = 320
 const initialNoiseFloor = 0.006
 
-/** 静音持续这么久就认为一句话说完，触发整段上传。 */
-export const apiTurnEndSilenceMs = 1_200
+/** 静音持续这么久就认为一句话说完，触发整段上传。900ms 是延迟与误切分的折中：
+ * 更长的停顿由提交后的判句等待合并，这里只负责尽快开始上传。 */
+export const apiTurnEndSilenceMs = 900
 /** 单段录音上限：超过则强制断句上传，避免无限增长的音频块。 */
 export const apiTurnMaxDurationMs = 25_000
 /** 打断监听的阈值倍增：播报回声通常远低于直接说话的能量，高倍阈值区分两者。 */
 export const apiBargeInThresholdBoost = 2.5
-/** 一句话至少要累积这么多发声才算说话：更短的能量脉冲按噪声处理，不上传识别。 */
-export const apiMinUtteranceMs = 600
+/** 一句话至少要累积这么多发声才算说话：更短的能量脉冲按噪声处理，不上传识别。
+ * 450ms 刚好放行 Yes / OK 这类短答复（100ms 喂帧粒度下 4 帧即 400ms 达标）。 */
+export const apiMinUtteranceMs = 450
 
 export type ApiAsrTurnEvent = "none" | "speech-start" | "speech-end"
 

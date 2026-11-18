@@ -23,6 +23,13 @@ function feedFrames(
 }
 
 describe("createApiAsrTurnTracker", () => {
+  it("keeps the endpointing contract tight enough for responsive voice turns", () => {
+    // 断句静音与判句等待共同决定「说完一句」到开始上传的延迟：收紧阈值是语音
+    // 体验的核心承诺，改回 1200ms/600ms 会重新引入「说完半天没反应」的感知。
+    expect(apiTurnEndSilenceMs).toBe(900)
+    expect(apiMinUtteranceMs).toBe(450)
+  })
+
   it("ignores noise during the calibration window and adapts the floor", () => {
     const tracker = createApiAsrTurnTracker()
     // 校准期 500ms 内持续的环境噪声（高于初始噪声底但低于自适应后的阈值）不得触发说话。

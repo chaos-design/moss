@@ -82,9 +82,13 @@ describe("voice call runtime", () => {
 
   it("provides a user-facing label for each active state", () => {
     expect(getVoiceCallStatusLabel("listening")).toBe("可以说话")
-    expect(getVoiceCallStatusLabel("transcribing")).toBe("正在离线识别")
+    expect(getVoiceCallStatusLabel("recording")).toBe("录音中")
+    expect(getVoiceCallStatusLabel("transcribing")).toBe("正在识别语音")
     expect(getVoiceCallStatusLabel("speaking")).toBe("正在回应")
     expect(getVoiceCallStatusLabel("ended")).toBe("通话已结束")
     expect(getVoiceCallStatusDescription("listening")).toBe("麦克风已开启，直接开始说话。")
+    expect(getVoiceCallStatusDescription("recording")).toBe(
+      "正在聆听这句话，说完稍作停顿就会自动识别发送。",
+    )
   })
 })

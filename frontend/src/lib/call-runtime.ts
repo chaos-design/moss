@@ -2,6 +2,7 @@ export type VoiceCallStatus =
   | "idle"
   | "connecting"
   | "listening"
+  | "recording"
   | "transcribing"
   | "thinking"
   | "speaking"
@@ -13,7 +14,8 @@ const statusLabels: Record<VoiceCallStatus, string> = {
   idle: "等待接通",
   connecting: "正在接通",
   listening: "可以说话",
-  transcribing: "正在离线识别",
+  recording: "录音中",
+  transcribing: "正在识别语音",
   thinking: "正在思考",
   speaking: "正在回应",
   muted: "麦克风已静音",
@@ -25,7 +27,8 @@ const statusDescriptions: Record<VoiceCallStatus, string> = {
   idle: "开始语音后，Moss 会持续监听完整表达。",
   connecting: "正在准备本地语音模型和麦克风。",
   listening: "麦克风已开启，直接开始说话。",
-  transcribing: "语音仅在本机处理，识别完成后会自动发送。",
+  recording: "正在聆听这句话，说完稍作停顿就会自动识别发送。",
+  transcribing: "这段语音正在转成文字，完成后会自动发送。",
   thinking: "正在组织回应，你也可以直接开口继续提问。",
   speaking: "播报结束后会自动恢复语音识别。",
   muted: "取消静音后即可继续说话。",

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { toast } from "sonner"
 import {
   type ApiAsrTurnTracker,
   apiBargeInThresholdBoost,
@@ -222,7 +223,14 @@ export function useBrowserAsr({
               audio,
               endpoint: endpointRef.current,
             })
-            if (requestId !== requestIdRef.current || !text) {
+            if (requestId !== requestIdRef.current) {
+              return
+            }
+            if (!text) {
+              // 服务端对这段录音没有返回文字：整轮静默丢弃会让学习者以为「说了没反应」。
+              // 能走到这里说明断句时的发声时长已达阈值，多半是音量太小或发音被吞，
+              // 明确提示比悄悄回到待听状态更可诊断。
+              toast.warning("这段语音没有识别出文字，请靠近麦克风再说一遍")
               return
             }
             onTranscriptRef.current(text)

@@ -1177,12 +1177,35 @@ describe("useVoiceConversation", () => {
       offlineAsr.onSpeechStart()
     })
     expect(localTts.stop).toHaveBeenCalled()
-    expect(result.current.callStatus).toBe("listening")
+    // 打断时学习者正在说话：状态应直接进入录音中，而不是「可以说话」。
+    expect(result.current.callStatus).toBe("recording")
 
     await act(async () => {
       finishAssistantSpeech?.()
     })
-    expect(result.current.callStatus).toBe("listening")
+    expect(result.current.callStatus).toBe("recording")
+
+    act(() => {
+      result.current.endCall()
+    })
+    unmount()
+  })
+
+  it("shows the recording phase the moment the learner starts talking", async () => {
+    localTts.speak.mockResolvedValueOnce(undefined)
+    const scene = getConversationScene("coffee")
+    const { result, unmount } = renderHook(() => useVoiceConversation({ scene }))
+
+    await act(async () => {
+      await result.current.startCall()
+    })
+    // 开场白播报结束后恢复监听；语音起点一到就切换录音态，不必等到上传识别
+    // 才开始变化（「真的在录」的直接反馈）。
+    await waitFor(() => expect(result.current.callStatus).toBe("listening"))
+    act(() => {
+      offlineAsr.onSpeechStart()
+    })
+    expect(result.current.callStatus).toBe("recording")
 
     act(() => {
       result.current.endCall()

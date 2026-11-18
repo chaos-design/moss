@@ -25,7 +25,10 @@ import {
   stripSpeechAnnotations,
 } from "@/lib/call-runtime"
 import type { ConversationScene } from "@/lib/conversation-scenes"
-import { isSupportedSpeechTranscript } from "@/lib/language-detection"
+import {
+  isMeaningfulSpeechTranscript,
+  isSupportedSpeechTranscript,
+} from "@/lib/language-detection"
 import {
   apiTtsVoiceOptions,
   getSelectedApiVoiceValue,
@@ -324,6 +327,9 @@ export function useVoiceCallRuntime({
     onSpeechStart: () => {
       if (callActiveRef.current && !mutedRef.current) {
         markVoiceActivity()
+        // 检测到说话立刻进入录音态：这是「真的在录」的直接证据，不必等到上传识别
+        // 才变化。正常轮次与打断恢复后都成立。
+        dispatch({ type: "call-status-changed", status: "recording" })
       }
       if (!pendingRef.current && !speakingRef.current) {
         return
@@ -334,7 +340,7 @@ export function useVoiceCallRuntime({
       }
       interruptAssistant()
       if (callActiveRef.current && !mutedRef.current) {
-        dispatch({ type: "call-status-changed", status: "listening" })
+        dispatch({ type: "call-status-changed", status: "recording" })
         // api 接入的采集在播报前已停止：打断后立即重启；本机/浏览器通道仍在监听，
         // 无需重启（重复 start 会先经过 connecting 抖动状态）。
         if (asrTransport === "api") {
@@ -349,18 +355,27 @@ export function useVoiceCallRuntime({
       const echoBlocked =
         Date.now() < echoGuardUntilRef.current &&
         isLikelyPlaybackEcho(normalized, lastAssistantSpeechRef.current)
-      if (!callActiveRef.current || !listeningRef.current || echoBlocked) {
+      if (!callActiveRef.current || !listeningRef.current) {
         return
       }
-      if (normalized && isSupportedSpeechTranscript(normalized, language)) {
+      if (normalized && !echoBlocked && isSupportedSpeechTranscript(normalized, language)) {
         resetIdleReminders()
         // 每句识别结果立即提交为独立消息（多次说 = 多条消息）；提交事件会清空实时
         // 识别条，回答由静默触发器在学习者说完后统一请求，不逐句抢答。
         hasUnansweredVoiceTurnRef.current = true
         voiceSubmitRef.current.commit(normalized)
         scheduleVoiceReplyTrigger()
-      } else if (callActiveRef.current && !mutedRef.current) {
+        return
+      }
+      if (callActiveRef.current && !mutedRef.current) {
         dispatch({ type: "call-status-changed", status: "listening" })
+      }
+      // 有内容却被丢弃的识别结果必须给出解释，否则学习者会以为「说了没反应」：
+      // 回声守卫与语言校验各自一句提示；纯填充词（嗯/呃）与只剩标注的空串保持静默。
+      if (echoBlocked) {
+        toast.info("这句与刚播报的内容相似，已按回声忽略；如未收到回复请再说一遍")
+      } else if (normalized && isMeaningfulSpeechTranscript(normalized)) {
+        toast.warning("识别到了语音，但这句不是中英文内容，已忽略")
       }
     },
   })

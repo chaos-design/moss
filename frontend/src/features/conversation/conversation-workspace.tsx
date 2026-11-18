@@ -578,9 +578,10 @@ export function ConversationWorkspace({
                   <span
                     className={cn(
                       "size-1.5 rounded-full",
-                      // 四种通话阶段各占一色，扫一眼就能区分卡在哪一步：
-                      // 连接=蓝、离线识别=紫、思考=琥珀、可以说话=绿、播报中=品牌色。
+                      // 通话阶段各占一色，扫一眼就能区分卡在哪一步：
+                      // 连接=蓝、录音中=红、识别=紫、思考=琥珀、可以说话=绿、播报中=品牌色。
                       callStatus === "listening" && "bg-[var(--success)]",
+                      callStatus === "recording" && "bg-[var(--chart-1)]",
                       callStatus === "connecting" && "bg-[var(--chart-4)]",
                       callStatus === "transcribing" && "bg-[var(--chart-5)]",
                       callStatus === "thinking" && "bg-[var(--chart-3)]",
@@ -736,7 +737,10 @@ export function ConversationWorkspace({
 
             {/* 回答生成期间转写里只保留骨架占位：识别文本在回答完整之前不出现 */}
             {!pending &&
-            (liveTranscript || callStatus === "listening" || callStatus === "transcribing") ? (
+            (liveTranscript ||
+              callStatus === "listening" ||
+              callStatus === "recording" ||
+              callStatus === "transcribing") ? (
               <LiveTranscriptTurn
                 layout={prefs.transcriptLayout}
                 status={callStatus}
@@ -1519,7 +1523,9 @@ export const TranscriptTurn = memo(function TranscriptTurn({
 })
 
 // Interim speech recognition results, shown while the learner is still speaking.
-// 两种文案状态：「准备就绪」（麦克风已开、还没听到语音）与「识别中」（正在转写本句话）。
+// 三种文案状态：「准备就绪」（麦克风已开、还没听到语音）、「录音中」（检测到说话，
+// 采集正在积累这段音频）与「识别中」（正在转写本句话）。录音中用红色圆点呼应通话
+// 阶段徽章——学习者开口的瞬间就能确认「真的在录」。
 // 识别中的长文本在固定宽度内水平滚动（marquee），识别阶段由状态行呈现，不再额外提示。
 function LiveTranscriptTurn({
   layout,
@@ -1531,10 +1537,21 @@ function LiveTranscriptTurn({
   text: string
 }) {
   const alignRight = layout === "split"
-  const recognizing = Boolean(text) || status === "transcribing"
+  const recording = !text && status === "recording"
+  const recognizing = Boolean(text) || (!recording && status === "transcribing")
   const marquee = text.length > 40
   // 时长随文本长度缩放，保持匀速可读；内容渲染两份以无缝循环。
   const marqueeDuration = `${Math.max(10, Math.min(30, Math.round(text.length / 3)))}s`
+  const stateTone = recording
+    ? "text-[var(--chart-1)]"
+    : recognizing
+      ? "text-[var(--chart-5)]"
+      : "text-[var(--success)]"
+  const stateDot = recording
+    ? "bg-[var(--chart-1)]"
+    : recognizing
+      ? "bg-[var(--chart-5)]"
+      : "bg-[var(--success)]"
   return (
     <article
       data-live-transcript-turn
@@ -1552,19 +1569,9 @@ function LiveTranscriptTurn({
       <div className={cn("min-w-0", alignRight && "flex flex-col items-end text-right")}>
         <div className="flex items-center gap-2">
           <p className="text-xs font-semibold">你</p>
-          <span
-            className={cn(
-              "flex items-center gap-1 text-[11px]",
-              recognizing ? "text-[var(--chart-5)]" : "text-[var(--success)]",
-            )}
-          >
-            <span
-              className={cn(
-                "size-1.5 animate-pulse rounded-full",
-                recognizing ? "bg-[var(--chart-5)]" : "bg-[var(--success)]",
-              )}
-            />
-            {recognizing ? "识别中" : "准备就绪"}
+          <span className={cn("flex items-center gap-1 text-[11px]", stateTone)}>
+            <span className={cn("size-1.5 animate-pulse rounded-full", stateDot)} />
+            {recording ? "录音中" : recognizing ? "识别中" : "准备就绪"}
           </span>
         </div>
         {text ? (
@@ -1588,13 +1595,14 @@ function LiveTranscriptTurn({
         ) : (
           <p className="mt-2 flex items-center gap-2 text-sm leading-7 text-muted-foreground">
             <span
-              className={cn(
-                "size-1.5 shrink-0 animate-pulse rounded-full",
-                recognizing ? "bg-[var(--chart-5)]" : "bg-[var(--success)]",
-              )}
+              className={cn("size-1.5 shrink-0 animate-pulse rounded-full", stateDot)}
               aria-hidden="true"
             />
-            {recognizing ? "正在将这句话转换为文字…" : "麦克风已就绪，随时可以开口。"}
+            {recording
+              ? "正在聆听这句话，说完稍作停顿即自动发送。"
+              : recognizing
+                ? "正在将这句话转换为文字…"
+                : "麦克风已就绪，随时可以开口。"}
           </p>
         )}
       </div>
