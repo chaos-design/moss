@@ -74,10 +74,10 @@ const irregularHeadForms: Record<string, readonly string[]> = {
 }
 
 const placeholderPattern = "[A-Za-z][A-Za-z'’-]*"
-// 所有格占位符（your/my/someone's）在例句里可能落到多词所有格名词短语
+// 所有格占位符（your/my/its/someone's）在例句里可能落到多词所有格名词短语
 // （pull my leg、on the leadership team's radar）。
 const multiWordPossessivePattern =
-  "(?:my|your|his|her|our|their|(?:the\\s+)?[A-Za-z][A-Za-z'’\\-]*(?:\\s+[A-Za-z][A-Za-z'’\\-]*)*'s)"
+  "(?:my|your|his|her|its|our|their|(?:the\\s+)?[A-Za-z][A-Za-z'’\\-]*(?:\\s+[A-Za-z][A-Za-z'’\\-]*)*'s)"
 const reflexivePattern = "(?:myself|yourself|himself|herself|ourselves|themselves)"
 // 主语占位符常被具体代词替换（cross that bridge when you come to it → when we come to it）。
 const subjectPronounPattern = "(?:you|we|I|they|he|she)"
