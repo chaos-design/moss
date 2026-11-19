@@ -983,6 +983,429 @@ const conversationSceneDetails: Partial<Record<string, ConversationSceneDetails>
       },
     ],
   },
+  "fitting-room": {
+    partnerName: "Ruth",
+    partnerRole: "服装店员",
+    objective: "自然地更换尺码并描述穿着是否合身。",
+    focusPhrases: [
+      ["换尺码", "Do you have this in a smaller size?", "请求把某件换成更小（或更大）的尺码。"],
+      [
+        "描述合身度",
+        "It's a bit tight around the shoulders.",
+        "具体说出哪里不合身，方便店员判断。",
+      ],
+      ["试穿确认", "May I try this on in the back?", "请求使用试衣间试穿。"],
+    ],
+    opening: {
+      content: "Can I help you find a size, or would you like to head to the fitting room?",
+      translation: "需要我帮您找尺码，还是直接去试衣间？",
+    },
+    recallItems: [
+      {
+        phrase: "Do you have a different color?",
+        source: "来自商店购物，询问其他颜色或款式。",
+      },
+      {
+        phrase: "Could I get a refund or an exchange?",
+        source: "来自联系客服退款，提出退换选项。",
+      },
+    ],
+  },
+  "street-food": {
+    partnerName: "Wu",
+    partnerRole: "小吃摊主",
+    objective: "问清招牌口味与辣度，选择方便携带的吃法。",
+    focusPhrases: [
+      ["问招牌", "What's your specialty here?", "询问摊位最拿手的是什么。"],
+      [
+        "确认辣度",
+        "How spicy is that on a scale of one to five?",
+        "用 1–5 的辣度尺度请对方量化辣味。",
+      ],
+      ["打包携带", "Could I get that to go?", "要求打包带走，便于边走边吃。"],
+    ],
+    opening: {
+      content: "Hi! What would you like to try today? Our dumplings are the best-seller.",
+      translation: "您好！今天想尝尝什么？我们的饺子最畅销。",
+    },
+    recallItems: [
+      {
+        phrase: "Could I get... without...?",
+        source: "来自餐厅用餐，调整配料或去掉某样。",
+      },
+      {
+        phrase: "Is there anything I should not miss?",
+        source: "来自咖啡店点单，请对方推荐特色。",
+      },
+    ],
+  },
+  "farmers-market": {
+    partnerName: "Otis",
+    partnerRole: "市集摊主",
+    objective: "问清产地与新鲜度，选好数量并确认单价。",
+    focusPhrases: [
+      ["问产地", "Are these locally grown?", "询问是否本地出产，判断新鲜度。"],
+      [
+        "按量购买",
+        "I'll take two pounds of the ripe ones, please.",
+        "说明要的数量并挑选成熟度。",
+      ],
+      ["确认价格", "How much is that per pound?", "按重量确认单价。"],
+    ],
+    opening: {
+      content:
+        "Morning! Everything out here is picked this week — want me to show you the ripe ones?",
+      translation: "早上好！这里的东西都是本周摘的——要我带你看熟透的吗？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you break down the total?",
+        source: "来自银行办事，请对方拆解费用构成。",
+      },
+      {
+        phrase: "Do you have something smaller?",
+        source: "来自面包店选购，请换成更小的包装。",
+      },
+    ],
+  },
+  "moving-day": {
+    partnerName: "Gus",
+    partnerRole: "搬家工人",
+    objective: "说明物品特征、楼层路线和摆放位置。",
+    focusPhrases: [
+      [
+        "说明易碎",
+        "This one is fragile — please handle it with care.",
+        "提示某件物品易碎需要小心。",
+      ],
+      [
+        "指引路线",
+        "The elevator is on the left; it's a flight of stairs to the third floor.",
+        "告知搬运路线与楼层。",
+      ],
+      ["指定位置", "Could you place it in the bedroom by the window?", "指定家具的摆放位置。"],
+    ],
+    opening: {
+      content: "We're all set. Which boxes are we taking first, and where do they go?",
+      translation: "我们准备好了。先搬哪箱，放哪儿？",
+    },
+    recallItems: [
+      {
+        phrase: "Would it be possible to...?",
+        source: "来自酒店入住，礼貌提出请求。",
+      },
+      {
+        phrase: "There seems to be a problem with...",
+        source: "来自联系房东报修，指出物品或设施状况。",
+      },
+    ],
+  },
+  "neighbor-noise": {
+    partnerName: "Milo",
+    partnerRole: "楼上邻居",
+    objective: "友善说明噪音影响并约定安静的时段。",
+    focusPhrases: [
+      [
+        "说明影响",
+        "The music is a little loud after ten at night.",
+        "具体说明什么时间什么声音造成了困扰。",
+      ],
+      ["礼貌请求", "Could you keep it down on weekdays?", "请对方在工作日放轻音量。"],
+      [
+        "协商时段",
+        "Would nine o'clock work as our quiet hour?",
+        "提议一个双方都能接受的安静时段。",
+      ],
+    ],
+    opening: {
+      content: "Hey, sorry to bother you. Is now a bad time to chat about the noise upstairs?",
+      translation: "嗨，抱歉打扰。现在聊楼上噪音的问题合适吗？",
+    },
+    recallItems: [
+      {
+        phrase: "Would you mind...ing?",
+        source: "来自租房看房，礼貌请求对方配合。",
+      },
+      {
+        phrase: "How about we...?",
+        source: "来自会议沟通，把抱怨变成可执行的约定。",
+      },
+    ],
+  },
+  "lost-luggage": {
+    partnerName: "Priya",
+    partnerRole: "行李查询处员工",
+    objective: "描述行李特征、登记信息并拿到追踪号。",
+    focusPhrases: [
+      ["描述行李", "It's a black rolling case with a red strap.", "用颜色和特征描述行李外观。"],
+      ["登记信息", "Here's my bag tag and flight number.", "提供行李标签与航班号以便登记。"],
+      [
+        "追踪进度",
+        "What's the tracking number, and how long will it take?",
+        "索取追踪号并了解处理时长。",
+      ],
+    ],
+    opening: {
+      content:
+        "I'm so sorry about that. Let's get it sorted — can you describe the bag for me?",
+      translation: "真的很抱歉。我们来处理一下——能描述一下行李的样子吗？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you check on...?",
+        source: "来自联系客服退款，请对方核实处理状态。",
+      },
+      {
+        phrase: "What are my options?",
+        source: "来自客服投诉，请对方列出可行方案。",
+      },
+    ],
+  },
+  "missed-flight": {
+    partnerName: "Theo",
+    partnerRole: "航空公司地勤",
+    objective: "说明误机原因、询问替代航班并协调住宿。",
+    focusPhrases: [
+      [
+        "说明原因",
+        "I missed my connection because the previous flight was delayed.",
+        "客观说明误机的原因。",
+      ],
+      ["问替代", "What's the next available flight to...?", "询问下一班可用的替代航班。"],
+      ["协调住宿", "Will you arrange an overnight stay for me?", "询问是否代为安排过夜住宿。"],
+    ],
+    opening: {
+      content:
+        "I'm sorry about that. Let's see what I can do — what's your destination, and when did you need to be there?",
+      translation: "很抱歉。我看看能做什么——您的目的地是哪里，最晚什么时候要到？",
+    },
+    recallItems: [
+      {
+        phrase: "What are my options?",
+        source: "来自客服投诉，把列方案的主动权交给对方。",
+      },
+      {
+        phrase: "I would appreciate it if...",
+        source: "来自酒店入住，礼貌提出诉求。",
+      },
+    ],
+  },
+  "project-kickoff": {
+    partnerName: "Dana",
+    partnerRole: "项目负责人",
+    objective: "对齐目标、明确角色分工与首个里程碑。",
+    focusPhrases: [
+      ["对齐目标", "So the main goal this quarter is...", "复述项目目标确认理解一致。"],
+      ["明确分工", "Who owns the design and who owns the build?", "明确每个模块的责任人。"],
+      ["定里程碑", "When is the first milestone due?", "确认首个里程碑的时间点。"],
+    ],
+    opening: {
+      content:
+        "Thanks for joining. Let's align on scope and owners before we start. What do you think the top priority is?",
+      translation: "谢谢参加。开工前我们先对齐范围和负责人。你觉得首要目标是什么？",
+    },
+    recallItems: [
+      {
+        phrase: "Let's follow up on...",
+        source: "来自工作会议，确定后续跟进事项。",
+      },
+      {
+        phrase: "I'm currently blocked by...",
+        source: "来自一对一工作沟通，说明当前阻碍。",
+      },
+    ],
+  },
+  "performance-review": {
+    partnerName: "Victor",
+    partnerRole: "直属经理",
+    objective: "总结自己的贡献、回应反馈并设定成长目标。",
+    focusPhrases: [
+      ["总结贡献", "This year I led... and it improved...", "用具体成果说明自己的贡献。"],
+      [
+        "回应反馈",
+        "I'd like to work on... based on your feedback.",
+        "接受反馈并表明改进方向。",
+      ],
+      [
+        "设定目标",
+        "What should I focus on to reach the next level?",
+        "询问晋升所需的能力重点。",
+      ],
+    ],
+    opening: {
+      content: "Let's talk about your year. Start with the wins you're proudest of.",
+      translation: "我们来聊聊你这一年。先说你最有成就感的成果。",
+    },
+    recallItems: [
+      {
+        phrase: "In my current role, I...",
+        source: "来自薪资谈判，摆出贡献再谈期望。",
+      },
+      {
+        phrase: "Let's find a middle ground.",
+        source: "来自商务谈判，推进双方各让一步。",
+      },
+    ],
+  },
+  "conflict-resolution": {
+    partnerName: "Nadia",
+    partnerRole: "合作同事",
+    objective: "描述分歧、倾听对方需求并达成可执行方案。",
+    focusPhrases: [
+      ["描述分歧", "I see this differently because...", "客观陈述自己的立场与理由。"],
+      ["澄清需求", "What outcome are you hoping for here?", "把分歧落到双方真正的需求上。"],
+      ["达成方案", "What if we... and you...?", "提出一个双方各让一步的具体方案。"],
+    ],
+    opening: {
+      content:
+        "I want to work this out properly. Can you walk me through what's not working for you?",
+      translation: "我想把这事好好解决。能说说对你来说哪里不顺吗？",
+    },
+    recallItems: [
+      {
+        phrase: "Let's find a middle ground.",
+        source: "来自商务谈判，推进各让一步。",
+      },
+      {
+        phrase: "Could you clarify...?",
+        source: "来自课堂讨论，请对方把模糊处讲清。",
+      },
+    ],
+  },
+  "party-introduction": {
+    partnerName: "Grace",
+    partnerRole: "派对主人",
+    objective: "自然地加入谈话、做自我介绍并记住对方信息。",
+    focusPhrases: [
+      ["加入谈话", "Mind if I join you?", "礼貌请求加入正在进行的对话。"],
+      [
+        "自我介绍",
+        "I'm Sam, a friend of the host. Nice to meet you.",
+        "报出姓名并说明与主人的关系。",
+      ],
+      ["了解对方", "How do you know the host?", "通过共同关系自然地打开话题。"],
+    ],
+    opening: {
+      content: "Oh, hi! I'm Grace, I threw this party. Come on in — do you know anyone here?",
+      translation: "哦，嗨！我是格蕾丝，这派对是我办的。进来吧——你认识这里的人吗？",
+    },
+    recallItems: [
+      {
+        phrase: "Could I bring anything?",
+        source: "来自职场社交，做客前先问要带什么。",
+      },
+      {
+        phrase: "Nice to meet you.",
+        source: "来自职场社交，初次见面的标准问候。",
+      },
+    ],
+  },
+  "hosting-guests": {
+    partnerName: "Iris",
+    partnerRole: "到访客人",
+    objective: "迎接客人、提供选择并照顾对方需要。",
+    focusPhrases: [
+      ["迎接", "Make yourself at home.", "请客人放松、像在自己家一样。"],
+      ["提供选择", "Would you like some water or something stronger?", "主动提供饮品选择。"],
+      ["照顾需求", "Can I help you with anything?", "询问客人是否需要帮忙。"],
+    ],
+    opening: {
+      content: "You made it! Come in, kick off your shoes — make yourself at home.",
+      translation: "你来了！进来吧，把鞋换了——随便坐，别拘束。",
+    },
+    recallItems: [
+      {
+        phrase: "Would you like...?",
+        source: "来自商店购物，向对方提供选择。",
+      },
+      {
+        phrase: "Help yourself to...",
+        source: "来自咖啡店点单，请对方自取或添点。",
+      },
+    ],
+  },
+  "appointment-booking": {
+    partnerName: "Fay",
+    partnerRole: "诊所前台",
+    objective: "说明就诊需求、协调时间并核对保险信息。",
+    focusPhrases: [
+      ["说明需求", "I'd like to see a doctor about...", "说明要看什么症状或问题。"],
+      ["协调时间", "Do you have any slots this week?", "询问可用的预约时段。"],
+      [
+        "核对保险",
+        "Do you accept my insurance, and is there a copay?",
+        "确认是否接受保险及自付额度。",
+      ],
+    ],
+    opening: {
+      content:
+        "Hi, how can I help? Do you have a preferred doctor, or are you open to whoever is available?",
+      translation: "您好，需要什么帮助？您有指定医生，还是谁有空都可以？",
+    },
+    recallItems: [
+      {
+        phrase: "Could you check on...?",
+        source: "来自餐厅用餐，请对方核实可用时间。",
+      },
+      {
+        phrase: "How much will that cost, and is it covered?",
+        source: "来自看牙，确认费用与保险。",
+      },
+    ],
+  },
+  "internet-support": {
+    partnerName: "Leo",
+    partnerRole: "网络客服",
+    objective: "描述连接问题、配合排查并预约上门支持。",
+    focusPhrases: [
+      ["描述问题", "The Wi-Fi keeps dropping every few hours.", "具体说明故障现象与频率。"],
+      ["配合排查", "I can reboot the router if you want me to.", "配合远程排查步骤。"],
+      ["预约上门", "Can you schedule a technician for tomorrow?", "预约技术人员上门时间。"],
+    ],
+    opening: {
+      content:
+        "Thanks for calling. Walk me through what you're seeing — when did it start, and is the light on the router solid or blinking?",
+      translation: "感谢来电。说说您看到的情况——什么时候开始的，路由器灯是常亮还是闪？",
+    },
+    recallItems: [
+      {
+        phrase: "There seems to be a problem with...",
+        source: "来自联系房东报修，客观描述设施故障。",
+      },
+      {
+        phrase: "What are my options?",
+        source: "来自客服投诉，请对方列出可行处理方案。",
+      },
+    ],
+  },
+  "exam-preparation": {
+    partnerName: "Mia",
+    partnerRole: "学习伙伴",
+    objective: "确认复习重点、讨论方法并安排模拟练习。",
+    focusPhrases: [
+      ["确认重点", "Which topics do we still need to cover?", "对齐还需要复习的内容。"],
+      [
+        "讨论方法",
+        "Should we do more practice tests or review the notes first?",
+        "对比两种复习方法并征求意见。",
+      ],
+      ["安排模拟", "Could we schedule a mock test this weekend?", "约定一次模拟测试的时间。"],
+    ],
+    opening: {
+      content: "How far are we? Let's map out what's left before the exam.",
+      translation: "我们到哪了？来理一下考试前还剩哪些内容。",
+    },
+    recallItems: [
+      {
+        phrase: "Let's follow up on...",
+        source: "来自工作会议，约定后续跟进。",
+      },
+      {
+        phrase: "When is the deadline for...?",
+        source: "来自教授答疑，确认时间节点。",
+      },
+    ],
+  },
 }
 
 export type ConversationScene = AvailableSceneItem & ConversationSceneDetails
