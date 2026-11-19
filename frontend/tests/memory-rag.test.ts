@@ -176,6 +176,11 @@ describe("memory RAG", () => {
     expect(prompt).toContain("A latte, please.")
     expect(prompt).toContain("Do not use emoji")
     expect(prompt).toContain("Coach gently after responding to meaning.")
+    // 场景难度进入运行时上下文，并配套一条词汇匹配规则，避免 A2 场景冒出 C1 词汇。
+    expect(prompt).toContain("Scene difficulty: A2")
+    expect(prompt).toContain("Match the scene difficulty level")
+    // 回复开头/结尾多样化规则，避免每轮都以夸赞或提问收尾。
+    expect(prompt).toContain("do not start two consecutive replies with the same word")
     expect(prompt).not.toMatch(/\{\{[a-zA-Z]/)
   })
 
