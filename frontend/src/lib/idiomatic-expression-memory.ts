@@ -2117,4 +2117,704 @@ export const idiomaticExpressionMemory: Record<string, IdiomaticExpressionMemory
       },
     ],
   },
+  "safe and sound": {
+    usage: "多作状语或表语：arrive/return safe and sound；语气温馨，常用于报平安。",
+    memoryTip: "safe 保平安，sound 保完好——两个词各守一半，合成「毫发无损」。",
+    examples: [
+      {
+        text: "The lost hikers walked out of the forest safe and sound.",
+        translation: "迷路的徒步者安然无恙地走出了森林。",
+      },
+      {
+        text: "The parcel reached Shanghai safe and sound.",
+        translation: "包裹完好无损地到了上海。",
+      },
+    ],
+  },
+  "against all odds": {
+    usage: "多作句首状语或在句尾修饰全句，描述结果与概率相反；正式与口语皆可。",
+    memoryTip: "把 odds 想成赌桌上的赔率：所有人都不看好，偏偏成了。",
+    examples: [
+      {
+        text: "Against all odds, she finished the marathon on a sprained ankle.",
+        translation: "不可思议的是，她扭着脚踝跑完了马拉松。",
+      },
+      {
+        text: "The village school produced two Olympians against all odds.",
+        translation: "那所乡村学校竟然出了两名奥运选手。",
+      },
+    ],
+  },
+  "the icing on the cake": {
+    usage: "作表语：be the icing on the cake；指已好的事情上追加的额外好处。",
+    memoryTip: "蛋糕已经够甜，糖霜只负责更甜——好事之外的加码。",
+    examples: [
+      {
+        text: "The hotel upgrade was the icing on the cake of an already great trip.",
+        translation: "酒店升房是一次本来就很棒的旅行的锦上添花。",
+      },
+      {
+        text: "The team award was the icing on the cake after record sales.",
+        translation: "创下销售纪录之后，团队奖更是锦上添花。",
+      },
+    ],
+  },
+  "better late than never": {
+    usage: "多独立作评语句或跟在破折号后；宽慰迟到的完成，语气轻松。",
+    memoryTip: "迟到的公交仍是公交：来了就比不来强。",
+    examples: [
+      {
+        text: "The winter bonus arrived in March, but better late than never.",
+        translation: "冬季奖金三月才到，但晚到总比没有强。",
+      },
+      {
+        text: "You finally started saving at forty? Better late than never.",
+        translation: "你四十岁才开始存钱？晚做总比不做强。",
+      },
+    ],
+  },
+  "throw in the towel": {
+    usage: "常用 refuse to / be ready to throw in the towel；主语可以是人或团队。",
+    memoryTip: "拳台边扔毛巾等于教练喊停：认负的动作就是放弃的比喻。",
+    examples: [
+      {
+        text: "They threw in the towel after the third failed funding round.",
+        translation: "第三轮融资失败后，他们放弃了。",
+      },
+      {
+        text: "Don't throw in the towel — the bug is one breakpoint away.",
+        translation: "别认输——这个 bug 离解决只差一个断点。",
+      },
+    ],
+  },
+  "on cloud nine": {
+    usage: "作表语：be on cloud nine；描述持续一阵的狂喜状态。",
+    memoryTip: "云分九层，第九层最高：幸福飘到了最高那层云上。",
+    examples: [
+      {
+        text: "He has been on cloud nine since the proposal was accepted.",
+        translation: "提案通过之后，他一直乐得飘飘然。",
+      },
+      {
+        text: "Walking off the stage with the gold medal, she was on cloud nine.",
+        translation: "带着金牌走下领奖台，她高兴坏了。",
+      },
+    ],
+  },
+  "two peas in a pod": {
+    usage: "作表语：be like two peas in a pod；多形容两人性格或趣味相投。",
+    memoryTip: "一个豆荚里的两颗豆：外观和脾气都分不出来。",
+    examples: [
+      {
+        text: "The twin sisters dress like two peas in a pod.",
+        translation: "这对双胞胎姐妹穿得一模一样。",
+      },
+      {
+        text: "The two reviewers gave two peas in a pod verdicts.",
+        translation: "两位评审的结论如出一辙。",
+      },
+    ],
+  },
+  "add fuel to the fire": {
+    usage: "作谓语：add fuel to the fire (by doing...)；强调让已经紧张的局面更糟。",
+    memoryTip: "与中文「火上浇油」逐字对应：火不旺就再浇一勺油。",
+    examples: [
+      {
+        text: "The leaked memo added fuel to the fire during the layoff talks.",
+        translation: "泄露的备忘录在裁员谈判期间火上浇油。",
+      },
+      {
+        text: "He added fuel to the fire by quoting the wrong price on stage.",
+        translation: "他在台上报错价格，把事情弄得更糟。",
+      },
+    ],
+  },
+  "light at the end of the tunnel": {
+    usage: "与 see / there is 搭配；多用于长期困难出现好转迹象的语境。",
+    memoryTip: "隧道再长也有出口：看见光，就说明快走完了。",
+    examples: [
+      {
+        text: "With the last two exams scheduled, there is light at the end of the tunnel.",
+        translation: "只剩最后两门考试，曙光就在眼前。",
+      },
+      {
+        text: "Revenue is up two months in a row — light at the end of the tunnel.",
+        translation: "营收连续两个月回升——困境快熬到头了。",
+      },
+    ],
+  },
+  "jump on the bandwagon": {
+    usage: "作谓语：jump on the bandwagon (when...)；含「只因流行才加入」的轻微贬义。",
+    memoryTip: "彩车越热闹越有人跳上去：跟风的画面。",
+    examples: [
+      {
+        text: "Half the office jumped on the bandwagon and bought the same standing desk.",
+        translation: "办公室一半的人都跟风买了同款升降桌。",
+      },
+      {
+        text: "Three rivals jumped on the bandwagon within a month of the trend.",
+        translation: "风头起来一个月后，三家竞争对手都跟了进来。",
+      },
+    ],
+  },
+  "fly off the handle": {
+    usage: "作谓语：fly / flip off the handle (at something)；强调爆怒来得突然。",
+    memoryTip: "锤头飞脱完全失控：怒气也是。",
+    examples: [
+      {
+        text: "The coach flew off the handle at the missed assignment.",
+        translation: "看到漏做的作业，教练当场发飙。",
+      },
+      {
+        text: "Customers fly off the handle when the site goes down without notice.",
+        translation: "网站毫无通知就挂掉，客户会立刻炸毛。",
+      },
+    ],
+  },
+  "let sleeping dogs lie": {
+    usage: "多作祈使句或 decide to let sleeping dogs lie；劝阻重提旧事。",
+    memoryTip: "睡着的狗别碰：碰了就会被咬。",
+    examples: [
+      {
+        text: "I almost mentioned the old lawsuit, then decided to let sleeping dogs lie.",
+        translation: "我差点提了那桩旧官司，转念决定别惹是生非。",
+      },
+      {
+        text: "The report let sleeping dogs lie and skipped the budget dispute.",
+        translation: "报告避开了预算争议，没有揭旧疮疤。",
+      },
+    ],
+  },
+  "every cloud has a silver lining": {
+    usage: "作独立谚语句或表语；宽慰语境，后面常接具体的「好处」说明。",
+    memoryTip: "乌云镶着银边：坏事的边缘也有光。",
+    examples: [
+      {
+        text: "We lost the client, but every cloud has a silver lining — the team rebuilt the workflow.",
+        translation: "客户丢了，但坏事也有好的一面——团队趁机重做了工作流。",
+      },
+      {
+        text: "Grandma repeats that every cloud has a silver lining whenever plans fall apart.",
+        translation: "每次计划泡汤，外婆都会说困境里总有好的一面。",
+      },
+    ],
+  },
+  "put all your eggs in one basket": {
+    usage: "劝告语境高频：don't put all your eggs in one basket；代词可随人称变化。",
+    memoryTip: "一篮鸡蛋一摔全碎：别把宝押在一个点上。",
+    examples: [
+      {
+        text: "She kept three income streams so she would never put all her eggs in one basket.",
+        translation: "她保留三份收入来源，绝不孤注一掷。",
+      },
+      {
+        text: "Investors warned the startup not to put all its eggs in one basket.",
+        translation: "投资人提醒这家创业公司别把宝押在单一市场。",
+      },
+    ],
+  },
+  "the tip of the iceberg": {
+    usage: "作表语：be just / only the tip of the iceberg；指可见的一小部分。",
+    memoryTip: "冰山水上只占一角：看见的永远比藏着的小。",
+    examples: [
+      {
+        text: "The two refunded orders were the tip of the iceberg of a much bigger bug.",
+        translation: "两笔退款只是那个更大 bug 的冰山一角。",
+      },
+      {
+        text: "Public spats are the tip of the iceberg of the family feud.",
+        translation: "公开争吵只是这场家族恩怨的冰山一角。",
+      },
+    ],
+  },
+  "burn bridges": {
+    usage: "作谓语：burn bridges (with someone)；反义劝告是 don't burn your bridges。",
+    memoryTip: "桥烧了就回不去：关系一旦闹僵很难重来。",
+    examples: [
+      {
+        text: "Even when the client walked away, she never burned bridges.",
+        translation: "即使客户拂袖而去，她也没把关系闹僵。",
+      },
+      {
+        text: "He burned bridges by criticizing the team in a public post.",
+        translation: "他发帖公开批评团队，断了后路。",
+      },
+    ],
+  },
+  "leave no stone unturned": {
+    usage: "常与 will / promise 连用表承诺，或描述已做的彻底排查。",
+    memoryTip: "每块石头都翻过：不留任何一个没查过的角落。",
+    examples: [
+      {
+        text: "Auditors left no stone unturned in the expense review.",
+        translation: "审计人员在费用审查中翻了个底朝天。",
+      },
+      {
+        text: "We promise to leave no stone unturned until the letters are delivered.",
+        translation: "我们承诺想尽一切办法把信送到。",
+      },
+    ],
+  },
+  "a breath of fresh air": {
+    usage: "作表语：be (like) a breath of fresh air；形容人或做法令人一新。",
+    memoryTip: "闷屋开窗的第一口气：换个人换种风气就精神了。",
+    examples: [
+      {
+        text: "His plain-language emails are a breath of fresh air.",
+        translation: "他写得直白的邮件让人耳目一新。",
+      },
+      {
+        text: "The open studio felt like a breath of fresh air after the cubicles.",
+        translation: "离开格子间走进开放式工作室，感觉焕然一新。",
+      },
+    ],
+  },
+  "kill two birds with one stone": {
+    usage: "作谓语，常接冒号或 by 引出同时完成的两件事。",
+    memoryTip: "一块石头两只鸟：一次动作双倍收益。",
+    examples: [
+      {
+        text: "The team killed two birds with one stone by pairing the demo with user interviews.",
+        translation: "团队把演示和用户访谈合在一起，一举两得。",
+      },
+      {
+        text: "Studying on the train kills two birds with one stone.",
+        translation: "在火车上学习，通勤复习两不误。",
+      },
+    ],
+  },
+  "the calm before the storm": {
+    usage: "作表语：be the calm before the storm；预告繁忙或冲突将至。",
+    memoryTip: "暴风雨前的反常安静：越静越要绷住。",
+    examples: [
+      {
+        text: "The quiet helpdesk is the calm before the storm of launch day.",
+        translation: "安静的客服台，是发布日风暴前的宁静。",
+      },
+      {
+        text: "Enjoy the empty calendar this week — the calm before the storm.",
+        translation: "趁这周日程空着享受一下吧——忙乱马上就来。",
+      },
+    ],
+  },
+  "hit a snag": {
+    usage: "作谓语：plan / talks / rollout hit a snag (over / when...)；障碍多为临时性。",
+    memoryTip: "船底挂上枯木桩：走得再顺也会突然卡住。",
+    examples: [
+      {
+        text: "The visa application hit a snag over a missing signature.",
+        translation: "签证申请因为缺一个签名卡住了。",
+      },
+      {
+        text: "Negotiations hit a snag when the two sides disagreed on data ownership.",
+        translation: "双方在数据所有权上谈不拢，谈判卡住了。",
+      },
+    ],
+  },
+  "off the beaten path": {
+    usage: "作表语或状语：a place (well) off the beaten path；形容冷门但值得一去。",
+    memoryTip: "熟路之外：没有踩出来的人也走得通。",
+    examples: [
+      {
+        text: "The bakery is well off the beaten path but sells out by noon.",
+        translation: "那家面包店位置很偏，中午前就卖光了。",
+      },
+      {
+        text: "Their itinerary favors villages off the beaten path.",
+        translation: "他们的行程偏爱少有人走的小村庄。",
+      },
+    ],
+  },
+  "by leaps and bounds": {
+    usage: "作状语修饰 improve / grow / expand；强调速度惊人。",
+    memoryTip: "又跳又跃：进步是一格一大步。",
+    examples: [
+      {
+        text: "The channel grew by leaps and bounds after one viral video.",
+        translation: "一条视频爆红后，频道迅猛涨粉。",
+      },
+      {
+        text: "His reading speed improved by leaps and bounds over the term.",
+        translation: "这学期他的阅读速度突飞猛进。",
+      },
+    ],
+  },
+  "in deep water": {
+    usage: "作表语：be / find oneself in deep water；麻烦偏严重，不是小尴尬。",
+    memoryTip: "水没过头顶才叫深水：困难大到难脱身。",
+    examples: [
+      {
+        text: "The vendor missed two deadlines and is in deep water with the client.",
+        translation: "供应商两次延期，客户那边麻烦大了。",
+      },
+      {
+        text: "Without a backup, the team found itself in deep water during the outage.",
+        translation: "没有备份，故障期间团队陷入了困境。",
+      },
+    ],
+  },
+  "keep a straight face": {
+    usage: "常与 can't / couldn't / manage to 连用；场景多为笑话与尴尬时刻。",
+    memoryTip: "把脸绷直：嘴角一翘就输了。",
+    examples: [
+      {
+        text: "The anchor somehow kept a straight face while reading the typo.",
+        translation: "主播念到错别字时居然绷住了没笑。",
+      },
+      {
+        text: "Try keeping a straight face when the puppy howls along.",
+        translation: "小狗跟着嚎的时候你试试绷住脸。",
+      },
+    ],
+  },
+  "set the record straight": {
+    usage: "作谓语，后接 about/that 说明要澄清的对象；语气正式、立场明确。",
+    memoryTip: "把记录摆正：歪掉的事实按回原位。",
+    examples: [
+      {
+        text: "Let me set the record straight about who wrote the spec.",
+        translation: "让我澄清一下规格文档是谁写的。",
+      },
+      {
+        text: "The CEO set the record straight in a short memo.",
+        translation: "CEO 用一篇简短备忘录澄清了事实。",
+      },
+    ],
+  },
+  "count me in": {
+    usage: "独立短句表示报名；反义是 count me out；语气爽快。",
+    memoryTip: "把你数进名单里：举手报名的动作。",
+    examples: [
+      {
+        text: "Sushi night on Friday? Count me in.",
+        translation: "周五寿司夜？算我一个。",
+      },
+      {
+        text: "She counted me in for the ski trip without asking.",
+        translation: "她直接把滑雪行记在我名下了。",
+      },
+    ],
+  },
+  "fill me in": {
+    usage: "常与 on something 搭配：fill me in on the details；请求补齐背景。",
+    memoryTip: "把空缺填满：缺的情报交给你补。",
+    examples: [
+      {
+        text: "Can you fill me in on yesterday's meeting?",
+        translation: "能给我讲讲昨天会议的情况吗？",
+      },
+      {
+        text: "The manager filled me in on the new process within an hour.",
+        translation: "经理一个小时就把新流程给我讲透了。",
+      },
+    ],
+  },
+  "drop me a line": {
+    usage: "作谓语：drop me a line when/after...；比 write to me 轻松随意。",
+    memoryTip: "纸上随手丢一行字：消息可以很短，心意到了就行。",
+    examples: [
+      {
+        text: "Drop me a line if the tickets sell out.",
+        translation: "票要是卖光了就发个消息告诉我。",
+      },
+      {
+        text: "An old friend dropped me a line last month.",
+        translation: "上个月有位老同学给我发了条短讯。",
+      },
+    ],
+  },
+  "get back to you": {
+    usage: "常与 will / can + get back to you 连用；给出时间承诺更显诚意。",
+    memoryTip: "把答复「带回来」交给你：晚一步但一定给。",
+    examples: [
+      {
+        text: "Let me check with finance and get back to you this afternoon.",
+        translation: "我先和财务确认，下午答复你。",
+      },
+      {
+        text: "Did the landlord ever get back to you about the lease?",
+        translation: "房东后来答复你租约的事了吗？",
+      },
+    ],
+  },
+  "wrap my head around": {
+    usage: "常与 can't / couldn't 连用；对象多为复杂、反直觉的内容。",
+    memoryTip: "把整个脑子包上去：想明白了才算包住。",
+    examples: [
+      {
+        text: "The plot has so many twists that I can't wrap my head around it.",
+        translation: "剧情反转太多，我怎么都理不清。",
+      },
+      {
+        text: "After two reads, she finally wrapped her head around the proof.",
+        translation: "读了两遍之后，她总算看懂了这个证明。",
+      },
+    ],
+  },
+  "on second thought": {
+    usage: "作句首或句中插入语，后接修正后的决定；与 after all 不同，强调「再想一遍」。",
+    memoryTip: "第二次思考盖过第一次：刚说出口又改口。",
+    examples: [
+      {
+        text: "On second thought, we should invite the whole team.",
+        translation: "转念一想，应该把整个团队都请来。",
+      },
+      {
+        text: "He booked the window seat, then on second thought switched to the aisle.",
+        translation: "他订了靠窗座位，转念又换成了过道。",
+      },
+    ],
+  },
+  "in the meantime": {
+    usage: "常放句首引出等待期间要做的事；与 meanwhile 同义，更口语。",
+    memoryTip: "两件事之间的间隙：等 A 落地时，先做 B。",
+    examples: [
+      {
+        text: "The spare part arrives Monday. In the meantime, use the backup device.",
+        translation: "配件周一到。这段时间先用备用设备。",
+      },
+      {
+        text: "Dinner is at eight; in the meantime, the board games are on the shelf.",
+        translation: "八点开饭；在这之前，桌游就在架子上。",
+      },
+    ],
+  },
+  "as far as I know": {
+    usage: "句首或句尾皆可；承认信息边界，避免替未知事实背书。",
+    memoryTip: "我的知识范围到此为止：再往外我就不打包票了。",
+    examples: [
+      {
+        text: "As far as I know, the store still opens at nine.",
+        translation: "据我所知，商店还是九点开门。",
+      },
+      {
+        text: "The policy has not changed, as far as I know.",
+        translation: "据我所知，政策没有变。",
+      },
+    ],
+  },
+  "to be honest": {
+    usage: "作插入语；引出直白评价，弱化语气；也可说 to be honest with you。",
+    memoryTip: "先亮底牌再说话：我把实话放出来了。",
+    examples: [
+      {
+        text: "To be honest, I prefer the quieter office upstairs.",
+        translation: "说实话，我更喜欢楼上那间安静的办公室。",
+      },
+      {
+        text: "It was a good talk, to be honest, though a bit long.",
+        translation: "说实话这场演讲不错，就是有点长。",
+      },
+    ],
+  },
+  "hang on a second": {
+    usage: "祈使句；口语化等待语；第二人称也可用 hang on（英式更常见）。",
+    memoryTip: "「吊住」几秒钟：别动，马上就好。",
+    examples: [
+      {
+        text: "Hang on a second, the kettle is still boiling.",
+        translation: "稍等一下，水壶还没烧开。",
+      },
+      {
+        text: "She hung on a second before answering the tricky question.",
+        translation: "她稍等了一秒才回答那个刁钻问题。",
+      },
+    ],
+  },
+  "so far so good": {
+    usage: "独立评语句，总结「到目前为止」；常独立成句放在句末。",
+    memoryTip: "前段没问题＝后段才刚开始：先报平安再赶路。",
+    examples: [
+      {
+        text: "Day three of the diet. So far so good.",
+        translation: "饮食计划第三天。到目前为止还顺。",
+      },
+      {
+        text: "The new hire is doing well — so far so good.",
+        translation: "新同事表现不错——目前为止挺好。",
+      },
+    ],
+  },
+  "it is what it is": {
+    usage: "独立评语句；对无法改变的现实表态，语气平静带点无奈。",
+    memoryTip: "它已经是它了：不纠结，不翻案。",
+    examples: [
+      {
+        text: "The delay is annoying, but it is what it is.",
+        translation: "延误很烦人，但事情就是这样。",
+      },
+      {
+        text: "We drew the away team again. It is what it is.",
+        translation: "抽签又抽到客场。接受吧，就这样。",
+      },
+    ],
+  },
+  "long story short": {
+    usage: "句首引出略去细节的结论；可独立也可与 to make 连用；省略号或破折号常伴生。",
+    memoryTip: "长故事剪一刀：开头与结局直接接上。",
+    examples: [
+      {
+        text: "Long story short, we missed the last bus and walked home.",
+        translation: "长话短说，我们没赶上班车，走回了家。",
+      },
+      {
+        text: "There were delays and bugs; long story short, we shipped a week late.",
+        translation: "中间有延期有 bug；长话短说，我们晚上线了一周。",
+      },
+    ],
+  },
+  "needless to say": {
+    usage: "句首插入语；事实显然到不用明说，偏书面。",
+    memoryTip: "说出来反而多余：不言自明。",
+    examples: [
+      {
+        text: "Needless to say, we refunded the wrong order immediately.",
+        translation: "不用说，下错的订单我们立刻退了。",
+      },
+      {
+        text: "The password was still the default one — needless to say, we changed it.",
+        translation: "密码还是默认的——不用问，我们马上改了。",
+      },
+    ],
+  },
+  "for what it's worth": {
+    usage: "句首插入语；先自谦再给意见，软化「越位」的观感。",
+    memoryTip: "我的意见可能就值这个分量：说完不追责。",
+    examples: [
+      {
+        text: "For what it's worth, the blue logo reads better on dark backgrounds.",
+        translation: "姑且一说，深蓝标志在深色底上更耐看。",
+      },
+      {
+        text: "For what it's worth, I would take the earlier train.",
+        translation: "说句仅供参考的话，我会选早一班。",
+      },
+    ],
+  },
+  "at the eleventh hour": {
+    usage: "作时间状语；强调截止前最后一刻，常带惊险语气。",
+    memoryTip: "白昼最后一小时才进场的工人：压哨登场。",
+    examples: [
+      {
+        text: "The sponsor signed at the eleventh hour.",
+        translation: "赞助商在最后一刻签了字。",
+      },
+      {
+        text: "They found the missing passport at the eleventh hour before boarding.",
+        translation: "登机前的最后一刻，他们找到了那份护照。",
+      },
+    ],
+  },
+  "by word of mouth": {
+    usage: "作方式状语；商业语境与 spread / grow / reach 搭配；反义是 by advertising。",
+    memoryTip: "一张嘴传一张嘴：没有广告位的传播渠道。",
+    examples: [
+      {
+        text: "Most of our first customers came by word of mouth.",
+        translation: "最早一批顾客大多是靠口碑来的。",
+      },
+      {
+        text: "The rumor spread by word of mouth within the office.",
+        translation: "那个传闻在办公室里口口相传地传开了。",
+      },
+    ],
+  },
+  "on the tip of my tongue": {
+    usage: "作表语；可与 right on 强调；代词随人称变化。",
+    memoryTip: "词已经顶到舌尖：差一口气就出来。",
+    examples: [
+      {
+        text: "The song title was on the tip of my tongue for two days.",
+        translation: "那首歌的名字我惦记了两天都没想起来。",
+      },
+      {
+        text: "The answer was right on the tip of your tongue during the quiz.",
+        translation: "抢答时，答案就在你嘴边。",
+      },
+    ],
+  },
+  "behind the scenes": {
+    usage: "作状语；既指真实后台，也指公开过程看不见的运作；与 in public 相对。",
+    memoryTip: "幕布另一侧：观众看不到的那半边舞台。",
+    examples: [
+      {
+        text: "Behind the scenes, the designers redid the whole flow twice.",
+        translation: "幕后的两次推翻，重做了整套流程。",
+      },
+      {
+        text: "An assistant does a lot of work behind the scenes.",
+        translation: "助理在幕后做了大量工作。",
+      },
+    ],
+  },
+  "add insult to injury": {
+    usage: "to add insult to injury 作插入语引出第二件坏事；常接 bad 的升级。",
+    memoryTip: "伤口上再撒一层盐：坏上加坏。",
+    examples: [
+      {
+        text: "The airline lost the bag, and to add insult to injury, it charged for the extra seat.",
+        translation: "行李丢了，更糟的是他们还收了加座费。",
+      },
+      {
+        text: "He added insult to injury by charging us for parking.",
+        translation: "他收费停车，让本来就不爽的体验雪上加霜。",
+      },
+    ],
+  },
+  "take a toll on": {
+    usage: "作谓语：X takes a toll on Y；主语多为长期消耗（压力、熬夜、通勤）。",
+    memoryTip: "按损耗「收费」：代价一点一点扣。",
+    examples: [
+      {
+        text: "The heat wave took a toll on the crops.",
+        translation: "热浪让庄稼受了损。",
+      },
+      {
+        text: "Night shifts take a toll on your sleep.",
+        translation: "上夜班会消耗你的睡眠。",
+      },
+    ],
+  },
+  "hold your horses": {
+    usage: "祈使句劝阻；口语里也写作 hold your horses！；反义催促是 step on the gas。",
+    memoryTip: "缰绳一拉：马（和嘴）都先停住。",
+    examples: [
+      {
+        text: "Hold your horses — the results drop at noon.",
+        translation: "别急——中午才出结果。",
+      },
+      {
+        text: "Mom told the kids to hold their horses until dessert.",
+        translation: "妈妈让孩子们等甜点时别急吼吼。",
+      },
+    ],
+  },
+  "sit on the fence": {
+    usage: "作谓语；批评犹豫不决、不站队；反义是 pick a side。",
+    memoryTip: "骑在墙上不落地：两边都不选，两边都得罪。",
+    examples: [
+      {
+        text: "The committee sat on the fence for another month.",
+        translation: "委员会又骑墙了一个月。",
+      },
+      {
+        text: "You can't sit on the fence when the vote is today.",
+        translation: "今天就要表决，你不能两边不表态。",
+      },
+    ],
+  },
+  "for the record": {
+    usage: "句首插入语；把立场正式说清，防日后扯皮；也常与 that 从句连用。",
+    memoryTip: "白纸黑字记下来：这不是随口一说。",
+    examples: [
+      {
+        text: "For the record, the idea was ours from the start.",
+        translation: "先说清楚，这个点子一开始就是我们的。",
+      },
+      {
+        text: "She noted, for the record, that the budget is final.",
+        translation: "她郑重声明：预算已经定死。",
+      },
+    ],
+  },
 }

@@ -8,11 +8,11 @@ import {
 } from "@/lib/expression-library"
 
 describe("expression library", () => {
-  it("contains 1050 unique, complete expressions across every scene category", () => {
-    expect(builtInExpressionItems).toHaveLength(1_050)
+  it("contains 1100 unique, complete expressions across every scene category", () => {
+    expect(builtInExpressionItems).toHaveLength(1_100)
     expect(
       new Set(builtInExpressionItems.map((item) => item.phrase.toLocaleLowerCase())).size,
-    ).toBe(1_050)
+    ).toBe(1_100)
     expect(
       builtInExpressionItems.every(
         (item) =>
@@ -38,7 +38,7 @@ describe("expression library", () => {
     const reviewed = builtInExpressionItems.filter((item) =>
       item.id.startsWith("builtin:reviewed:"),
     )
-    expect(reviewed).toHaveLength(150)
+    expect(reviewed).toHaveLength(200)
     for (const item of reviewed) {
       expect(item.exampleTranslation, item.phrase).toBeTruthy()
       expect(/[\u3400-\u9fff]/u.test(item.exampleTranslation ?? "")).toBe(true)
@@ -49,7 +49,7 @@ describe("expression library", () => {
     const reviewed = builtInExpressionItems.filter((item) =>
       item.id.startsWith("builtin:reviewed:"),
     )
-    expect(reviewed).toHaveLength(150)
+    expect(reviewed).toHaveLength(200)
     for (const item of reviewed) {
       expect(item.usage?.trim(), item.phrase).toBeTruthy()
       expect(item.memoryTip?.trim(), item.phrase).toBeTruthy()

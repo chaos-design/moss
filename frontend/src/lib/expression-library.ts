@@ -69,8 +69,8 @@ export const builtInExpressionItems: readonly ExpressionLibraryItem[] = [
   ...generatedItems,
 ]
 
-if (builtInExpressionItems.length !== 1_050) {
-  throw new Error(`Built-in expression library must contain 1050 items.`)
+if (builtInExpressionItems.length !== 1_100) {
+  throw new Error(`Built-in expression library must contain 1100 items.`)
 }
 
 export function mergeExpressionLibraryItems(
