@@ -6,9 +6,11 @@ import {
   ChevronDownIcon,
   EyeIcon,
   EyeOffIcon,
+  FolderInputIcon,
   LoaderCircleIcon,
   PencilIcon,
   SearchIcon,
+  StarIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -56,6 +58,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ExpressionEditDialog } from "@/features/expressions/expression-edit-dialog"
 import { ExpressionImportDialog } from "@/features/expressions/expression-import-dialog"
+import { ExpressionStudyDialog } from "@/features/expressions/expression-study-dialog"
+import { ExpressionStudyPanel } from "@/features/expressions/expression-study-panel"
 import { getLocalOnlySuffix } from "@/lib/auth-status"
 import type { SceneCategory } from "@/lib/demo-data"
 import type { ExpressionImportResult } from "@/lib/expression-import"
@@ -79,7 +83,21 @@ import {
   saveLocalExpressionItems,
   updateCloudExpressionItem,
 } from "@/lib/expression-library-client"
-import { createExpressionMemoryItemId } from "@/lib/memory"
+import {
+  type ExpressionStudyMode,
+  type ExpressionStudyScope,
+  resolveStudyItems,
+} from "@/lib/expression-study"
+import {
+  createExpressionMemoryItemId,
+  type ExpressionFilters,
+  type ExpressionGroup,
+  type ExpressionProgressStatus,
+  type ExpressionProgressUpdate,
+  type ExpressionStudyState,
+  getActiveFavorites,
+  getActiveGroups,
+} from "@/lib/memory"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 
 type SourceFilter = "all" | ExpressionSource
@@ -114,8 +132,20 @@ function matchesQuery(item: ExpressionLibraryItem, query: string) {
 }
 
 export function ExpressionLibraryWorkspace() {
-  const { recordExpressionStudy, state } = useLearningMemory()
+  const {
+    recordExpressionStudy,
+    state,
+    hydrated,
+    toggleFavorite,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    toggleGroupItem,
+    recordExpressionProgress,
+    saveExpressionFilters,
+  } = useLearningMemory()
   const { status } = useAuth()
+  const expressionStudy: ExpressionStudyState = state.expressionStudy
   // Cloud sync is best-effort here: the local write already succeeded, so the account state only
   // explains the skipped sync instead of gating the learner's work.
   const localOnlySuffix = getLocalOnlySuffix(status)
@@ -123,17 +153,42 @@ export function ExpressionLibraryWorkspace() {
   const [storageScope, setStorageScope] = useState("anonymous")
   const [cloudAvailable, setCloudAvailable] = useState(false)
   const [loadingCloud, setLoadingCloud] = useState(true)
-  const [query, setQuery] = useState("")
-  const [categories, setCategories] = useState<SceneCategory[]>([])
-  const [source, setSource] = useState<SourceFilter>("all")
+  const [query, setQuery] = useState(() => expressionStudy.filters.value.query)
+  const [categories, setCategories] = useState<SceneCategory[]>(
+    () => expressionStudy.filters.value.categories,
+  )
+  const [source, setSource] = useState<SourceFilter>(
+    () => expressionStudy.filters.value.source as SourceFilter,
+  )
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount)
   const [editingItem, setEditingItem] = useState<ExpressionLibraryItem | null>(null)
   const [deletingItem, setDeletingItem] = useState<ExpressionLibraryItem | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [session, setSession] = useState<{
+    id: number
+    scope: ExpressionStudyScope
+    mode: ExpressionStudyMode
+  } | null>(null)
+  const sessionCounter = useRef(0)
+  const restoredFilters = useRef(false)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase())
   // 已进入长期记忆的表达在这里显示状态，避免与下方学习记忆列表建立第二条真相同步链路。
   const studiedIds = useMemo(() => new Set(state.items.map((item) => item.id)), [state.items])
+
+  // Provider 从 localStorage/云端 hydrate 后才有真正保存过的筛选条件；只恢复一次，
+  // 避免后续每次筛选写回都把当前输入重新灌回输入框。
+  useEffect(() => {
+    if (!hydrated || restoredFilters.current) {
+      return
+    }
+    restoredFilters.current = true
+    const saved = state.expressionStudy.filters.value
+    setQuery(saved.query)
+    setCategories(saved.categories)
+    setSource(saved.source as SourceFilter)
+    setVisibleCount(initialVisibleCount)
+  }, [hydrated, state.expressionStudy.filters.value])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -198,6 +253,45 @@ export function ExpressionLibraryWorkspace() {
   const selectedCategoryLabel =
     categories.length === 0 ? "全部场景" : `场景 ${categories.length}`
 
+  const favoriteIdentities = useMemo(
+    () => new Set(getActiveFavorites(expressionStudy)),
+    [expressionStudy],
+  )
+  const studyGroups = useMemo(() => getActiveGroups(expressionStudy), [expressionStudy])
+  const progressByIdentity = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(expressionStudy.progress).map(([identity, entry]) => [
+          identity,
+          entry.status,
+        ]),
+      ) as Record<string, ExpressionProgressStatus>,
+    [expressionStudy],
+  )
+
+  function startStudy(scope: ExpressionStudyScope, mode: ExpressionStudyMode) {
+    sessionCounter.current += 1
+    setSession({ id: sessionCounter.current, scope, mode })
+  }
+
+  const sessionItems = useMemo(() => {
+    if (!session) {
+      return []
+    }
+    const scope = session.scope
+    const groupItemIds =
+      scope.kind === "group"
+        ? studyGroups.find((candidate) => candidate.id === scope.groupId)?.itemIds
+        : undefined
+    return resolveStudyItems({
+      filteredItems,
+      favoriteIdentities,
+      groupItemIds,
+      progressByIdentity,
+      scope,
+    })
+  }, [session, filteredItems, favoriteIdentities, studyGroups, progressByIdentity])
+
   useEffect(() => {
     const target = loadMoreRef.current
     if (!target || !hasMore || typeof IntersectionObserver === "undefined") {
@@ -217,18 +311,27 @@ export function ExpressionLibraryWorkspace() {
     return () => observer.disconnect()
   }, [filteredItems.length, hasMore])
 
+  function persistFilters(next: Partial<ExpressionFilters>) {
+    saveExpressionFilters({
+      query: next.query ?? query,
+      categories: next.categories ?? categories,
+      source: next.source ?? source,
+    })
+  }
+
   function updateQuery(value: string) {
     setQuery(value)
     setVisibleCount(initialVisibleCount)
+    persistFilters({ query: value })
   }
 
   function toggleCategory(category: SceneCategory, checked: boolean) {
-    setCategories((current) =>
-      checked
-        ? Array.from(new Set([...current, category]))
-        : current.filter((value) => value !== category),
-    )
+    const next = checked
+      ? Array.from(new Set([...categories, category]))
+      : categories.filter((value) => value !== category)
+    setCategories(next)
     setVisibleCount(initialVisibleCount)
+    persistFilters({ categories: next })
   }
 
   function updateSource(value: SourceFilter | null) {
@@ -237,6 +340,13 @@ export function ExpressionLibraryWorkspace() {
     }
     setSource(value)
     setVisibleCount(initialVisibleCount)
+    persistFilters({ source: value })
+  }
+
+  function clearCategories() {
+    setCategories([])
+    setVisibleCount(initialVisibleCount)
+    persistFilters({ categories: [] })
   }
 
   function handleStudy(item: ExpressionLibraryItem) {
@@ -272,6 +382,7 @@ export function ExpressionLibraryWorkspace() {
     setQuery("")
     setSource("imported")
     setVisibleCount(initialVisibleCount)
+    saveExpressionFilters({ query: "", categories: [], source: "imported" })
 
     try {
       const stored = await saveCloudExpressionItems(importedBatch)
@@ -414,14 +525,7 @@ export function ExpressionLibraryWorkspace() {
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setCategories([])
-                        setVisibleCount(initialVisibleCount)
-                      }}
-                    >
-                      清除场景筛选
-                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={clearCategories}>清除场景筛选</DropdownMenuItem>
                   </DropdownMenuGroup>
                 </>
               ) : null}
@@ -451,9 +555,22 @@ export function ExpressionLibraryWorkspace() {
         </div>
       </section>
 
+      <ExpressionStudyPanel
+        study={expressionStudy}
+        onStart={startStudy}
+        onCreateGroup={createGroup}
+        onRenameGroup={renameGroup}
+        onDeleteGroup={deleteGroup}
+      />
+
       <ExpressionRows
         items={visibleItems}
         studiedIds={studiedIds}
+        favoriteIdentities={favoriteIdentities}
+        studyGroups={studyGroups}
+        progressByIdentity={progressByIdentity}
+        onToggleFavorite={toggleFavorite}
+        onToggleGroupItem={toggleGroupItem}
         onDelete={setDeletingItem}
         onEdit={setEditingItem}
         onStudy={handleStudy}
@@ -465,6 +582,19 @@ export function ExpressionLibraryWorkspace() {
       <p className="text-center text-xs text-muted-foreground" aria-live="polite">
         已显示 {visibleItems.length} / {filteredItems.length} 条
       </p>
+
+      {session ? (
+        <ExpressionStudyDialog
+          key={session.id}
+          open
+          items={sessionItems}
+          scope={session.scope}
+          study={expressionStudy}
+          initialMode={session.mode}
+          onClose={() => setSession(null)}
+          onProgress={recordExpressionProgress}
+        />
+      ) : null}
 
       {editingItem ? (
         <ExpressionEditDialog
@@ -514,12 +644,22 @@ export function ExpressionLibraryWorkspace() {
 function ExpressionRows({
   items,
   studiedIds,
+  favoriteIdentities,
+  studyGroups,
+  progressByIdentity,
+  onToggleFavorite,
+  onToggleGroupItem,
   onDelete,
   onEdit,
   onStudy,
 }: {
   items: readonly ExpressionLibraryItem[]
   studiedIds: ReadonlySet<string>
+  favoriteIdentities: ReadonlySet<string>
+  studyGroups: readonly ExpressionGroup[]
+  progressByIdentity: Readonly<Record<string, ExpressionProgressStatus>>
+  onToggleFavorite: (identity: string) => void
+  onToggleGroupItem: (groupId: string, identity: string) => void
   onDelete: (item: ExpressionLibraryItem) => void
   onEdit: (item: ExpressionLibraryItem) => void
   onStudy: (item: ExpressionLibraryItem) => void
@@ -547,6 +687,9 @@ function ExpressionRows({
     <section className="overflow-hidden rounded-lg border bg-card" aria-label="地道表达列表">
       {items.map((item, index) => {
         const studied = studiedIds.has(createExpressionMemoryItemId(item.clientId))
+        const identity = createExpressionIdentity(item)
+        const favorite = favoriteIdentities.has(identity)
+        const progressStatus = progressByIdentity[identity]
         const translationRevealed = revealedIdSet.has(item.id)
         return (
           <article
@@ -565,8 +708,63 @@ function ExpressionRows({
                   </Badge>
                   {item.source === "imported" ? <Badge>外部导入</Badge> : null}
                   {studied ? <Badge>已在记忆中</Badge> : null}
+                  {progressStatus === "mastered" ? (
+                    <Badge variant="default">已掌握</Badge>
+                  ) : null}
+                  {progressStatus === "learning" ? (
+                    <Badge variant="outline">学习中</Badge>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 gap-1">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={
+                            favorite ? `取消收藏 ${item.phrase}` : `收藏 ${item.phrase}`
+                          }
+                          aria-pressed={favorite}
+                          onClick={() => onToggleFavorite(identity)}
+                        />
+                      }
+                    >
+                      <StarIcon className={favorite ? "fill-primary text-primary" : ""} />
+                    </TooltipTrigger>
+                    <TooltipContent>{favorite ? "取消收藏" : "收藏"}</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`管理 ${item.phrase} 的学习分组`}
+                        />
+                      }
+                    >
+                      <FolderInputIcon />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-40">
+                      <DropdownMenuLabel>加入分组</DropdownMenuLabel>
+                      {studyGroups.length === 0 ? (
+                        <DropdownMenuItem disabled>还没有分组，先在上方创建</DropdownMenuItem>
+                      ) : (
+                        studyGroups.map((group) => (
+                          <DropdownMenuCheckboxItem
+                            key={group.id}
+                            checked={group.itemIds.includes(identity)}
+                            onCheckedChange={() => onToggleGroupItem(group.id, identity)}
+                          >
+                            {group.name}
+                          </DropdownMenuCheckboxItem>
+                        ))
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <Tooltip>
                     <TooltipTrigger
                       render={

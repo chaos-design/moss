@@ -1,3 +1,8 @@
+import {
+  createEmptyExpressionStudyState,
+  type ExpressionStudyState,
+  parseExpressionStudyState,
+} from "./expression-study-state"
 import { getScopedReviewQueue } from "./review-scope"
 import { type RecallRating, type ReviewState, scheduleReview } from "./spaced-repetition"
 
@@ -113,6 +118,8 @@ export type LearningMemoryState = {
   items: LearningMemoryItem[]
   sceneProgress: Record<string, SceneMemoryProgress>
   events: LearningMemoryEvent[]
+  /** 地道表达库的收藏、分组、进度与筛选位置，随快照一起跨设备同步。 */
+  expressionStudy: ExpressionStudyState
   updatedAt: string
 }
 
@@ -225,6 +232,7 @@ export function createEmptyLearningMemory(now = new Date()): LearningMemoryState
     items: [],
     sceneProgress: {},
     events: [],
+    expressionStudy: createEmptyExpressionStudyState(now),
     updatedAt: now.toISOString(),
   }
 }
@@ -1527,6 +1535,7 @@ export function createDefaultLearningMemory(now = new Date()): LearningMemorySta
       },
     },
     events: [],
+    expressionStudy: createEmptyExpressionStudyState(now),
     updatedAt: nowIso,
   }
 }
@@ -1571,6 +1580,8 @@ export function parseLearningMemory(value: unknown, now = new Date()): LearningM
         },
       ]),
     ),
+    // 旧快照没有这个字段时补空默认值；新字段用独立解析器清洗，避免脏数据进入合并。
+    expressionStudy: parseExpressionStudyState(candidate.expressionStudy, now),
   }
 }
 

@@ -16,7 +16,12 @@ import {
   type ConversationTurnMemoryInput,
   createDefaultLearningMemory,
   createEmptyLearningMemory,
+  createExpressionGroup as createExpressionGroupInMemory,
+  deleteExpressionGroup as deleteExpressionGroupInMemory,
+  type ExpressionFilters,
+  type ExpressionProgressUpdate,
   type ExpressionStudyMemoryInput,
+  type ExpressionStudyState,
   forgetConversationTurn,
   getLearningMemoryFingerprint,
   type LearnerProfile,
@@ -29,12 +34,17 @@ import {
   parseLearningMemorySnapshot,
   type RecallAttemptMemoryInput,
   recordConversationMemory,
+  recordExpressionProgress as recordExpressionProgressInMemory,
   recordExpressionStudy,
   recordRecallAttempt,
   recordReviewMemory,
   recordShadowingMemory,
+  renameExpressionGroup as renameExpressionGroupInMemory,
   type ShadowingAttemptMemoryInput,
+  saveExpressionFilters as saveExpressionFiltersInMemory,
   savePracticeMemoryDocument,
+  toggleExpressionFavorite as toggleExpressionFavoriteInMemory,
+  toggleExpressionGroupItem as toggleExpressionGroupItemInMemory,
   updateLearnerProfile,
 } from "@/lib/memory"
 import { isDemoMode } from "@/lib/runtime-mode"
@@ -57,6 +67,14 @@ type LearningMemoryContextValue = {
   recordShadowingAttempt: (input: ShadowingAttemptMemoryInput) => void
   recordExpressionStudy: (input: ExpressionStudyMemoryInput) => void
   recordRecallAttempt: (input: RecallAttemptMemoryInput) => void
+  /** 地道表达库学习组织：收藏/分组/进度/筛选，随快照跨设备同步。 */
+  toggleFavorite: (identity: string) => void
+  createGroup: (name: string) => string
+  renameGroup: (groupId: string, name: string) => void
+  deleteGroup: (groupId: string) => void
+  toggleGroupItem: (groupId: string, identity: string) => void
+  recordExpressionProgress: (identity: string, update: ExpressionProgressUpdate) => void
+  saveExpressionFilters: (filters: ExpressionFilters) => void
   updateProfile: (profile: Partial<LearnerProfile>) => void
   resetMemory: () => void
   syncNow: () => void
@@ -608,6 +626,91 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
     [saveVectorMemory],
   )
 
+  /**
+   * 表达库组织状态写入：先改本机快照并立即 setState，云同步沿用 runCloudSync 的
+   * 去重与重试链路。合并语义在 lib 里保证（按 key LWW + 墓碑），这里只负责提交。
+   */
+  const commitExpressionStudy = useCallback(
+    (updater: (study: ExpressionStudyState, now: Date) => ExpressionStudyState) => {
+      const currentStudy = stateRef.current.expressionStudy
+      const now = new Date()
+      const nextStudy = updater(currentStudy, now)
+      if (nextStudy === currentStudy) {
+        return
+      }
+      const nextState: LearningMemoryState = {
+        ...stateRef.current,
+        expressionStudy: nextStudy,
+        updatedAt: now.toISOString(),
+      }
+      stateRef.current = nextState
+      setState(nextState)
+    },
+    [],
+  )
+
+  const toggleFavorite = useCallback(
+    (identity: string) => {
+      commitExpressionStudy((study, now) =>
+        toggleExpressionFavoriteInMemory(study, identity, now),
+      )
+    },
+    [commitExpressionStudy],
+  )
+
+  const createGroup = useCallback(
+    (name: string) => {
+      const id =
+        typeof crypto?.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      commitExpressionStudy((study, now) => createExpressionGroupInMemory(study, id, name, now))
+      return id
+    },
+    [commitExpressionStudy],
+  )
+
+  const renameGroup = useCallback(
+    (groupId: string, name: string) => {
+      commitExpressionStudy((study, now) =>
+        renameExpressionGroupInMemory(study, groupId, name, now),
+      )
+    },
+    [commitExpressionStudy],
+  )
+
+  const deleteGroup = useCallback(
+    (groupId: string) => {
+      commitExpressionStudy((study, now) => deleteExpressionGroupInMemory(study, groupId, now))
+    },
+    [commitExpressionStudy],
+  )
+
+  const toggleGroupItem = useCallback(
+    (groupId: string, identity: string) => {
+      commitExpressionStudy((study, now) =>
+        toggleExpressionGroupItemInMemory(study, groupId, identity, now),
+      )
+    },
+    [commitExpressionStudy],
+  )
+
+  const recordExpressionProgress = useCallback(
+    (identity: string, update: ExpressionProgressUpdate) => {
+      commitExpressionStudy((study, now) =>
+        recordExpressionProgressInMemory(study, identity, update, now),
+      )
+    },
+    [commitExpressionStudy],
+  )
+
+  const saveExpressionFilters = useCallback(
+    (filters: ExpressionFilters) => {
+      commitExpressionStudy((study, now) => saveExpressionFiltersInMemory(study, filters, now))
+    },
+    [commitExpressionStudy],
+  )
+
   const updateProfile = useCallback((profile: Partial<LearnerProfile>) => {
     const nextState = updateLearnerProfile(stateRef.current, profile)
     stateRef.current = nextState
@@ -640,6 +743,13 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordShadowingAttempt,
       recordExpressionStudy: recordExpressionStudyAttempt,
       recordRecallAttempt: recordRecallAttemptInMemory,
+      toggleFavorite,
+      createGroup,
+      renameGroup,
+      deleteGroup,
+      toggleGroupItem,
+      recordExpressionProgress,
+      saveExpressionFilters,
       forgetConversationTurn: forgetTurn,
       updateProfile,
       resetMemory,
@@ -656,6 +766,13 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordShadowingAttempt,
       recordExpressionStudyAttempt,
       recordRecallAttemptInMemory,
+      toggleFavorite,
+      createGroup,
+      renameGroup,
+      deleteGroup,
+      toggleGroupItem,
+      recordExpressionProgress,
+      saveExpressionFilters,
       forgetTurn,
       updateProfile,
       resetMemory,

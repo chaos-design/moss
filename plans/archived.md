@@ -224,6 +224,15 @@
   `pnpm check`（前端 93 文件 780 用例 + 后端各套件）与 `pnpm build` 通过。真实麦克风、
   逐句音色听感与 390px 视觉待人工验证。
 
+ - T-335：地道表达库新增学习工作流。学习记忆快照加顶层 `expressionStudy`（收藏、分组、逐条进度、
+   筛选位置），按表达身份记账，收藏/分组用按 key LWW + 墓碑合并使取消收藏可跨设备传播，进度
+   `reviews` 取最大值；复用 `sync_learning_memory` 的不透明 jsonb，不改 SQL。词库页恢复上次筛选、
+   行内收藏星标与分组入口、进度徽标，新增「我的学习」工作台与统一学习会话：闪卡自测、例句填空
+   （复用高亮切分 + 词干容错判定）、按分组集中学习、TTS 朗读 + MediaRecorder + ASR 转写的跟读听写
+   （阈值 0.8 容错比对，不支持录音时降级提示）。新增 expression-study/expression-study-state/
+   expression-study-dialog 三个套件及词库、记忆合并/Provider 用例，`pnpm check` + `pnpm build` 通过。
+   无浏览器自动化环境，桌面与 390px 截图、真实麦克风听写未人工验证；墓碑随使用量累积，长期需要清理策略。
+
 ## 验证规则
 
 行为变更以 `pnpm check` 为基础；涉及 Next.js 路由或打包时追加 `pnpm build`，视觉变更

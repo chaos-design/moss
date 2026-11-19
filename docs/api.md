@@ -805,6 +805,16 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
     "items": [],
     "sceneProgress": {},
     "events": [],
+    "expressionStudy": {
+      "favorites": {},
+      "groups": {},
+      "progress": {},
+      "filters": {
+        "value": { "query": "", "categories": [], "source": "all" },
+        "updatedAt": "<ISO-8601 timestamp>"
+      },
+      "updatedAt": "<ISO-8601 timestamp>"
+    },
     "updatedAt": "<ISO-8601 timestamp>"
   },
   "p_expected_revision": 3,
@@ -813,6 +823,11 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
 ```
 
 修订号匹配时写入并递增；不匹配时返回当前快照，客户端合并后最多重试三次。
+
+`expressionStudy` 是地道表达库的学习组织状态（收藏、分组、逐条进度、筛选位置）。它随不透明
+`jsonb` 快照传输，不需要新增表或列；按表达身份记账，收藏与分组用「按 key LWW + 墓碑」合并，
+因此取消收藏或删除分组能跨设备传播，而进度 `reviews` 取两侧最大值。旧快照缺少该字段时，
+解析层补空默认值。
 
 ## RPC `match_long_term_memories`
 

@@ -2,6 +2,7 @@ export {
   conversationContractTemplate,
   conversationInstructions,
 } from "./conversation-prompt-text"
+export * from "./expression-study-state"
 export * from "./learning-memory"
 export * from "./learning-memory-sync"
 export type { PracticeMemoryWrite } from "./practice-memory"

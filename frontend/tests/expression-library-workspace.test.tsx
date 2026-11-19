@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ExpressionLibraryWorkspace } from "@/features/expressions/expression-library-workspace"
 import { builtInExpressionItems } from "@/lib/expression-library"
 import {
+  createEmptyExpressionStudyState,
   createEmptyLearningMemory,
   createExpressionMemoryItemId,
   type LearningMemoryState,
@@ -54,6 +55,13 @@ vi.mock("@/components/auth-provider", () => ({
 
 const memoryMocks = vi.hoisted(() => ({
   recordExpressionStudy: vi.fn(),
+  toggleFavorite: vi.fn(),
+  createGroup: vi.fn(),
+  renameGroup: vi.fn(),
+  deleteGroup: vi.fn(),
+  toggleGroupItem: vi.fn(),
+  recordExpressionProgress: vi.fn(),
+  saveExpressionFilters: vi.fn(),
   state: null as LearningMemoryState | null,
 }))
 
@@ -61,6 +69,13 @@ vi.mock("@/components/learning-memory-provider", () => ({
   useLearningMemory: () => ({
     hydrated: true,
     recordExpressionStudy: memoryMocks.recordExpressionStudy,
+    toggleFavorite: memoryMocks.toggleFavorite,
+    createGroup: memoryMocks.createGroup,
+    renameGroup: memoryMocks.renameGroup,
+    deleteGroup: memoryMocks.deleteGroup,
+    toggleGroupItem: memoryMocks.toggleGroupItem,
+    recordExpressionProgress: memoryMocks.recordExpressionProgress,
+    saveExpressionFilters: memoryMocks.saveExpressionFilters,
     state: memoryMocks.state,
   }),
 }))
@@ -94,6 +109,13 @@ beforeEach(() => {
   window.localStorage.clear()
   memoryMocks.state = createEmptyLearningMemory(new Date("2026-10-05T08:00:00.000Z"))
   memoryMocks.recordExpressionStudy.mockReset()
+  memoryMocks.toggleFavorite.mockReset()
+  memoryMocks.createGroup.mockReset()
+  memoryMocks.renameGroup.mockReset()
+  memoryMocks.deleteGroup.mockReset()
+  memoryMocks.toggleGroupItem.mockReset()
+  memoryMocks.recordExpressionProgress.mockReset()
+  memoryMocks.saveExpressionFilters.mockReset()
   fetchMock.mockReset().mockImplementation((_input, init: RequestInit | undefined) => {
     const method = init?.method ?? "GET"
     const data =
@@ -369,5 +391,51 @@ describe("ExpressionLibraryWorkspace", () => {
 
     fireEvent.click(eye)
     expect(screen.queryByText(translation)).toBeNull()
+  })
+
+  it("restores saved filters and persists each filter change", async () => {
+    memoryMocks.state = {
+      ...createEmptyLearningMemory(new Date("2026-10-05T08:00:00.000Z")),
+      expressionStudy: {
+        ...createEmptyExpressionStudyState(),
+        filters: {
+          value: { query: "rule of thumb", categories: [], source: "all" },
+          updatedAt: "2026-10-05T08:00:00.000Z",
+        },
+      },
+    }
+    render(<ExpressionLibraryWorkspace />)
+
+    const search = screen.getByRole("textbox", { name: "搜索地道表达" }) as HTMLInputElement
+    await waitFor(() => expect(search.value).toBe("rule of thumb"))
+    expect(await screen.findByText("已显示 1 / 1 条")).toBeTruthy()
+
+    fireEvent.change(search, { target: { value: "break the ice" } })
+    expect(memoryMocks.saveExpressionFilters).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "break the ice", source: "all" }),
+    )
+  })
+
+  it("toggles a favorite by expression identity", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "rule of thumb" },
+    })
+    const star = await screen.findByRole("button", { name: "收藏 rule of thumb" })
+    fireEvent.click(star)
+    expect(memoryMocks.toggleFavorite).toHaveBeenCalledWith(
+      expect.stringContaining("rule of thumb"),
+    )
+  })
+
+  it("creates a named study group from the my-study panel", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: "管理分组" }))
+    const nameInput = await screen.findByRole("textbox", { name: "新分组名称" })
+    fireEvent.change(nameInput, { target: { value: "面试表达" } })
+    fireEvent.click(screen.getByRole("button", { name: "新建" }))
+    expect(memoryMocks.createGroup).toHaveBeenCalledWith("面试表达")
   })
 })
