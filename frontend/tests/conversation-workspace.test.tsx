@@ -1045,6 +1045,7 @@ describe("conversation feedback UI", () => {
   it("renders the full voice activity effect and recording reticle", () => {
     const view = render(
       <VoiceCallPanel
+        onRestartRecognition={() => {}}
         onRetryRecognition={() => {}}
         recognitionRetryPending={false}
         callSeconds={4}
@@ -1076,6 +1077,7 @@ describe("conversation feedback UI", () => {
     const onToggleSpeaker = vi.fn()
     render(
       <VoiceCallPanel
+        onRestartRecognition={() => {}}
         onRetryRecognition={() => {}}
         recognitionRetryPending={false}
         callSeconds={64}
@@ -1098,6 +1100,49 @@ describe("conversation feedback UI", () => {
     expect(onEndCall).toHaveBeenCalledOnce()
     expect(onToggleSpeaker).toHaveBeenCalledOnce()
     expect(screen.getByText("你有任何问题吗？")).toBeTruthy()
+  })
+
+  it("offers a restart-recognition entry when recognition is unavailable mid-call", () => {
+    const onRestartRecognition = vi.fn()
+    render(
+      <VoiceCallPanel
+        onRestartRecognition={onRestartRecognition}
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
+        callSeconds={12}
+        callStatus="manual"
+        muted={false}
+        onEndCall={vi.fn()}
+        onToggleMute={vi.fn()}
+        onToggleSpeaker={vi.fn()}
+        speakerEnabled
+        speechRecognitionProgress={null}
+      />,
+    )
+
+    // 文字通话态此前没有恢复入口：通话只能被动结束。重试按钮调用重启识别。
+    expect(screen.getByText("文字通话模式")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "重试语音识别" }))
+    expect(onRestartRecognition).toHaveBeenCalledOnce()
+  })
+
+  it("hides the restart-recognition entry while recognition is healthy", () => {
+    render(
+      <VoiceCallPanel
+        onRestartRecognition={() => {}}
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
+        callSeconds={4}
+        callStatus="listening"
+        muted={false}
+        onEndCall={vi.fn()}
+        onToggleMute={vi.fn()}
+        onToggleSpeaker={vi.fn()}
+        speakerEnabled
+        speechRecognitionProgress={100}
+      />,
+    )
+    expect(screen.queryByRole("button", { name: "重试语音识别" })).toBeNull()
   })
 
   it("shows the original error, concrete reason, correction, and practice examples", () => {

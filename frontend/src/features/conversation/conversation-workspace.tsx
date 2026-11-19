@@ -396,6 +396,7 @@ export function ConversationWorkspace({
     speak,
     startCall,
     startNewConversation,
+    startRecognition,
     toggleMute,
     toggleSpeaker,
     voiceOptions,
@@ -767,6 +768,7 @@ export function ConversationWorkspace({
               <VoiceCallPanel
                 callSeconds={callSeconds}
                 callStatus={callStatus}
+                onRestartRecognition={startRecognition}
                 onRetryRecognition={retryRecognition}
                 recognitionRetryPending={recognitionRetryPending}
                 idlePrompt={idlePrompt}
@@ -1664,6 +1666,7 @@ export function VoiceCallPanel({
   idlePrompt,
   muted,
   onEndCall,
+  onRestartRecognition,
   onRetryRecognition,
   onToggleMute,
   onToggleSpeaker,
@@ -1676,6 +1679,7 @@ export function VoiceCallPanel({
   idlePrompt?: string | null
   muted: boolean
   onEndCall: () => void
+  onRestartRecognition: () => void
   onRetryRecognition: () => void
   onToggleMute: () => void
   onToggleSpeaker: () => void
@@ -1712,6 +1716,18 @@ export function VoiceCallPanel({
             >
               <RotateCcwIcon data-icon="inline-start" />
               重试识别
+            </Button>
+          ) : null}
+          {callStatus === "manual" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={onRestartRecognition}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              重试语音识别
             </Button>
           ) : null}
         </div>

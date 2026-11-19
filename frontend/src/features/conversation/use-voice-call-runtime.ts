@@ -193,6 +193,9 @@ export function useVoiceCallRuntime({
   const echoGuardUntilRef = useRef(0)
   const idleReminderCountRef = useRef(0)
   const lastVoiceActivityAtRef = useRef(Date.now())
+  // 学习者此刻正在说话（语音起点已触发、尚未产出转写）：重启识别时保持「录音中」
+  // 而不回落到「可以说话」，否则说话中途会看到状态倒退。
+  const voiceInProgressRef = useRef(false)
   const previewingVoiceRef = useRef<string | null>(null)
   // 正在朗读（或合成）的文本：转写里的播放按钮据此显示加载/停止状态。
   const [speechTargetText, setSpeechTargetText] = useState("")
@@ -321,12 +324,14 @@ export function useVoiceCallRuntime({
         !pendingRef.current &&
         !speakingRef.current
       ) {
+        voiceInProgressRef.current = false
         dispatch({ type: "call-status-changed", status: "listening" })
       }
     },
     onSpeechStart: () => {
       if (callActiveRef.current && !mutedRef.current) {
         markVoiceActivity()
+        voiceInProgressRef.current = true
         // 检测到说话立刻进入录音态：这是「真的在录」的直接证据，不必等到上传识别
         // 才变化。正常轮次与打断恢复后都成立。
         dispatch({ type: "call-status-changed", status: "recording" })
@@ -340,6 +345,7 @@ export function useVoiceCallRuntime({
       }
       interruptAssistant()
       if (callActiveRef.current && !mutedRef.current) {
+        voiceInProgressRef.current = true
         dispatch({ type: "call-status-changed", status: "recording" })
         // api 接入的采集在播报前已停止：打断后立即重启；本机/浏览器通道仍在监听，
         // 无需重启（重复 start 会先经过 connecting 抖动状态）。
@@ -360,6 +366,7 @@ export function useVoiceCallRuntime({
       }
       if (normalized && !echoBlocked && isSupportedSpeechTranscript(normalized, language)) {
         resetIdleReminders()
+        voiceInProgressRef.current = false
         // 每句识别结果立即提交为独立消息（多次说 = 多条消息）；提交事件会清空实时
         // 识别条，回答由静默触发器在学习者说完后统一请求，不逐句抢答。
         hasUnansweredVoiceTurnRef.current = true
@@ -367,6 +374,7 @@ export function useVoiceCallRuntime({
         scheduleVoiceReplyTrigger()
         return
       }
+      voiceInProgressRef.current = false
       if (callActiveRef.current && !mutedRef.current) {
         dispatch({ type: "call-status-changed", status: "listening" })
       }
@@ -424,7 +432,11 @@ export function useVoiceCallRuntime({
     void startStreamingRecognition(stream)
       .then(() => {
         if (callActiveRef.current && !mutedRef.current && !speakingRef.current) {
-          dispatch({ type: "call-status-changed", status: "listening" })
+          // 说话中途重启识别（api 打断恢复）时保持「录音中」，不倒退回「可以说话」。
+          dispatch({
+            type: "call-status-changed",
+            status: voiceInProgressRef.current ? "recording" : "listening",
+          })
         }
       })
       .catch((error) => {
@@ -655,6 +667,7 @@ export function useVoiceCallRuntime({
       resetVoiceTurn()
       shouldListenRef.current = false
       listeningRef.current = false
+      voiceInProgressRef.current = false
       stopStreamingAsr()
       for (const track of streamRef.current?.getTracks() ?? []) {
         track.stop()
@@ -768,6 +781,7 @@ export function useVoiceCallRuntime({
       callStartRequestRef.current += 1
       callActiveRef.current = false
       shouldListenRef.current = false
+      voiceInProgressRef.current = false
       resetVoiceTurn()
       stopStreamingAsr()
       for (const track of streamRef.current?.getTracks() ?? []) {

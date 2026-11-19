@@ -555,6 +555,7 @@ export function useVoiceConversation({
     speak,
     startCall,
     startNewConversation,
+    startRecognition,
     toggleMute,
     toggleSpeaker,
     ttsTransport,
