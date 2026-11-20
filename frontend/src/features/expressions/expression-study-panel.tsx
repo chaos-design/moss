@@ -1,10 +1,12 @@
 "use client"
 
 import {
+  BrainCircuitIcon,
   ChevronDownIcon,
   FolderPlusIcon,
   LayersIcon,
   PencilIcon,
+  ShuffleIcon,
   SparklesIcon,
   StarIcon,
   Trash2Icon,
@@ -42,6 +44,7 @@ import type { ExpressionProgressStatus } from "@/lib/memory"
 import { type ExpressionStudyState, getActiveFavorites, getActiveGroups } from "@/lib/memory"
 
 const studyModes: ExpressionStudyMode[] = ["flashcard", "cloze", "dictation"]
+const randomBatchSizes = [5, 10, 20]
 
 export function ExpressionStudyPanel({
   study,
@@ -142,20 +145,37 @@ export function ExpressionStudyPanel({
                 {studyModes.map((mode) => (
                   <DropdownMenuItem
                     key={mode}
-                    onSelect={() => start({ kind: "filtered" }, mode)}
+                    onClick={() => start({ kind: "filtered" }, mode)}
                   >
                     {expressionStudyModeLabels[mode]}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>随机与记忆法</DropdownMenuLabel>
+                {randomBatchSizes.map((count) => (
+                  <DropdownMenuItem
+                    key={count}
+                    onClick={() => start({ kind: "random", count }, "flashcard")}
+                  >
+                    <ShuffleIcon data-icon="inline-start" />
+                    随机学 {count} 条
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem onClick={() => start({ kind: "ebbinghaus" }, "flashcard")}>
+                  <BrainCircuitIcon data-icon="inline-start" />
+                  艾宾浩斯记忆循环
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={() => start({ kind: "review", status: "learning" }, "flashcard")}
+                onClick={() => start({ kind: "review", status: "learning" }, "flashcard")}
               >
                 继续学习（学习中）
               </DropdownMenuItem>
               <DropdownMenuItem
-                onSelect={() => start({ kind: "review", status: "mastered" }, "cloze")}
+                onClick={() => start({ kind: "review", status: "mastered" }, "cloze")}
               >
                 巩固已掌握
               </DropdownMenuItem>

@@ -50,6 +50,10 @@ function scopeLabel(scope: ExpressionStudyScope, groups: { id: string; name: str
       return groups.find((group) => group.id === scope.groupId)?.name ?? "学习分组"
     case "review":
       return scope.status === "learning" ? "学习中" : "已掌握"
+    case "random":
+      return `随机学习 ${scope.count} 条`
+    case "ebbinghaus":
+      return "艾宾浩斯记忆"
   }
 }
 
@@ -61,6 +65,7 @@ export function ExpressionStudyDialog({
   initialMode,
   onClose,
   onProgress,
+  onReshuffle,
 }: {
   open: boolean
   items: ExpressionLibraryItem[]
@@ -69,6 +74,7 @@ export function ExpressionStudyDialog({
   initialMode: ExpressionStudyMode
   onClose: () => void
   onProgress: (identity: string, update: ExpressionProgressUpdate) => void
+  onReshuffle?: () => void
 }) {
   const [mode, setMode] = useState<ExpressionStudyMode>(initialMode)
   const [index, setIndex] = useState(0)
@@ -148,6 +154,10 @@ export function ExpressionStudyDialog({
               <Button
                 type="button"
                 onClick={() => {
+                  if (onReshuffle) {
+                    onReshuffle()
+                    return
+                  }
                   setIndex(0)
                   setStats({ mastered: 0, practice: 0 })
                   setRevealed(false)
@@ -156,7 +166,7 @@ export function ExpressionStudyDialog({
                   dictation.reset()
                 }}
               >
-                再学一组
+                {onReshuffle ? "换一组随机学习" : "再学一组"}
               </Button>
             </div>
           </div>

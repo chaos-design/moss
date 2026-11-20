@@ -249,7 +249,7 @@ flowchart LR
 | 用户导入表达 | `moss:expression-library:v1:<userId>` | 本机先写，通过 `/api/expressions` 分批同步 `expression_library_items` | RLS 用户隔离；同一用户、场景和规范化表达幂等更新；译文、用法、记忆提示和拓展例句随行持久化 |
 | 学习记忆快照 | `moss:learning-memory:v1:<userId>` | Supabase 快照与 Realtime | 本地优先，按身份隔离 |
 | 学习进度与问题分析 | 学习记忆中的 `sceneProgress`、`items` 和 `events` | 随学习记忆快照同步 | 事件按 ID 合并并完整保留；地图、场景库和分析页只派生真实记录，空数据展示空状态 |
-| 表达学习记忆 | 学习记忆中的 `items` 与 `expression` 事件 | 随学习记忆快照同步，并经 `/api/memory-documents` 写向量记忆 | `sceneId` 使用词库分类而非场景 ID，因此不写入 `sceneProgress`，不影响场景完成度 |
+| 表达学习记忆 | 学习记忆中的 `items` 与 `expression`/`review` 事件 | 随学习记忆快照同步，并经 `/api/memory-documents` 写向量记忆 | `sceneId` 使用词库分类而非场景 ID，因此不写入 `sceneProgress`，不影响场景完成度；词库的艾宾浩斯循环也只经 `recordExpressionStudy`/`rateReview` 写入这里，随机抽样不落盘 |
 | 地道表达学习组织 | 学习记忆快照的 `expressionStudy`（收藏、分组、逐条进度、筛选位置） | 随学习记忆快照经 `sync_learning_memory` 跨设备同步；不写入向量记忆 | 按表达身份（`sceneCategory:规范化短语`）记账；收藏/分组用「按 key LWW + 墓碑」合并，取消收藏能跨设备传播；进度 `reviews` 取两侧最大值，避免重试重复计数；推荐分组只由词库和进度派生，加入后写成普通分组 |
 | 回想尝试 | 学习记忆中的 `recall` 事件 | 仅随学习记忆快照同步，不写向量记忆 | 记录线索到揭示答案的实际时长；刻意不判定成败，也不改写强度与间隔，因此不计入薄弱点 |
 | 对话回合身份 | 学习记忆事件中的 `conversation.turnId` | 随学习记忆快照同步 | 回合以学习者消息 ID 为主键：重试改写同一回合而不是追加新回合，删除回合按事件记录的增量精确回滚，因此重试不会被计成两次练习 |

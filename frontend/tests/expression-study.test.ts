@@ -67,6 +67,48 @@ describe("expression study logic", () => {
     expect(checkDictation("rule of thumb", " totally wrong words here ").passed).toBe(false)
   })
 
+  it("draws a bounded random sample from the current filtered results", () => {
+    const filtered = [a, b, c]
+    const base = {
+      filteredItems: filtered,
+      favoriteIdentities: new Set<string>(),
+      progressByIdentity: {},
+    }
+
+    expect(
+      resolveStudyItems({
+        ...base,
+        scope: { kind: "random", count: 2 },
+        random: () => 0,
+      }).map((entry) => entry.id),
+    ).toEqual([b.id, c.id])
+    expect(
+      resolveStudyItems({
+        ...base,
+        scope: { kind: "random", count: 2 },
+        random: () => 0.999,
+      }).map((entry) => entry.id),
+    ).toEqual([a.id, b.id])
+    expect(
+      resolveStudyItems({
+        ...base,
+        scope: { kind: "random", count: 99 },
+        random: () => 0,
+      }),
+    ).toHaveLength(filtered.length)
+  })
+
+  it("hands the whole filtered pool to the ebbinghaus flow", () => {
+    expect(
+      resolveStudyItems({
+        filteredItems: [a, b, c],
+        favoriteIdentities: new Set<string>(),
+        progressByIdentity: {},
+        scope: { kind: "ebbinghaus" },
+      }).map((entry) => entry.id),
+    ).toEqual([a.id, b.id, c.id])
+  })
+
   it("resolves favorites, groups and progress scopes by expression identity", () => {
     const filtered = [a, b, c]
     const favoriteIdentities = new Set(["work:rule of thumb"])

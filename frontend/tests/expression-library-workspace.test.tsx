@@ -70,6 +70,7 @@ const memoryMocks = vi.hoisted(() => ({
   toggleGroupItem: vi.fn(),
   recordExpressionProgress: vi.fn(),
   saveExpressionFilters: vi.fn(),
+  rateReview: vi.fn(),
   state: null as LearningMemoryState | null,
 }))
 
@@ -85,6 +86,7 @@ vi.mock("@/components/learning-memory-provider", () => ({
     toggleGroupItem: memoryMocks.toggleGroupItem,
     recordExpressionProgress: memoryMocks.recordExpressionProgress,
     saveExpressionFilters: memoryMocks.saveExpressionFilters,
+    rateReview: memoryMocks.rateReview,
     state: memoryMocks.state,
   }),
 }))
@@ -126,6 +128,7 @@ beforeEach(() => {
   memoryMocks.toggleGroupItem.mockReset()
   memoryMocks.recordExpressionProgress.mockReset()
   memoryMocks.saveExpressionFilters.mockReset()
+  memoryMocks.rateReview.mockReset()
   fetchMock.mockReset().mockImplementation((input, init: RequestInit | undefined) => {
     const url =
       typeof input === "string"
@@ -486,6 +489,35 @@ describe("ExpressionLibraryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
 
     expect(await screen.findByRole("menuitem", { name: "闪卡自测" })).toBeTruthy()
+  })
+
+  it("exposes random and ebbinghaus learning methods in the start menu", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+
+    expect(await screen.findByRole("menuitem", { name: "随机学 5 条" })).toBeTruthy()
+    expect(screen.getByRole("menuitem", { name: "艾宾浩斯记忆循环" })).toBeTruthy()
+  })
+
+  it("opens a bounded random study session from the start menu", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "随机学 5 条" }))
+
+    expect(await screen.findByText("学习 · 随机学习 5 条")).toBeTruthy()
+    expect(screen.getByText("1 / 5")).toBeTruthy()
+  })
+
+  it("opens the ebbinghaus cycle connected to long-term memory", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "艾宾浩斯记忆循环" }))
+
+    expect(await screen.findByText(/艾宾浩斯记忆 · ① 学习/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: /揭示答案/ })).toBeTruthy()
   })
 
   it("opens a row group menu without a Base UI context error", async () => {

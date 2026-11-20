@@ -24,12 +24,16 @@ export type ExpressionStudyScope =
   | { kind: "favorites" }
   | { kind: "group"; groupId: string }
   | { kind: "review"; status: ExpressionProgressStatus }
+  | { kind: "random"; count: number }
+  | { kind: "ebbinghaus" }
 
 export const expressionStudyScopeLabels: Record<ExpressionStudyScope["kind"], string> = {
   filtered: "当前筛选结果",
   favorites: "我的收藏",
   group: "学习分组",
   review: "按进度复习",
+  random: "随机学习",
+  ebbinghaus: "艾宾浩斯记忆",
 }
 
 export type Cloze = {
@@ -143,24 +147,54 @@ export function checkDictation(
   return { passed: similarity >= threshold, similarity }
 }
 
+/**
+ * Fisher-Yates 洗牌。`random` 可注入，便于测试固定抽样结果；默认使用 Math.random。
+ * 只在 UI 层决定学习顺序，不写入任何持久化状态，因此刷新后会重新抽样。
+ */
+export function shuffleStudyItems<T>(
+  items: readonly T[],
+  random: () => number = Math.random,
+): T[] {
+  const result = [...items]
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.min(index, Math.floor(random() * (index + 1)))
+    const current = result[index]
+    result[index] = result[swapIndex]
+    result[swapIndex] = current
+  }
+  return result
+}
+
 export type StudyScopeInput = {
   filteredItems: readonly ExpressionLibraryItem[]
   favoriteIdentities: ReadonlySet<string>
   groupItemIds?: readonly string[]
   progressByIdentity: Readonly<Record<string, ExpressionProgressStatus>>
   scope: ExpressionStudyScope
+  random?: () => number
 }
 
-/** 解析学习范围：收藏/分组/复习进度都按表达身份取当前词库里仍存在的条目。 */
+/**
+ * 解析学习范围：收藏/分组/复习进度都按表达身份取当前词库里仍存在的条目。
+ * 随机范围从当前筛选结果里抽取固定条数；艾宾浩斯范围把整个筛选结果交给记忆法流程自行编排。
+ */
 export function resolveStudyItems({
   filteredItems,
   favoriteIdentities,
   groupItemIds,
   progressByIdentity,
   scope,
+  random = Math.random,
 }: StudyScopeInput): ExpressionLibraryItem[] {
   switch (scope.kind) {
     case "filtered":
+      return [...filteredItems]
+    case "random":
+      return shuffleStudyItems(filteredItems, random).slice(
+        0,
+        Math.max(0, Math.min(Math.floor(scope.count), filteredItems.length)),
+      )
+    case "ebbinghaus":
       return [...filteredItems]
     case "favorites":
       return filteredItems.filter((item) =>

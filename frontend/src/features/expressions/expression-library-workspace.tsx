@@ -64,6 +64,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { ExpressionEbbinghausDialog } from "@/features/expressions/expression-ebbinghaus-dialog"
 import { ExpressionEditDialog } from "@/features/expressions/expression-edit-dialog"
 import { ExpressionImportDialog } from "@/features/expressions/expression-import-dialog"
 import { ExpressionStudyDialog } from "@/features/expressions/expression-study-dialog"
@@ -155,6 +156,7 @@ export function ExpressionLibraryWorkspace() {
     toggleGroupItem,
     recordExpressionProgress,
     saveExpressionFilters,
+    rateReview,
   } = useLearningMemory()
   const { status } = useAuth()
   const expressionStudy: ExpressionStudyState = state.expressionStudy
@@ -292,6 +294,12 @@ export function ExpressionLibraryWorkspace() {
     setSession({ id: sessionCounter.current, scope, mode })
   }, [])
 
+  // 随机学习换一组：递增 session id 让 sessionItems 重新洗牌，同时把对话框状态整体重置。
+  const reshuffleStudy = useCallback(() => {
+    sessionCounter.current += 1
+    setSession((current) => (current ? { ...current, id: sessionCounter.current } : null))
+  }, [])
+
   const joinRecommendation = useCallback(
     (recommendation: ExpressionRecommendation) => {
       addGroupItems(
@@ -389,7 +397,7 @@ export function ExpressionLibraryWorkspace() {
     persistFilters({ categories: [] })
   }
 
-  const handleStudy = useCallback(
+  const recordLibraryMemory = useCallback(
     (item: ExpressionLibraryItem) => {
       recordExpressionStudy({
         itemId: createExpressionMemoryItemId(item.clientId),
@@ -401,9 +409,16 @@ export function ExpressionLibraryWorkspace() {
         example: item.example,
         libraryKind: item.kind,
       })
-      toast.success(`已把“${item.phrase}”加入长期记忆`)
     },
     [recordExpressionStudy],
+  )
+
+  const handleStudy = useCallback(
+    (item: ExpressionLibraryItem) => {
+      recordLibraryMemory(item)
+      toast.success(`已把“${item.phrase}”加入长期记忆`)
+    },
+    [recordLibraryMemory],
   )
 
   async function handleImport(result: ExpressionImportResult) {
@@ -631,16 +646,31 @@ export function ExpressionLibraryWorkspace() {
       </p>
 
       {session ? (
-        <ExpressionStudyDialog
-          key={session.id}
-          open
-          items={sessionItems}
-          scope={session.scope}
-          study={expressionStudy}
-          initialMode={session.mode}
-          onClose={() => setSession(null)}
-          onProgress={recordExpressionProgress}
-        />
+        session.scope.kind === "ebbinghaus" ? (
+          <ExpressionEbbinghausDialog
+            key={session.id}
+            open
+            pool={sessionItems}
+            catalogItems={allItems}
+            memoryItems={state.items}
+            onClose={() => setSession(null)}
+            onLearn={recordLibraryMemory}
+            onRate={rateReview}
+            onProgress={recordExpressionProgress}
+          />
+        ) : (
+          <ExpressionStudyDialog
+            key={session.id}
+            open
+            items={sessionItems}
+            scope={session.scope}
+            study={expressionStudy}
+            initialMode={session.mode}
+            onClose={() => setSession(null)}
+            onProgress={recordExpressionProgress}
+            onReshuffle={session.scope.kind === "random" ? reshuffleStudy : undefined}
+          />
+        )
       ) : null}
 
       {editingItem ? (
