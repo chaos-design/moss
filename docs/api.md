@@ -16,6 +16,7 @@
 | `GET /api/expressions` | Supabase session | 120 次/分钟/用户 | 当前用户导入的表达 |
 | `POST /api/expressions` | Supabase session | 120 次/分钟/用户 | 分批导入或更新表达 |
 | `DELETE /api/expressions` | Supabase session | 120 次/分钟/用户 | 删除一条导入表达 |
+| `POST /api/expressions/generate` | Supabase session 或加密自带配置 | 12 次/分钟/主体（单进程） | 按短语生成导入字段 |
 | `GET /api/account` | Supabase session | 10 次/小时/用户 | 导出当前用户全部云端数据 |
 | `DELETE /api/account` | Supabase session + 邮箱确认 | 5 次/小时/用户 | 删除账户并审计残留 |
 | `POST /api/memory-documents` | Supabase session | 60 次/分钟/用户 | 复习、跟读与表达学习向量记忆 |
@@ -620,9 +621,10 @@ toast、对话记录和本机存储，规则如下：
 
 ## `/api/expressions`
 
-内置 1000 条表达随 Web 构建发布，不经过接口。该接口只同步当前用户通过 CSV 或 JSON
+内置 1170 条表达随 Web 构建发布，不经过接口。该接口只同步当前用户通过 CSV 或 JSON
 导入的表达；浏览器先写入版本化 localStorage，再按每批最多 200 条调用 `POST`，因此整份
-文件不会被静默截断。
+文件不会被静默截断。导入字段除必填项外还支持 `exampleTranslation`、`usage`、`memoryTip`
+和 `examples`（每条含 `text` 与可选 `translation`）。
 
 `GET` 每页返回最多 200 条，并使用十进制 `cursor` 继续读取：
 
@@ -640,6 +642,12 @@ toast、对话记录和本机存储，规则如下：
         "why": "eye 代表观察，keep 表示持续维持注意。",
         "origin": "由视觉动作形成的常用表达。",
         "example": "Could you keep an eye on my bag?",
+        "exampleTranslation": "能帮我看一下包吗？",
+        "usage": "常接宾语，也可接 over 引出照看范围。",
+        "memoryTip": "想象眼睛停在目标上。",
+        "examples": [
+          { "text": "Keep an eye on the kids.", "translation": "照看一下孩子。" }
+        ],
         "context": "通用",
         "kind": "idiom",
         "sceneCategory": "social",
@@ -662,6 +670,43 @@ toast、对话记录和本机存储，规则如下：
 
 `DELETE` 使用 `?clientId=<client-id>`。演示模式下读取返回空云端集合，写入与删除返回
 `202`，本机内容继续可用。浏览器编辑和删除均先更新本机数据，再调用对应云端接口。
+
+## `/api/expressions/generate`
+
+`POST` 请求体为 `{ "phrases": ["keep an eye on"], "modelConfigEnvelope"? }`，一次最多
+10 个短语，每个不超过 120 字符。认证请求复用 Supabase session；携带加密浏览器模型配置时
+可直接调用自带模型，明文配置会被拒绝。服务端要求模型只返回 JSON 数组，并按导入契约校验
+每条记录，失败时不把 Provider 错误透出客户端。
+
+成功响应：
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "phrase": "keep an eye on",
+        "meaning": "留意；照看",
+        "why": "eye 代表观察，keep 表示持续维持注意。",
+        "origin": "由视觉动作形成的常用表达。",
+        "example": "Could you keep an eye on my bag?",
+        "exampleTranslation": "能帮我看一下包吗？",
+        "sceneCategory": "social",
+        "context": "通用",
+        "kind": "idiom",
+        "usage": "常接宾语。",
+        "memoryTip": "想象眼睛停在目标上。",
+        "examples": [
+          { "text": "Keep an eye on the kids.", "translation": "照看一下孩子。" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+客户端把 `items` 写入 JSON 预检编辑器，不直接导入；学习者确认字段后才走本机优先的导入
+链路。演示模式返回结构完整的示例记录且不调用外部模型。
 
 ## `/api/account`
 

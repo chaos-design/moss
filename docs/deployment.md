@@ -281,7 +281,9 @@ loopback WebSocket。浏览器页面使用 HTTPS 时，本机服务需提供受�
 
 当前 `update.sql` 补充对话与消息的客户端幂等键、场景键、父会话所有权策略，并将业务表
 和序列权限收敛到 authenticated 角色，同时创建 `expression_library_items`、
-`rate_limit_buckets` 与 `check_rate_limit`。必须先应用数据库更新，再部署依赖表达导入和
+`rate_limit_buckets` 与 `check_rate_limit`，并为 `expression_library_items` 增加
+`example_translation`、`usage_note`、`memory_tip`、`extra_examples` 四列以持久化 AI 生成
+的增强字段。必须先应用数据库更新，再部署依赖表达导入和
 共享限流的新应用版本。执行后应先运行 `pnpm db:test:remote` 确认匿名访问被拒绝，再使用
 两个登录账户验证会话及表达隔离、限流隔离，并用同一账户的两个浏览器验证恢复和同步。
 长期记忆表、pgvector 索引、RLS、`sync_learning_memory` 和

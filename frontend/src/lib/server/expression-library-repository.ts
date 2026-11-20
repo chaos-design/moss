@@ -12,6 +12,10 @@ type ExpressionLibraryRow = {
   reasoning?: unknown
   origin_note?: unknown
   example?: unknown
+  example_translation?: unknown
+  usage_note?: unknown
+  memory_tip?: unknown
+  extra_examples?: unknown
   context?: unknown
   kind?: unknown
   scene_category?: unknown
@@ -28,6 +32,10 @@ function parseExpressionRow(row: ExpressionLibraryRow) {
     why: row.reasoning,
     origin: row.origin_note,
     example: row.example,
+    exampleTranslation: row.example_translation,
+    usage: row.usage_note,
+    memoryTip: row.memory_tip,
+    examples: row.extra_examples,
     context: row.context,
     kind: row.kind,
     sceneCategory: row.scene_category,
@@ -42,12 +50,16 @@ function createExpressionRow(item: ExpressionLibraryItem, userId: string) {
     client_id: item.clientId,
     context: item.context,
     example: item.example,
+    example_translation: item.exampleTranslation ?? null,
+    extra_examples: item.examples ? JSON.stringify(item.examples) : null,
     kind: item.kind,
     meaning: item.meaning,
+    memory_tip: item.memoryTip ?? null,
     origin_note: item.origin,
     phrase: item.phrase,
     reasoning: item.why,
     scene_category: item.sceneCategory,
+    usage_note: item.usage ?? null,
     user_id: userId,
   }
 }
@@ -66,7 +78,7 @@ export async function listExpressionLibraryItems({
   const { data, error } = await client
     .from("expression_library_items")
     .select(
-      "id,client_id,phrase,meaning,reasoning,origin_note,example,context,kind,scene_category,created_at,updated_at",
+      "id,client_id,phrase,meaning,reasoning,origin_note,example,example_translation,usage_note,memory_tip,extra_examples,context,kind,scene_category,created_at,updated_at",
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false })

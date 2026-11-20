@@ -1,5 +1,9 @@
 import type { SceneCategory } from "@/lib/demo-data"
-import type { ExpressionKind, ExpressionLibraryItem } from "@/lib/expression-library-schema"
+import {
+  type ExpressionKind,
+  type ExpressionLibraryItem,
+  normalizeExpressionExamples,
+} from "@/lib/expression-library-schema"
 import type { IdiomaticExpressionContext } from "@/lib/idiomatic-expressions"
 
 const expressionContexts = new Set<IdiomaticExpressionContext>(["日常", "职场", "通用"])
@@ -55,6 +59,9 @@ export function parseImportedExpressionItem(value: unknown): ExpressionLibraryIt
   const phrase = item.phrase.normalize("NFKC").replace(/\s+/g, " ").trim()
   const exampleTranslation =
     typeof item.exampleTranslation === "string" ? item.exampleTranslation.trim() : ""
+  const usage = typeof item.usage === "string" ? item.usage.trim() : ""
+  const memoryTip = typeof item.memoryTip === "string" ? item.memoryTip.trim() : ""
+  const examples = normalizeExpressionExamples(item.examples)
   return {
     clientId: item.clientId.trim(),
     context: item.context as IdiomaticExpressionContext,
@@ -63,11 +70,14 @@ export function parseImportedExpressionItem(value: unknown): ExpressionLibraryIt
     id: typeof item.id === "string" && item.id ? item.id : `imported:${item.clientId.trim()}`,
     kind: item.kind as ExpressionKind,
     meaning: item.meaning.trim(),
+    ...(memoryTip && memoryTip.length <= 500 ? { memoryTip } : {}),
     origin: item.origin.trim(),
     phrase,
     sceneCategory: item.sceneCategory as SceneCategory,
     source: "imported",
+    ...(usage && usage.length <= 1_000 ? { usage } : {}),
     why: item.why.trim(),
+    ...(examples && examples.length > 0 ? { examples } : {}),
     ...(typeof item.createdAt === "string" ? { createdAt: item.createdAt } : {}),
     ...(typeof item.updatedAt === "string" ? { updatedAt: item.updatedAt } : {}),
   }

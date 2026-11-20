@@ -38,6 +38,13 @@ const validImportContent = JSON.stringify([
     kind: "idiom",
   },
 ])
+const generatedImportItem = {
+  ...(JSON.parse(validImportContent)[0] as Record<string, unknown>),
+  exampleTranslation: "能帮我看一下包吗？",
+  usage: "常接宾语，也可接 over 引出照看范围。",
+  memoryTip: "想象眼睛停在目标上。",
+  examples: [{ text: "Keep an eye on the kids for me.", translation: "帮我照看一下孩子。" }],
+}
 
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowserClient: () => null,
@@ -57,6 +64,7 @@ const memoryMocks = vi.hoisted(() => ({
   recordExpressionStudy: vi.fn(),
   toggleFavorite: vi.fn(),
   createGroup: vi.fn(),
+  addGroupItems: vi.fn(),
   renameGroup: vi.fn(),
   deleteGroup: vi.fn(),
   toggleGroupItem: vi.fn(),
@@ -71,6 +79,7 @@ vi.mock("@/components/learning-memory-provider", () => ({
     recordExpressionStudy: memoryMocks.recordExpressionStudy,
     toggleFavorite: memoryMocks.toggleFavorite,
     createGroup: memoryMocks.createGroup,
+    addGroupItems: memoryMocks.addGroupItems,
     renameGroup: memoryMocks.renameGroup,
     deleteGroup: memoryMocks.deleteGroup,
     toggleGroupItem: memoryMocks.toggleGroupItem,
@@ -111,13 +120,25 @@ beforeEach(() => {
   memoryMocks.recordExpressionStudy.mockReset()
   memoryMocks.toggleFavorite.mockReset()
   memoryMocks.createGroup.mockReset()
+  memoryMocks.addGroupItems.mockReset()
   memoryMocks.renameGroup.mockReset()
   memoryMocks.deleteGroup.mockReset()
   memoryMocks.toggleGroupItem.mockReset()
   memoryMocks.recordExpressionProgress.mockReset()
   memoryMocks.saveExpressionFilters.mockReset()
-  fetchMock.mockReset().mockImplementation((_input, init: RequestInit | undefined) => {
+  fetchMock.mockReset().mockImplementation((input, init: RequestInit | undefined) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url
     const method = init?.method ?? "GET"
+    if (url.includes("/api/expressions/generate")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: { items: [generatedImportItem] } })),
+      )
+    }
     const data =
       method === "GET"
         ? {
@@ -231,6 +252,26 @@ describe("ExpressionLibraryWorkspace", () => {
       "/api/expressions",
       expect.objectContaining({ method: "POST" }),
     )
+  })
+
+  it("generates an enriched import record from an input phrase", async () => {
+    render(<ExpressionLibraryWorkspace />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }))
+    fireEvent.click(screen.getByRole("tab", { name: /AI 生成/ }))
+    fireEvent.change(screen.getByRole("textbox", { name: "英文短语" }), {
+      target: { value: "keep an eye on" },
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "生成导入数据" }))
+    })
+
+    expect(await screen.findByText(/已生成 1 条表达/)).toBeTruthy()
+    const editor = screen.getByRole("textbox", { name: "JSON 数据" }) as HTMLTextAreaElement
+    expect(editor.value).toContain("exampleTranslation")
+    expect(editor.value).toContain("memoryTip")
+    expect(await screen.findByRole("button", { name: "导入 1 条" })).toBeTruthy()
   })
 
   it("uploads a JSON file through the file mode", async () => {
@@ -437,5 +478,60 @@ describe("ExpressionLibraryWorkspace", () => {
     fireEvent.change(nameInput, { target: { value: "面试表达" } })
     fireEvent.click(screen.getByRole("button", { name: "新建" }))
     expect(memoryMocks.createGroup).toHaveBeenCalledWith("面试表达")
+  })
+
+  it("opens the start learning menu without a Base UI context error", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+
+    expect(await screen.findByRole("menuitem", { name: "闪卡自测" })).toBeTruthy()
+  })
+
+  it("opens a row group menu without a Base UI context error", async () => {
+    render(<ExpressionLibraryWorkspace />)
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "rule of thumb" },
+    })
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "管理 rule of thumb 的学习分组" }),
+    )
+
+    expect(await screen.findByText("加入分组")).toBeTruthy()
+  })
+
+  it("joins a recommended group with one memory write", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /推荐分组/ }))
+
+    expect(await screen.findByText("A2 · 入门常用")).toBeTruthy()
+    expect(screen.getByText("B2 · 熟练表达")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "仅加入推荐分组 A2 · 入门常用" }))
+
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledTimes(1)
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
+      "recommended:level-A2",
+      "A2 · 入门常用",
+      expect.arrayContaining(["clothing:shop around"]),
+    )
+  })
+
+  it("joins and immediately opens a recommended group for study", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /推荐分组/ }))
+    fireEvent.click(
+      await screen.findByRole("button", { name: "加入并学习推荐分组 A2 · 入门常用" }),
+    )
+
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
+      "recommended:level-A2",
+      "A2 · 入门常用",
+      expect.arrayContaining(["clothing:shop around"]),
+    )
+    expect(await screen.findByText("这个范围里还没有表达")).toBeTruthy()
   })
 })

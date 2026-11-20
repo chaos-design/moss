@@ -13,6 +13,7 @@ import {
 } from "react"
 import type { RecallRating } from "@/lib/memory"
 import {
+  addExpressionsToGroup as addExpressionsToGroupInMemory,
   type ConversationTurnMemoryInput,
   createDefaultLearningMemory,
   createEmptyLearningMemory,
@@ -70,6 +71,7 @@ type LearningMemoryContextValue = {
   /** 地道表达库学习组织：收藏/分组/进度/筛选，随快照跨设备同步。 */
   toggleFavorite: (identity: string) => void
   createGroup: (name: string) => string
+  addGroupItems: (groupId: string, name: string, identities: readonly string[]) => void
   renameGroup: (groupId: string, name: string) => void
   deleteGroup: (groupId: string) => void
   toggleGroupItem: (groupId: string, identity: string) => void
@@ -670,6 +672,15 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
     [commitExpressionStudy],
   )
 
+  const addGroupItems = useCallback(
+    (groupId: string, name: string, identities: readonly string[]) => {
+      commitExpressionStudy((study, now) =>
+        addExpressionsToGroupInMemory(study, groupId, name, identities, now),
+      )
+    },
+    [commitExpressionStudy],
+  )
+
   const renameGroup = useCallback(
     (groupId: string, name: string) => {
       commitExpressionStudy((study, now) =>
@@ -745,6 +756,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordRecallAttempt: recordRecallAttemptInMemory,
       toggleFavorite,
       createGroup,
+      addGroupItems,
       renameGroup,
       deleteGroup,
       toggleGroupItem,
@@ -768,6 +780,7 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
       recordRecallAttemptInMemory,
       toggleFavorite,
       createGroup,
+      addGroupItems,
       renameGroup,
       deleteGroup,
       toggleGroupItem,

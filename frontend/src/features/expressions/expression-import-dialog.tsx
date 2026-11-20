@@ -8,6 +8,7 @@ import {
   FileSpreadsheetIcon,
   FileUpIcon,
   LoaderCircleIcon,
+  SparklesIcon,
   UploadIcon,
 } from "lucide-react"
 import { useDeferredValue, useMemo, useState } from "react"
@@ -25,8 +26,11 @@ import {
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { requestGeneratedExpressions } from "@/features/expressions/expression-generation-client"
 import { ExpressionJsonEditor } from "@/features/expressions/expression-json-editor"
+import { expressionGenerationPhraseLimit } from "@/lib/expression-generation"
 import {
   createExpressionImportTemplate,
   type ExpressionImportResult,
@@ -34,7 +38,7 @@ import {
   parseExpressionJsonImport,
 } from "@/lib/expression-import"
 
-type ImportMode = "json" | "file"
+type ImportMode = "json" | "file" | "ai"
 
 const jsonPlaceholder = JSON.stringify(
   [
@@ -44,9 +48,18 @@ const jsonPlaceholder = JSON.stringify(
       why: "eye 代表观察，keep 表示持续维持注意。",
       origin: "由视觉动作形成的常用表达。",
       example: "Could you keep an eye on my bag?",
+      exampleTranslation: "能帮我看一下包吗？",
       sceneCategory: "social",
       context: "通用",
       kind: "idiom",
+      usage: "常接宾语，也可用 over 引出照看范围。",
+      memoryTip: "想象眼睛一直停在目标上。",
+      examples: [
+        {
+          text: "Keep an eye on the kids while I cook.",
+          translation: "我做饭时照看一下孩子。",
+        },
+      ],
     },
   ],
   null,
@@ -54,14 +67,18 @@ const jsonPlaceholder = JSON.stringify(
 )
 
 const jsonFieldDescriptions = [
-  ["phrase", "英文表达"],
-  ["meaning", "中文含义"],
-  ["why", "表达含义与语义推导"],
-  ["origin", "来源或词源说明"],
-  ["example", "完整英文例句"],
-  ["sceneCategory", "场景英文标识，如 social、work"],
+  ["phrase", "英文表达，必填"],
+  ["meaning", "中文含义，必填"],
+  ["why", "表达含义与语义推导，必填"],
+  ["origin", "来源或词源说明，必填"],
+  ["example", "完整英文例句，必填"],
+  ["exampleTranslation", "例句译文；填写后词库显示展开按钮；可选"],
+  ["sceneCategory", "场景英文标识，如 social、work；必填"],
   ["context", "使用语境：日常、职场、通用；可选"],
   ["kind", "类型：collocation、idiom、phrasal-verb、sentence-pattern；可选"],
+  ["usage", "用法说明：句法位置、常见搭配与语域限制；可选"],
+  ["memoryTip", "记忆提示：画面、对比或易错点；可选"],
+  ["examples", "拓展例句数组，最多 4 条，每项含 text 与可选 translation；可选"],
 ] as const
 
 function downloadImportTemplate() {
@@ -92,6 +109,10 @@ export function ExpressionImportDialog({
   const [fileName, setFileName] = useState("")
   const [fileResult, setFileResult] = useState<ExpressionImportResult | null>(null)
   const [fileError, setFileError] = useState("")
+  const [phraseInput, setPhraseInput] = useState("")
+  const [generating, setGenerating] = useState(false)
+  const [generationError, setGenerationError] = useState("")
+  const [generationSummary, setGenerationSummary] = useState("")
   const [importing, setImporting] = useState(false)
   const deferredJsonContent = useDeferredValue(jsonContent)
   const jsonPending = deferredJsonContent !== jsonContent
@@ -111,7 +132,14 @@ export function ExpressionImportDialog({
       }
     }
   }, [deferredJsonContent])
-  const activeResult = mode === "json" ? (jsonPending ? null : jsonPreview.result) : fileResult
+  const activeResult =
+    mode === "json"
+      ? jsonPending
+        ? null
+        : jsonPreview.result
+      : mode === "file"
+        ? fileResult
+        : null
   const validCount = activeResult?.items.length ?? 0
   const activePending = mode === "json" && jsonPending
 
@@ -121,6 +149,9 @@ export function ExpressionImportDialog({
     setFileName("")
     setFileResult(null)
     setFileError("")
+    setPhraseInput("")
+    setGenerationError("")
+    setGenerationSummary("")
   }
 
   async function handleFile(file: File | undefined) {
@@ -139,6 +170,34 @@ export function ExpressionImportDialog({
       setFileResult(await parseExpressionImport(await file.text(), file.name))
     } catch (error) {
       setFileError(error instanceof Error ? error.message : "导入文件无法解析。")
+    }
+  }
+
+  async function handleGenerate() {
+    const phrases = phraseInput
+      .split(/[\n,，;；]+/)
+      .map((phrase) => phrase.trim())
+      .filter(Boolean)
+    setGenerationError("")
+    setGenerationSummary("")
+    if (phrases.length === 0) {
+      setGenerationError("请先输入至少一个英文短语。")
+      return
+    }
+    if (phrases.length > expressionGenerationPhraseLimit) {
+      setGenerationError(`一次最多生成 ${expressionGenerationPhraseLimit} 条。`)
+      return
+    }
+    setGenerating(true)
+    try {
+      const items = await requestGeneratedExpressions(phrases)
+      setJsonContent(JSON.stringify(items, null, 2))
+      setMode("json")
+      setGenerationSummary(`已生成 ${items.length} 条表达并填入 JSON 预检，可修改后再导入。`)
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "表达生成失败，请稍后重试。")
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -184,7 +243,9 @@ export function ExpressionImportDialog({
       <DialogContent className="max-h-[min(780px,calc(100svh-2rem))] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="px-4 pt-4">
           <DialogTitle>批量导入表达数据</DialogTitle>
-          <DialogDescription>直接粘贴 JSON，或上传 CSV/JSON 文件。</DialogDescription>
+          <DialogDescription>
+            输入短语让 AI 补全字段，或直接粘贴 JSON、上传 CSV/JSON 文件。
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs
@@ -192,7 +253,11 @@ export function ExpressionImportDialog({
           onValueChange={(value) => setMode(value as ImportMode)}
           className="min-h-0 gap-0 overflow-hidden"
         >
-          <TabsList className="mx-4 grid w-[calc(100%-2rem)] grid-cols-2">
+          <TabsList className="mx-4 grid w-[calc(100%-2rem)] grid-cols-3">
+            <TabsTrigger value="ai">
+              <SparklesIcon data-icon="inline-start" />
+              AI 生成
+            </TabsTrigger>
             <TabsTrigger value="json">
               <BracesIcon data-icon="inline-start" />
               粘贴 JSON
@@ -202,6 +267,54 @@ export function ExpressionImportDialog({
               上传文件
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="ai" className="min-h-0 overflow-y-auto px-4 py-4">
+            <div className="flex flex-col gap-4">
+              <Alert>
+                <SparklesIcon />
+                <AlertTitle>用 AI 补全导入字段</AlertTitle>
+                <AlertDescription>
+                  输入英文短语，使用当前配置的 AI 接口补全含义、语义推导、译文、用法和拓展例句。
+                  生成结果会进入 JSON 预检，确认后再导入。
+                </AlertDescription>
+              </Alert>
+
+              <Field data-invalid={Boolean(generationError)}>
+                <FieldLabel htmlFor="expression-generation-phrases">英文短语</FieldLabel>
+                <Textarea
+                  id="expression-generation-phrases"
+                  value={phraseInput}
+                  onChange={(event) => setPhraseInput(event.target.value)}
+                  placeholder={"keep an eye on\ncall it a day\nunder the weather"}
+                  aria-invalid={Boolean(generationError)}
+                  disabled={generating || importing}
+                  rows={5}
+                />
+                <FieldDescription>
+                  用换行或逗号分隔，一次最多 {expressionGenerationPhraseLimit} 条。
+                </FieldDescription>
+                {generationError ? <FieldError>{generationError}</FieldError> : null}
+              </Field>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  disabled={generating || importing}
+                  onClick={() => void handleGenerate()}
+                >
+                  {generating ? (
+                    <LoaderCircleIcon data-icon="inline-start" className="animate-spin" />
+                  ) : (
+                    <SparklesIcon data-icon="inline-start" />
+                  )}
+                  {generating ? "正在生成" : "生成导入数据"}
+                </Button>
+                {generationSummary ? (
+                  <span className="text-xs text-muted-foreground">{generationSummary}</span>
+                ) : null}
+              </div>
+            </div>
+          </TabsContent>
 
           <TabsContent value="json" className="min-h-0 overflow-y-auto px-4 py-4">
             <div className="flex flex-col gap-4">
@@ -264,6 +377,9 @@ export function ExpressionImportDialog({
                 ) : null}
               </Field>
 
+              {generationSummary && mode === "json" ? (
+                <p className="text-xs text-muted-foreground">{generationSummary}</p>
+              ) : null}
               {jsonPreview.result && !jsonPending ? (
                 <ImportSummary result={jsonPreview.result} />
               ) : null}
@@ -324,6 +440,8 @@ export function ExpressionImportDialog({
           >
             {importing || activePending ? (
               <LoaderCircleIcon data-icon="inline-start" className="animate-spin" />
+            ) : mode === "ai" ? (
+              <SparklesIcon data-icon="inline-start" />
             ) : mode === "json" ? (
               <BracesIcon data-icon="inline-start" />
             ) : (

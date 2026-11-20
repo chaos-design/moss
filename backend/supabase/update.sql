@@ -142,6 +142,18 @@ create table if not exists public.expression_library_items (
   unique (user_id, client_id),
   unique (user_id, scene_category, normalized_phrase)
 );
+alter table public.expression_library_items
+  add column if not exists example_translation text
+    check (char_length(example_translation) between 1 and 500);
+alter table public.expression_library_items
+  add column if not exists usage_note text
+    check (char_length(usage_note) between 1 and 1000);
+alter table public.expression_library_items
+  add column if not exists memory_tip text
+    check (char_length(memory_tip) between 1 and 500);
+alter table public.expression_library_items
+  add column if not exists extra_examples jsonb default '[]'::jsonb
+    check (jsonb_typeof(extra_examples) = 'array');
 create index if not exists expression_library_items_user_category_idx
   on public.expression_library_items (user_id, scene_category, updated_at desc);
 alter table public.expression_library_items enable row level security;

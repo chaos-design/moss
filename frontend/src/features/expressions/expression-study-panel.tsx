@@ -5,6 +5,7 @@ import {
   FolderPlusIcon,
   LayersIcon,
   PencilIcon,
+  SparklesIcon,
   StarIcon,
   Trash2Icon,
 } from "lucide-react"
@@ -22,17 +23,22 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { ExpressionRecommendationDialog } from "@/features/expressions/expression-recommendation-dialog"
+import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
+import type { ExpressionRecommendation } from "@/lib/expression-recommendations"
 import {
   type ExpressionStudyMode,
   type ExpressionStudyScope,
   expressionStudyModeLabels,
 } from "@/lib/expression-study"
+import type { ExpressionProgressStatus } from "@/lib/memory"
 import { type ExpressionStudyState, getActiveFavorites, getActiveGroups } from "@/lib/memory"
 
 const studyModes: ExpressionStudyMode[] = ["flashcard", "cloze", "dictation"]
@@ -43,14 +49,23 @@ export function ExpressionStudyPanel({
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
+  items,
+  progressByIdentity,
+  onJoinRecommendation,
+  onStartRecommendation,
 }: {
   study: ExpressionStudyState
   onStart: (scope: ExpressionStudyScope, mode: ExpressionStudyMode) => void
   onCreateGroup: (name: string) => void
   onRenameGroup: (groupId: string, name: string) => void
   onDeleteGroup: (groupId: string) => void
+  items: readonly ExpressionLibraryItem[]
+  progressByIdentity: Readonly<Record<string, ExpressionProgressStatus>>
+  onJoinRecommendation: (recommendation: ExpressionRecommendation) => void
+  onStartRecommendation: (recommendation: ExpressionRecommendation) => void
 }) {
   const [managing, setManaging] = useState(false)
+  const [showRecommendations, setShowRecommendations] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
 
   const favorites = getActiveFavorites(study)
@@ -102,6 +117,15 @@ export function ExpressionStudyPanel({
           >
             复习收藏
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowRecommendations(true)}
+          >
+            <SparklesIcon data-icon="inline-start" />
+            推荐分组
+          </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => setManaging(true)}>
             管理分组
           </Button>
@@ -113,12 +137,17 @@ export function ExpressionStudyPanel({
               <ChevronDownIcon data-icon="inline-end" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuLabel>选择学习方式</DropdownMenuLabel>
-              {studyModes.map((mode) => (
-                <DropdownMenuItem key={mode} onSelect={() => start({ kind: "filtered" }, mode)}>
-                  {expressionStudyModeLabels[mode]}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>选择学习方式</DropdownMenuLabel>
+                {studyModes.map((mode) => (
+                  <DropdownMenuItem
+                    key={mode}
+                    onSelect={() => start({ kind: "filtered" }, mode)}
+                  >
+                    {expressionStudyModeLabels[mode]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => start({ kind: "review", status: "learning" }, "flashcard")}
@@ -153,6 +182,16 @@ export function ExpressionStudyPanel({
           </div>
         ) : null}
       </section>
+
+      <ExpressionRecommendationDialog
+        open={showRecommendations}
+        onOpenChange={setShowRecommendations}
+        items={items}
+        progressByIdentity={progressByIdentity}
+        study={study}
+        onJoin={onJoinRecommendation}
+        onStart={onStartRecommendation}
+      />
 
       <Dialog open={managing} onOpenChange={setManaging}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">

@@ -304,6 +304,37 @@ export function createExpressionGroup(
   return withTimestamp({ ...state, groups: { ...state.groups, [id]: group } }, now)
 }
 
+/** 一次性创建或补齐分组：推荐分组整组加入时只需要一次快照写入。 */
+export function addExpressionsToGroup(
+  state: ExpressionStudyState,
+  id: string,
+  name: string,
+  identities: readonly string[],
+  now = new Date(),
+): ExpressionStudyState {
+  const nextIdentities = Array.from(new Set(identities.filter(Boolean)))
+  if (!id || nextIdentities.length === 0) {
+    return state
+  }
+  const iso = now.toISOString()
+  const existing = state.groups[id]
+  const group: ExpressionGroup =
+    existing && !existing.deletedAt
+      ? {
+          ...existing,
+          itemIds: Array.from(new Set([...existing.itemIds, ...nextIdentities])),
+          updatedAt: iso,
+        }
+      : {
+          id,
+          name: name.trim() || existing?.name || "推荐分组",
+          itemIds: nextIdentities,
+          createdAt: existing?.createdAt ?? iso,
+          updatedAt: iso,
+        }
+  return withTimestamp({ ...state, groups: { ...state.groups, [id]: group } }, now)
+}
+
 export function renameExpressionGroup(
   state: ExpressionStudyState,
   id: string,

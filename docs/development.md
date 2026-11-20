@@ -126,15 +126,28 @@ flowchart LR
 生成后必须人工抽查并运行表达词库测试。可用临时变量 `AI_EXPRESSION_FALLBACK_MODEL`
 为格式异常的批次指定备用模型。
 
+`frontend/src/lib/expression-recommendations.ts` 从词库现有字段和 `expressionStudy.progress`
+派生推荐分组，不维护第二份条目清单。新增推荐维度时同时更新维度标签、分组测试和工作台弹窗；
+加入推荐组通过 `addExpressionsToGroup` 一次写入学习记忆快照，避免逐条写入触发多次同步。
+词库页搜索文本在 `allItems` 变化时一次性建索引，推荐分组只在弹窗打开后构建；列表行保持
+memo 化且行级回调引用稳定。调整筛选或推荐逻辑时不要把这些预计算退化成每次渲染重复扫描。
+
 表达库支持直接粘贴 JSON，以及上传 UTF-8 JSON/CSV 文件。界面提供 JSON 格式说明、可下载
-CSV 模板和导入预检；字段为 `phrase`、`meaning`、`why`、`origin`、`example`、
-`sceneCategory`，可选 `context` 和 `kind`。两种入口统一调用
-`parseExpressionImportRows` 校验和去重。浏览器先写
+CSV 模板和导入预检；必填字段为 `phrase`、`meaning`、`why`、`origin`、`example`、
+`sceneCategory`，可选 `context`、`kind`、`exampleTranslation`、`usage`、`memoryTip` 和
+`examples`。CSV 中 `examples` 使用 JSON 数组字符串，每项包含 `text` 与可选 `translation`。
+两种入口统一调用 `parseExpressionImportRows` 校验和去重。浏览器先写
 `moss:expression-library:v1:<userId>`，再按 200 条一批调用 `/api/expressions`；批次大小是
 单请求资源边界，不是导入总量上限。用户导入项可在列表中编辑或删除，修改使用稳定
 `clientId` 调用 `PUT /api/expressions`，删除调用 `DELETE /api/expressions`；两者都先更新
 本机。JSON 输入使用动态加载的 `@monaco-editor/react`，避免增加表达列表首屏包体；新增字段
 时同步更新解析器、编辑器、API 校验、数据库约束和文件模板。
+
+`frontend/src/lib/expression-generation.ts` 定义短语规范化、生成契约和生成结果解析；
+`frontend/src/features/expressions/expression-generation-client.ts` 只发送加密模型配置信封。
+`POST /api/expressions/generate` 负责认证、限流、Provider 调用和错误归一化，返回的结果
+先进入现有 JSON 预检，不绕过本机优先写入链路。新增生成字段时同步更新提示词、预检解析、
+数据库列、CSV 模板和导入弹窗字段说明。
 
 ### 4.3 影子跟读
 

@@ -14,7 +14,15 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react"
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { toast } from "sonner"
 import { useAuth } from "@/components/auth-provider"
 import { ExpressionText } from "@/components/expression-text"
@@ -84,6 +92,10 @@ import {
   updateCloudExpressionItem,
 } from "@/lib/expression-library-client"
 import {
+  type ExpressionRecommendation,
+  getRecommendedGroupId,
+} from "@/lib/expression-recommendations"
+import {
   type ExpressionStudyMode,
   type ExpressionStudyScope,
   resolveStudyItems,
@@ -93,7 +105,6 @@ import {
   type ExpressionFilters,
   type ExpressionGroup,
   type ExpressionProgressStatus,
-  type ExpressionProgressUpdate,
   type ExpressionStudyState,
   getActiveFavorites,
   getActiveGroups,
@@ -110,10 +121,7 @@ const sourceOptions: Array<{ label: string; value: SourceFilter }> = [
   { label: "外部导入", value: "imported" },
 ]
 
-function matchesQuery(item: ExpressionLibraryItem, query: string) {
-  if (!query) {
-    return true
-  }
+function buildExpressionSearchText(item: ExpressionLibraryItem) {
   return [
     item.phrase,
     item.meaning,
@@ -128,7 +136,10 @@ function matchesQuery(item: ExpressionLibraryItem, query: string) {
     .join(" ")
     .normalize("NFKC")
     .toLocaleLowerCase()
-    .includes(query)
+}
+
+function matchesQuery(query: string, searchText: string) {
+  return !query || searchText.includes(query)
 }
 
 export function ExpressionLibraryWorkspace() {
@@ -138,6 +149,7 @@ export function ExpressionLibraryWorkspace() {
     hydrated,
     toggleFavorite,
     createGroup,
+    addGroupItems,
     renameGroup,
     deleteGroup,
     toggleGroupItem,
@@ -238,17 +250,24 @@ export function ExpressionLibraryWorkspace() {
       (left, right) => Number(right.source === "imported") - Number(left.source === "imported"),
     )
   }, [importedItems])
+  const searchIndex = useMemo(
+    () => new Map(allItems.map((item) => [item.id, buildExpressionSearchText(item)] as const)),
+    [allItems],
+  )
   const filteredItems = useMemo(
     () =>
       allItems.filter(
         (item) =>
           (categories.length === 0 || categories.includes(item.sceneCategory)) &&
           (source === "all" || item.source === source) &&
-          matchesQuery(item, deferredQuery),
+          matchesQuery(deferredQuery, searchIndex.get(item.id) ?? ""),
       ),
-    [allItems, categories, deferredQuery, source],
+    [allItems, categories, deferredQuery, searchIndex, source],
   )
-  const visibleItems = filteredItems.slice(0, visibleCount)
+  const visibleItems = useMemo(
+    () => filteredItems.slice(0, visibleCount),
+    [filteredItems, visibleCount],
+  )
   const hasMore = visibleCount < filteredItems.length
   const selectedCategoryLabel =
     categories.length === 0 ? "全部场景" : `场景 ${categories.length}`
@@ -268,11 +287,32 @@ export function ExpressionLibraryWorkspace() {
       ) as Record<string, ExpressionProgressStatus>,
     [expressionStudy],
   )
-
-  function startStudy(scope: ExpressionStudyScope, mode: ExpressionStudyMode) {
+  const startStudy = useCallback((scope: ExpressionStudyScope, mode: ExpressionStudyMode) => {
     sessionCounter.current += 1
     setSession({ id: sessionCounter.current, scope, mode })
-  }
+  }, [])
+
+  const joinRecommendation = useCallback(
+    (recommendation: ExpressionRecommendation) => {
+      addGroupItems(
+        getRecommendedGroupId(recommendation.id),
+        recommendation.name,
+        recommendation.identities,
+      )
+      toast.success(`已把「${recommendation.name}」加入分组`)
+    },
+    [addGroupItems],
+  )
+
+  const startRecommendation = useCallback(
+    (recommendation: ExpressionRecommendation) => {
+      startStudy(
+        { kind: "group", groupId: getRecommendedGroupId(recommendation.id) },
+        "flashcard",
+      )
+    },
+    [startStudy],
+  )
 
   const sessionItems = useMemo(() => {
     if (!session) {
@@ -349,19 +389,22 @@ export function ExpressionLibraryWorkspace() {
     persistFilters({ categories: [] })
   }
 
-  function handleStudy(item: ExpressionLibraryItem) {
-    recordExpressionStudy({
-      itemId: createExpressionMemoryItemId(item.clientId),
-      sceneCategory: item.sceneCategory,
-      sceneTitle: expressionSceneCategoryLabels[item.sceneCategory],
-      label: item.phrase,
-      phrase: item.phrase,
-      explanation: item.why,
-      example: item.example,
-      libraryKind: item.kind,
-    })
-    toast.success(`已把“${item.phrase}”加入长期记忆`)
-  }
+  const handleStudy = useCallback(
+    (item: ExpressionLibraryItem) => {
+      recordExpressionStudy({
+        itemId: createExpressionMemoryItemId(item.clientId),
+        sceneCategory: item.sceneCategory,
+        sceneTitle: expressionSceneCategoryLabels[item.sceneCategory],
+        label: item.phrase,
+        phrase: item.phrase,
+        explanation: item.why,
+        example: item.example,
+        libraryKind: item.kind,
+      })
+      toast.success(`已把“${item.phrase}”加入长期记忆`)
+    },
+    [recordExpressionStudy],
+  )
 
   async function handleImport(result: ExpressionImportResult) {
     const importedAt = new Date().toISOString()
@@ -561,6 +604,10 @@ export function ExpressionLibraryWorkspace() {
         onCreateGroup={createGroup}
         onRenameGroup={renameGroup}
         onDeleteGroup={deleteGroup}
+        items={allItems}
+        progressByIdentity={progressByIdentity}
+        onJoinRecommendation={joinRecommendation}
+        onStartRecommendation={startRecommendation}
       />
 
       <ExpressionRows
@@ -641,7 +688,7 @@ export function ExpressionLibraryWorkspace() {
   )
 }
 
-function ExpressionRows({
+const ExpressionRows = memo(function ExpressionRows({
   items,
   studiedIds,
   favoriteIdentities,
@@ -749,20 +796,22 @@ function ExpressionRows({
                       <FolderInputIcon />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-40">
-                      <DropdownMenuLabel>加入分组</DropdownMenuLabel>
-                      {studyGroups.length === 0 ? (
-                        <DropdownMenuItem disabled>还没有分组，先在上方创建</DropdownMenuItem>
-                      ) : (
-                        studyGroups.map((group) => (
-                          <DropdownMenuCheckboxItem
-                            key={group.id}
-                            checked={group.itemIds.includes(identity)}
-                            onCheckedChange={() => onToggleGroupItem(group.id, identity)}
-                          >
-                            {group.name}
-                          </DropdownMenuCheckboxItem>
-                        ))
-                      )}
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>加入分组</DropdownMenuLabel>
+                        {studyGroups.length === 0 ? (
+                          <DropdownMenuItem disabled>还没有分组，先在上方创建</DropdownMenuItem>
+                        ) : (
+                          studyGroups.map((group) => (
+                            <DropdownMenuCheckboxItem
+                              key={group.id}
+                              checked={group.itemIds.includes(identity)}
+                              onCheckedChange={() => onToggleGroupItem(group.id, identity)}
+                            >
+                              {group.name}
+                            </DropdownMenuCheckboxItem>
+                          ))
+                        )}
+                      </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
                   <Tooltip>
@@ -834,7 +883,7 @@ function ExpressionRows({
                 <p className="text-xs font-medium text-foreground">来源</p>
                 <p className="mt-1 text-muted-foreground">{item.origin}</p>
               </div>
-              <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-sm md:col-span-2">
+              <blockquote className="rounded-r-md border-l-2 border-primary/45 bg-muted/40 px-3 py-2 font-serif text-sm md:col-span-2">
                 {/* 译文开关紧跟例句末尾：它只解释这一句，不再被推到整行最右侧。 */}
                 <p className="min-w-0">
                   <ExpressionText text={item.example} phrase={item.phrase} />
@@ -871,7 +920,7 @@ function ExpressionRows({
       })}
     </section>
   )
-}
+})
 
 function LibraryStat({ label, value }: { label: string; value: string }) {
   return (
