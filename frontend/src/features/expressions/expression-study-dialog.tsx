@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
   EyeIcon,
@@ -13,7 +14,6 @@ import { useMemo, useState } from "react"
 import { ExpressionText } from "@/components/expression-text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -57,23 +57,21 @@ function scopeLabel(scope: ExpressionStudyScope, groups: { id: string; name: str
   }
 }
 
-export function ExpressionStudyDialog({
-  open,
+export function ExpressionStudyWorkspace({
   items,
   scope,
   study,
   initialMode,
-  onClose,
+  onExit,
   onProgress,
   onStudyMemory,
   onReshuffle,
 }: {
-  open: boolean
   items: ExpressionLibraryItem[]
   scope: ExpressionStudyScope
   study: ExpressionStudyState
   initialMode: ExpressionStudyMode
-  onClose: () => void
+  onExit: () => void
   onProgress: (identity: string, update: ExpressionProgressUpdate) => void
   /** 完成一条时同步写入长期记忆，使词库进度与间隔复习队列成为同一条链路。 */
   onStudyMemory?: (item: ExpressionLibraryItem) => void
@@ -122,126 +120,137 @@ export function ExpressionStudyDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <DialogHeader className="border-b px-5 py-4">
-          <DialogTitle className="flex items-center justify-between gap-3 pr-6 text-base">
-            <span>学习 · {scopeLabel(scope, groups)}</span>
-            {total > 0 ? (
-              <span className="text-xs font-normal text-muted-foreground">
-                {Math.min(index + 1, total)} / {total}
-              </span>
-            ) : null}
-          </DialogTitle>
-          {total > 0 ? <Progress value={percent} className="mt-1" /> : null}
-        </DialogHeader>
+    <section className="flex min-h-0 w-full max-w-3xl flex-col overflow-hidden rounded-lg border bg-card">
+      <header className="shrink-0 border-b px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="返回词库"
+              onClick={onExit}
+            >
+              <ArrowLeftIcon />
+            </Button>
+            <h1 className="truncate text-base font-semibold">
+              学习 · {scopeLabel(scope, groups)}
+            </h1>
+          </div>
+          {total > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              {Math.min(index + 1, total)} / {total}
+            </span>
+          ) : null}
+        </div>
+        {total > 0 ? <Progress value={percent} className="mt-1" /> : null}
+      </header>
 
-        {total === 0 ? (
-          <div className="px-5 py-16 text-center" aria-live="polite">
-            <p className="font-serif text-lg font-semibold">这个范围里还没有表达</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              先收藏或加入分组，再从这里进入学习。
-            </p>
-            <Button type="button" className="mt-5" onClick={onClose}>
+      {total === 0 ? (
+        <div className="px-5 py-16 text-center" aria-live="polite">
+          <p className="font-serif text-lg font-semibold">这个范围里还没有表达</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            先收藏或加入分组，再从这里进入学习。
+          </p>
+          <Button type="button" className="mt-5" onClick={onExit}>
+            返回词库
+          </Button>
+        </div>
+      ) : index >= total ? (
+        <div className="px-5 py-16 text-center" aria-live="polite">
+          <p className="font-serif text-xl font-semibold">这一组学完了</p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            掌握 {stats.mastered} 条 · 再练 {stats.practice} 条
+          </p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Button type="button" variant="outline" onClick={onExit}>
               返回词库
             </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (onReshuffle) {
+                  onReshuffle()
+                  return
+                }
+                setIndex(0)
+                setStats({ mastered: 0, practice: 0 })
+                setRevealed(false)
+                setClozeAnswer("")
+                setClozeResult(null)
+                dictation.reset()
+              }}
+            >
+              {onReshuffle ? "换一组随机学习" : "再学一组"}
+            </Button>
           </div>
-        ) : index >= total ? (
-          <div className="px-5 py-16 text-center" aria-live="polite">
-            <p className="font-serif text-xl font-semibold">这一组学完了</p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              掌握 {stats.mastered} 条 · 再练 {stats.practice} 条
-            </p>
-            <div className="mt-6 flex justify-center gap-2">
-              <Button type="button" variant="outline" onClick={onClose}>
-                返回词库
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  if (onReshuffle) {
-                    onReshuffle()
-                    return
-                  }
-                  setIndex(0)
-                  setStats({ mastered: 0, practice: 0 })
-                  setRevealed(false)
-                  setClozeAnswer("")
-                  setClozeResult(null)
-                  dictation.reset()
-                }}
-              >
-                {onReshuffle ? "换一组随机学习" : "再学一组"}
-              </Button>
-            </div>
+        </div>
+      ) : (
+        <>
+          <div className="border-b px-5 py-2">
+            <Tabs
+              value={mode}
+              onValueChange={(value) => switchMode(value as ExpressionStudyMode)}
+            >
+              <TabsList className="w-full">
+                {modes.map((value) => (
+                  <TabsTrigger key={value} value={value} className="flex-1">
+                    {expressionStudyModeLabels[value]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
-        ) : (
-          <>
-            <div className="border-b px-5 py-2">
-              <Tabs
-                value={mode}
-                onValueChange={(value) => switchMode(value as ExpressionStudyMode)}
-              >
-                <TabsList className="w-full">
-                  {modes.map((value) => (
-                    <TabsTrigger key={value} value={value} className="flex-1">
-                      {expressionStudyModeLabels[value]}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-              <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {String(index + 1).padStart(3, "0")}
-                </span>
-                <Badge variant="secondary">{expressionKindLabels[item.kind]}</Badge>
-                <Badge variant="outline">
-                  {expressionSceneCategoryLabels[item.sceneCategory]}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {String(index + 1).padStart(3, "0")}
+              </span>
+              <Badge variant="secondary">{expressionKindLabels[item.kind]}</Badge>
+              <Badge variant="outline">
+                {expressionSceneCategoryLabels[item.sceneCategory]}
+              </Badge>
+              {progress ? (
+                <Badge variant={progress.status === "mastered" ? "default" : "outline"}>
+                  {progress.status === "mastered" ? "已掌握" : "学习中"}
                 </Badge>
-                {progress ? (
-                  <Badge variant={progress.status === "mastered" ? "default" : "outline"}>
-                    {progress.status === "mastered" ? "已掌握" : "学习中"}
-                  </Badge>
-                ) : null}
-              </div>
-
-              {mode === "flashcard" ? (
-                <Flashcard
-                  item={item}
-                  revealed={revealed}
-                  translationRevealed={translationRevealed}
-                  onReveal={() => setRevealed(true)}
-                  onToggleTranslation={() => setTranslationRevealed((current) => !current)}
-                  onComplete={complete}
-                />
-              ) : mode === "cloze" ? (
-                <ClozeCard
-                  item={item}
-                  cloze={cloze}
-                  answer={clozeAnswer}
-                  result={clozeResult}
-                  onAnswer={setClozeAnswer}
-                  onCheck={() =>
-                    setClozeResult(checkClozeAnswer(cloze?.answer ?? item.phrase, clozeAnswer))
-                  }
-                  onComplete={complete}
-                />
-              ) : (
-                <DictationCard
-                  item={item}
-                  expected={cloze?.answer ?? item.phrase}
-                  dictation={dictation}
-                  onComplete={complete}
-                />
-              )}
+              ) : null}
             </div>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+
+            {mode === "flashcard" ? (
+              <Flashcard
+                item={item}
+                revealed={revealed}
+                translationRevealed={translationRevealed}
+                onReveal={() => setRevealed(true)}
+                onToggleTranslation={() => setTranslationRevealed((current) => !current)}
+                onComplete={complete}
+              />
+            ) : mode === "cloze" ? (
+              <ClozeCard
+                item={item}
+                cloze={cloze}
+                answer={clozeAnswer}
+                result={clozeResult}
+                onAnswer={setClozeAnswer}
+                onCheck={() =>
+                  setClozeResult(checkClozeAnswer(cloze?.answer ?? item.phrase, clozeAnswer))
+                }
+                onComplete={complete}
+              />
+            ) : (
+              <DictationCard
+                item={item}
+                expected={cloze?.answer ?? item.phrase}
+                dictation={dictation}
+                onComplete={complete}
+              />
+            )}
+          </div>
+        </>
+      )}
+    </section>
   )
 }
 

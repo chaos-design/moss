@@ -51,7 +51,9 @@ function createExpressionRow(item: ExpressionLibraryItem, userId: string) {
     context: item.context,
     example: item.example,
     example_translation: item.exampleTranslation ?? null,
-    extra_examples: item.examples ? JSON.stringify(item.examples) : null,
+    // extra_examples 是 jsonb 列且表约束要求数组；传原生数组让驱动正确序列化，
+    // 不能 JSON.stringify 成字符串标量，否则 jsonb_typeof 判定为 'string' 整批 23514。
+    extra_examples: item.examples ?? null,
     kind: item.kind,
     meaning: item.meaning,
     memory_tip: item.memoryTip ?? null,

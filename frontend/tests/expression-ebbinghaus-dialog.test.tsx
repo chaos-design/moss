@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ExpressionEbbinghausDialog } from "@/features/expressions/expression-ebbinghaus-dialog"
+import { ExpressionEbbinghausWorkspace } from "@/features/expressions/expression-ebbinghaus-dialog"
 import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import { createExpressionMemoryItemId, type LearningMemoryItem } from "@/lib/memory"
 
@@ -37,23 +37,22 @@ function renderDialog(options?: {
   const onLearn = vi.fn()
   const onRate = vi.fn()
   const onProgress = vi.fn()
-  const onClose = vi.fn()
+  const onExit = vi.fn()
   render(
-    <ExpressionEbbinghausDialog
-      open
+    <ExpressionEbbinghausWorkspace
       pool={pool}
       catalogItems={options?.catalogItems ?? pool}
       memoryItems={options?.memoryItems ?? []}
-      onClose={onClose}
+      onExit={onExit}
       onLearn={onLearn}
       onRate={onRate}
       onProgress={onProgress}
     />,
   )
-  return { onLearn, onRate, onProgress, onClose }
+  return { onLearn, onRate, onProgress, onExit }
 }
 
-describe("expression ebbinghaus dialog", () => {
+describe("expression ebbinghaus workspace", () => {
   it("runs learn, recall and re-memorize as one cycle", () => {
     const { onLearn, onRate, onProgress } = renderDialog()
 

@@ -1,6 +1,5 @@
 "use client"
 
-import type { User } from "@supabase/supabase-js"
 import {
   BrainCircuitIcon,
   ChevronDownIcon,
@@ -14,15 +13,8 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react"
-import {
-  memo,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react"
+import { useRouter } from "next/navigation"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useAuth } from "@/components/auth-provider"
 import { ExpressionText } from "@/components/expression-text"
@@ -64,29 +56,23 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { ExpressionEbbinghausDialog } from "@/features/expressions/expression-ebbinghaus-dialog"
 import { ExpressionEditDialog } from "@/features/expressions/expression-edit-dialog"
 import { ExpressionImportDialog } from "@/features/expressions/expression-import-dialog"
-import { ExpressionStudyDialog } from "@/features/expressions/expression-study-dialog"
 import { ExpressionStudyPanel } from "@/features/expressions/expression-study-panel"
+import { useExpressionLibrarySource } from "@/features/expressions/use-expression-library-source"
 import { getLocalOnlySuffix } from "@/lib/auth-status"
 import type { SceneCategory } from "@/lib/demo-data"
 import type { ExpressionImportResult } from "@/lib/expression-import"
 import {
-  builtInExpressionItems,
   createExpressionIdentity,
   type ExpressionLibraryItem,
   type ExpressionSource,
   expressionKindLabels,
   expressionSceneCategories,
   expressionSceneCategoryLabels,
-  mergeExpressionLibraryItems,
 } from "@/lib/expression-library"
 import {
   deleteCloudExpressionItem,
-  getLastExpressionStorageScope,
-  loadCloudExpressionItems,
-  loadLocalExpressionItems,
   mergeImportedExpressionItems,
   saveCloudExpressionItems,
   saveLocalExpressionItems,
@@ -96,21 +82,14 @@ import {
   type ExpressionRecommendation,
   getRecommendedGroupId,
 } from "@/lib/expression-recommendations"
-import {
-  type ExpressionStudyMode,
-  type ExpressionStudyScope,
-  resolveStudyItems,
-} from "@/lib/expression-study"
+import type { ExpressionStudyMode, ExpressionStudyScope } from "@/lib/expression-study"
 import {
   createExpressionMemoryItemId,
   type ExpressionFilters,
   type ExpressionGroup,
   type ExpressionProgressStatus,
   type ExpressionStudyState,
-  getActiveFavorites,
-  getActiveGroups,
 } from "@/lib/memory"
-import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 type SourceFilter = "all" | ExpressionSource
@@ -123,27 +102,6 @@ const sourceOptions: Array<{ label: string; value: SourceFilter }> = [
   { label: "外部导入", value: "imported" },
 ]
 
-function buildExpressionSearchText(item: ExpressionLibraryItem) {
-  return [
-    item.phrase,
-    item.meaning,
-    item.why,
-    item.origin,
-    item.example,
-    item.exampleTranslation ?? "",
-    item.context,
-    expressionKindLabels[item.kind],
-    expressionSceneCategoryLabels[item.sceneCategory],
-  ]
-    .join(" ")
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-}
-
-function matchesQuery(query: string, searchText: string) {
-  return !query || searchText.includes(query)
-}
-
 export function ExpressionLibraryWorkspace() {
   const {
     recordExpressionStudy,
@@ -155,19 +113,13 @@ export function ExpressionLibraryWorkspace() {
     renameGroup,
     deleteGroup,
     toggleGroupItem,
-    recordExpressionProgress,
     saveExpressionFilters,
-    rateReview,
   } = useLearningMemory()
   const { status } = useAuth()
   const expressionStudy: ExpressionStudyState = state.expressionStudy
-  // Cloud sync is best-effort here: the local write already succeeded, so the account state only
-  // explains the skipped sync instead of gating the learner's work.
+  // 数据库未写入时会明确报错并保留弹窗，这里只描述编辑/删除的降级后缀。
   const localOnlySuffix = getLocalOnlySuffix(status)
-  const [importedItems, setImportedItems] = useState<ExpressionLibraryItem[]>([])
-  const [storageScope, setStorageScope] = useState("anonymous")
-  const [cloudAvailable, setCloudAvailable] = useState(false)
-  const [loadingCloud, setLoadingCloud] = useState(true)
+  const router = useRouter()
   const [query, setQuery] = useState(() => expressionStudy.filters.value.query)
   const [categories, setCategories] = useState<SceneCategory[]>(
     () => expressionStudy.filters.value.categories,
@@ -179,17 +131,23 @@ export function ExpressionLibraryWorkspace() {
   const [editingItem, setEditingItem] = useState<ExpressionLibraryItem | null>(null)
   const [deletingItem, setDeletingItem] = useState<ExpressionLibraryItem | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [session, setSession] = useState<{
-    id: number
-    scope: ExpressionStudyScope
-    mode: ExpressionStudyMode
-  } | null>(null)
-  const sessionCounter = useRef(0)
   const restoredFilters = useRef(false)
   const loadMoreRef = useRef<HTMLDivElement>(null)
-  const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase())
-  // 已进入长期记忆的表达在这里显示状态，避免与下方学习记忆列表建立第二条真相同步链路。
-  const studiedIds = useMemo(() => new Set(state.items.map((item) => item.id)), [state.items])
+
+  const {
+    importedItems,
+    setImportedItems,
+    storageScope,
+    cloudAvailable,
+    setCloudAvailable,
+    loadingCloud,
+    allItems,
+    filteredItems,
+    favoriteIdentities,
+    studyGroups,
+    progressByIdentity,
+    studiedIds,
+  } = useExpressionLibrarySource({ query, categories, source })
 
   // Provider 从 localStorage/云端 hydrate 后才有真正保存过的筛选条件；只恢复一次，
   // 避免后续每次筛选写回都把当前输入重新灌回输入框。
@@ -205,68 +163,6 @@ export function ExpressionLibraryWorkspace() {
     setVisibleCount(initialVisibleCount)
   }, [hydrated, state.expressionStudy.filters.value])
 
-  useEffect(() => {
-    const controller = new AbortController()
-    let active = true
-    const scopePromise = getSupabaseBrowserClient()
-      ?.auth.getUser()
-      .then(({ data }: { data: { user: User | null } }) => data.user?.id ?? null)
-    void Promise.allSettled([
-      loadCloudExpressionItems(controller.signal),
-      scopePromise ?? Promise.resolve(null),
-    ])
-      .then(([cloudResult, scopeResult]) => {
-        if (!active) {
-          return
-        }
-        const cloud = cloudResult.status === "fulfilled" ? cloudResult.value : null
-        const authenticatedScope = scopeResult.status === "fulfilled" ? scopeResult.value : null
-        const scope =
-          cloud?.userId ??
-          authenticatedScope ??
-          getLastExpressionStorageScope(window.localStorage)
-        const localItems = loadLocalExpressionItems(window.localStorage, scope)
-        const merged = mergeImportedExpressionItems(localItems, cloud?.items ?? [])
-        setStorageScope(scope)
-        setImportedItems(merged)
-        setCloudAvailable(cloud?.cloudAvailable === true)
-        try {
-          saveLocalExpressionItems(window.localStorage, scope, merged)
-        } catch {
-          toast.error("云端表达已载入，但本机缓存空间不足。")
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoadingCloud(false)
-        }
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [])
-
-  const allItems = useMemo(() => {
-    const items = mergeExpressionLibraryItems(builtInExpressionItems, importedItems)
-    return items.sort(
-      (left, right) => Number(right.source === "imported") - Number(left.source === "imported"),
-    )
-  }, [importedItems])
-  const searchIndex = useMemo(
-    () => new Map(allItems.map((item) => [item.id, buildExpressionSearchText(item)] as const)),
-    [allItems],
-  )
-  const filteredItems = useMemo(
-    () =>
-      allItems.filter(
-        (item) =>
-          (categories.length === 0 || categories.includes(item.sceneCategory)) &&
-          (source === "all" || item.source === source) &&
-          matchesQuery(deferredQuery, searchIndex.get(item.id) ?? ""),
-      ),
-    [allItems, categories, deferredQuery, searchIndex, source],
-  )
   const visibleItems = useMemo(
     () => filteredItems.slice(0, visibleCount),
     [filteredItems, visibleCount],
@@ -275,31 +171,25 @@ export function ExpressionLibraryWorkspace() {
   const selectedCategoryLabel =
     categories.length === 0 ? "全部场景" : `场景 ${categories.length}`
 
-  const favoriteIdentities = useMemo(
-    () => new Set(getActiveFavorites(expressionStudy)),
-    [expressionStudy],
+  // 学习改为独立路由：scope/mode 进 URL，筛选条件留在记忆快照里由学习页读取。
+  const startStudy = useCallback(
+    (scope: ExpressionStudyScope, mode: ExpressionStudyMode) => {
+      const params = new URLSearchParams()
+      params.set("scope", scope.kind)
+      if (scope.kind === "group") {
+        params.set("groupId", scope.groupId)
+      }
+      if (scope.kind === "review") {
+        params.set("status", scope.status)
+      }
+      if (scope.kind === "random") {
+        params.set("count", String(scope.count))
+      }
+      params.set("mode", mode)
+      router.push(`/workspace/expressions/study?${params.toString()}`)
+    },
+    [router],
   )
-  const studyGroups = useMemo(() => getActiveGroups(expressionStudy), [expressionStudy])
-  const progressByIdentity = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(expressionStudy.progress).map(([identity, entry]) => [
-          identity,
-          entry.status,
-        ]),
-      ) as Record<string, ExpressionProgressStatus>,
-    [expressionStudy],
-  )
-  const startStudy = useCallback((scope: ExpressionStudyScope, mode: ExpressionStudyMode) => {
-    sessionCounter.current += 1
-    setSession({ id: sessionCounter.current, scope, mode })
-  }, [])
-
-  // 随机学习换一组：递增 session id 让 sessionItems 重新洗牌，同时把对话框状态整体重置。
-  const reshuffleStudy = useCallback(() => {
-    sessionCounter.current += 1
-    setSession((current) => (current ? { ...current, id: sessionCounter.current } : null))
-  }, [])
 
   const joinRecommendation = useCallback(
     (recommendation: ExpressionRecommendation) => {
@@ -322,24 +212,6 @@ export function ExpressionLibraryWorkspace() {
     },
     [startStudy],
   )
-
-  const sessionItems = useMemo(() => {
-    if (!session) {
-      return []
-    }
-    const scope = session.scope
-    const groupItemIds =
-      scope.kind === "group"
-        ? studyGroups.find((candidate) => candidate.id === scope.groupId)?.itemIds
-        : undefined
-    return resolveStudyItems({
-      filteredItems,
-      favoriteIdentities,
-      groupItemIds,
-      progressByIdentity,
-      scope,
-    })
-  }, [session, filteredItems, favoriteIdentities, studyGroups, progressByIdentity])
 
   useEffect(() => {
     const target = loadMoreRef.current
@@ -429,12 +301,35 @@ export function ExpressionLibraryWorkspace() {
       createdAt: item.createdAt ?? importedAt,
       updatedAt: importedAt,
     }))
+    // 必须先入库：只有数据库确认写入后才动本机状态。失败/未登录时本机保持原样，
+    // 弹窗保留内容供用户重试，不再出现"提示成功但数据库没数据"。
+    let stored = false
+    try {
+      stored = await saveCloudExpressionItems(importedBatch)
+    } catch (error) {
+      setCloudAvailable(false)
+      toast.error(error instanceof Error ? error.message : "表达未能写入数据库，请稍后重试。")
+      return false
+    }
+    if (!stored) {
+      setCloudAvailable(false)
+      const reason =
+        status === "demo"
+          ? "演示模式不写入数据库，本机未做更改。"
+          : status === "authenticated"
+            ? "数据库未写入，请稍后重试，本机未做更改。"
+            : "请先登录后再导入，本机未做更改。"
+      toast.error(reason)
+      return false
+    }
+
+    setCloudAvailable(true)
     const nextImportedItems = mergeImportedExpressionItems(importedBatch, importedItems)
     try {
       saveLocalExpressionItems(window.localStorage, storageScope, nextImportedItems)
     } catch {
-      toast.error("本机存储空间不足，表达尚未导入。")
-      return false
+      // 数据库已是真相；本机缓存失败只影响离线访问，不影响导入结果。
+      toast.error("已写入数据库，但本机缓存空间不足，离线时可能看不到这些表达。")
     }
     setImportedItems(nextImportedItems)
     setCategories([])
@@ -442,19 +337,7 @@ export function ExpressionLibraryWorkspace() {
     setSource("imported")
     setVisibleCount(initialVisibleCount)
     saveExpressionFilters({ query: "", categories: [], source: "imported" })
-
-    try {
-      const stored = await saveCloudExpressionItems(importedBatch)
-      setCloudAvailable(stored)
-      toast.success(
-        stored
-          ? `已导入并同步 ${importedBatch.length} 条表达`
-          : `已保存到本机 ${importedBatch.length} 条表达${localOnlySuffix}`,
-      )
-    } catch (error) {
-      setCloudAvailable(false)
-      toast.error(error instanceof Error ? error.message : "表达已保存到本机，云端同步失败。")
-    }
+    toast.success(`已导入并写入数据库 ${importedBatch.length} 条表达`)
     return true
   }
 
@@ -645,35 +528,6 @@ export function ExpressionLibraryWorkspace() {
       <p className="text-center text-xs text-muted-foreground" aria-live="polite">
         已显示 {visibleItems.length} / {filteredItems.length} 条
       </p>
-
-      {session ? (
-        session.scope.kind === "ebbinghaus" ? (
-          <ExpressionEbbinghausDialog
-            key={session.id}
-            open
-            pool={sessionItems}
-            catalogItems={allItems}
-            memoryItems={state.items}
-            onClose={() => setSession(null)}
-            onLearn={recordLibraryMemory}
-            onRate={rateReview}
-            onProgress={recordExpressionProgress}
-          />
-        ) : (
-          <ExpressionStudyDialog
-            key={session.id}
-            open
-            items={sessionItems}
-            scope={session.scope}
-            study={expressionStudy}
-            initialMode={session.mode}
-            onClose={() => setSession(null)}
-            onProgress={recordExpressionProgress}
-            onStudyMemory={recordLibraryMemory}
-            onReshuffle={session.scope.kind === "random" ? reshuffleStudy : undefined}
-          />
-        )
-      ) : null}
 
       {editingItem ? (
         <ExpressionEditDialog

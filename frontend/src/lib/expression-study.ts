@@ -36,6 +36,40 @@ export const expressionStudyScopeLabels: Record<ExpressionStudyScope["kind"], st
   ebbinghaus: "艾宾浩斯记忆",
 }
 
+/** 把学习页的 query 参数还原成强类型范围；非法值回退到当前筛选结果。 */
+export function parseExpressionStudyScope(input: {
+  scope?: string
+  groupId?: string
+  status?: string
+  count?: string
+}): ExpressionStudyScope {
+  const count = Number(input.count)
+  switch (input.scope) {
+    case "favorites":
+      return { kind: "favorites" }
+    case "group":
+      return { kind: "group", groupId: input.groupId ?? "" }
+    case "review":
+      return {
+        kind: "review",
+        status: input.status === "mastered" ? "mastered" : "learning",
+      }
+    case "random":
+      return {
+        kind: "random",
+        count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 10,
+      }
+    case "ebbinghaus":
+      return { kind: "ebbinghaus" }
+    default:
+      return { kind: "filtered" }
+  }
+}
+
+export function parseExpressionStudyMode(value?: string): ExpressionStudyMode {
+  return value === "cloze" || value === "dictation" ? value : "flashcard"
+}
+
 export type Cloze = {
   before: string
   answer: string

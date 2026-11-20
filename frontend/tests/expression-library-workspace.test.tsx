@@ -50,6 +50,11 @@ vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowserClient: () => null,
 }))
 
+const routerPush = vi.fn()
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPush }),
+}))
+
 // Local toasts append an account-state suffix only for non-authenticated learners; these tests pin
 // the signed-in copy, so the hook is stubbed instead of standing up Supabase.
 vi.mock("@/components/auth-provider", () => ({
@@ -129,6 +134,7 @@ beforeEach(() => {
   memoryMocks.recordExpressionProgress.mockReset()
   memoryMocks.saveExpressionFilters.mockReset()
   memoryMocks.rateReview.mockReset()
+  routerPush.mockReset()
   fetchMock.mockReset().mockImplementation((input, init: RequestInit | undefined) => {
     const url =
       typeof input === "string"
@@ -219,7 +225,7 @@ describe("ExpressionLibraryWorkspace", () => {
     expect(screen.getByText("已显示 120 / 1170 条")).toBeTruthy()
   })
 
-  it("imports directly pasted JSON locally before cloud sync", async () => {
+  it("imports pasted JSON only after the database confirms storage", async () => {
     render(<ExpressionLibraryWorkspace />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
 
@@ -255,6 +261,38 @@ describe("ExpressionLibraryWorkspace", () => {
       "/api/expressions",
       expect.objectContaining({ method: "POST" }),
     )
+  })
+
+  it("keeps local state untouched and reports failure when the database rejects an import", async () => {
+    fetchMock.mockImplementation((_input, init: RequestInit | undefined) => {
+      const method = init?.method ?? "GET"
+      const data =
+        method === "GET"
+          ? { cloudAvailable: true, items: [], nextCursor: null, userId: "user-1" }
+          : { stored: false }
+      return Promise.resolve(new Response(JSON.stringify({ data })))
+    })
+    render(<ExpressionLibraryWorkspace />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "JSON 数据" }), {
+      target: { value: validImportContent },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: "导入 1 条" }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/expressions",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    )
+    // 数据库未确认写入：本机保持原样，弹窗与内容保留供用户重试。
+    expect(
+      JSON.parse(window.localStorage.getItem("moss:expression-library:v1:user-1") ?? "{}")
+        .items,
+    ).toHaveLength(0)
+    expect(screen.getByRole("textbox", { name: "JSON 数据" })).toBeTruthy()
   })
 
   it("generates an enriched import record from an input phrase", async () => {
@@ -378,19 +416,14 @@ describe("ExpressionLibraryWorkspace", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("writes long-term memory when a study session item is completed", async () => {
+  it("navigates to the filtered study scope with the chosen mode", async () => {
     render(<ExpressionLibraryWorkspace />)
 
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
-      target: { value: "rule of thumb" },
-    })
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
-    fireEvent.click(await screen.findByRole("menuitem", { name: "闪卡自测" }))
-    fireEvent.click(await screen.findByRole("button", { name: "揭示答案" }))
-    fireEvent.click(screen.getByRole("button", { name: "掌握了" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "例句填空" }))
 
-    expect(memoryMocks.recordExpressionStudy).toHaveBeenCalledWith(
-      expect.objectContaining({ label: "rule of thumb", phrase: "rule of thumb" }),
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=filtered&mode=cloze",
     )
   })
 
@@ -518,24 +551,26 @@ describe("ExpressionLibraryWorkspace", () => {
     expect(screen.getByRole("menuitem", { name: "艾宾浩斯记忆循环" })).toBeTruthy()
   })
 
-  it("opens a bounded random study session from the start menu", async () => {
+  it("navigates to the standalone study page with the scope and mode in the URL", async () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
     fireEvent.click(await screen.findByRole("menuitem", { name: "随机学 5 条" }))
 
-    expect(await screen.findByText("学习 · 随机学习 5 条")).toBeTruthy()
-    expect(screen.getByText("1 / 5")).toBeTruthy()
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=random&count=5&mode=flashcard",
+    )
   })
 
-  it("opens the ebbinghaus cycle connected to long-term memory", async () => {
+  it("navigates to the ebbinghaus view on the standalone study page", async () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
     fireEvent.click(await screen.findByRole("menuitem", { name: "艾宾浩斯记忆循环" }))
 
-    expect(await screen.findByText(/艾宾浩斯记忆 · ① 学习/)).toBeTruthy()
-    expect(screen.getByRole("button", { name: /揭示答案/ })).toBeTruthy()
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=ebbinghaus&mode=flashcard",
+    )
   })
 
   it("opens a row group menu without a Base UI context error", async () => {
@@ -582,6 +617,8 @@ describe("ExpressionLibraryWorkspace", () => {
       "A2 · 入门常用",
       expect.arrayContaining(["clothing:shop around"]),
     )
-    expect(await screen.findByText("这个范围里还没有表达")).toBeTruthy()
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=group&groupId=recommended%3Alevel-A2&mode=flashcard",
+    )
   })
 })

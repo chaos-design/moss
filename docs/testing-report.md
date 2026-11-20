@@ -21,7 +21,7 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 101 文件 841 用例；本机负载下默认 10s 超时，本地放宽至 45s 全绿 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 102 文件 846 用例；本机负载下默认 10s 超时，本地放宽至 45s 全绿 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
 | `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 48 测试通过 |
@@ -1175,3 +1175,18 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
   超时导致词库工作区 5 个用例超时；stash 掉本次改动后旧代码同样超时，确认非本次改动引入。
   以本地 `--testTimeout=45000` 复跑，前端 101 文件 / 841 用例全部通过，后端各套件全绿。
 - 视觉验证：导入例句垂直居中的桌面与 390px 观感待人工核对；本次未采集截图。
+
+## 2026-11-20 学习独立页面与导入必须入库
+
+- 学习从弹窗改为独立页面 `/workspace/expressions/study`：`scope/mode/groupId/status/count/session`
+  经 query 传递，筛选条件留在学习记忆快照。词库页与学习页共用 `useExpressionLibrarySource`
+  加载和派生词库集合；参数解析 `parseExpressionStudyScope/parseExpressionStudyMode` 对非法值回退。
+  闪卡/填空/听写与艾宾浩斯循环都改为页面内组件，返回按钮跳回词库。
+- 导入改为必须先入库：`handleImport` 先 POST 并确认 `stored`，成功后才写本机；未登录/演示/失败
+  时报错、保留弹窗、本机不变。修复 `extra_examples` 用 `JSON.stringify` 写成字符串违反
+  `jsonb_typeof='array'` 约束导致整批 502 的问题，改为传原生数组。
+- 自动化验证（2026-11-20，本机）：新增导入失败保持本机、repository jsonb 数组、学习页写入与
+  跳转、URL 参数解析用例；前端 102 文件 / 846 用例全部通过，`pnpm db:test` 15 用例通过，
+  `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（新路由 `/workspace/expressions/study` 进入产物）。
+  本机负载仍高，vitest 以本地 `--testTimeout=45000` 复跑。
+- 视觉验证：独立学习页与返回按钮在桌面/390px 的观感待人工核对；本次未采集截图。

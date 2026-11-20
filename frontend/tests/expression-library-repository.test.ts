@@ -82,6 +82,24 @@ describe("expression library repository", () => {
     )
   })
 
+  it("writes extra examples as a native array for the jsonb constraint", async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null })
+    const client = { from: vi.fn(() => ({ upsert })) }
+    const examples = [{ text: "Keep an eye on the kids.", translation: "照看一下孩子。" }]
+
+    await upsertExpressionLibraryItems({
+      client: client as never,
+      items: [{ ...item, examples }],
+      userId: "user-1",
+    })
+
+    // 表约束要求 jsonb_typeof(extra_examples) = 'array'；stringify 成字符串会被 23514 拒绝。
+    expect(upsert).toHaveBeenCalledWith(
+      [expect.objectContaining({ extra_examples: examples })],
+      { onConflict: "user_id,scene_category,normalized_phrase" },
+    )
+  })
+
   it("updates a record by its stable client id", async () => {
     const upsert = vi.fn().mockResolvedValue({ error: null })
     const client = { from: vi.fn(() => ({ upsert })) }

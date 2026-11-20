@@ -246,7 +246,7 @@ flowchart LR
 | 数据 | 主副本 | 同步/传输 | 保留规则 |
 | --- | --- | --- | --- |
 | 内置场景与表达内容 | `demo-data.ts`、`conversation-scenes.ts`、`idiomatic-expressions.ts`、`expression-library.generated.json`、`shadowing-dialogues.ts` | 随 Web 构建发布，不写入用户快照 | 场景 ID 稳定；内置词库 1170 条（270 审校 + 900 场景补充）按 10 类场景归档；词源有争议时明确标注 |
-| 用户导入表达 | `moss:expression-library:v1:<userId>` | 本机先写，通过 `/api/expressions` 分批同步 `expression_library_items` | RLS 用户隔离；同一用户、场景和规范化表达幂等更新；译文、用法、记忆提示和拓展例句随行持久化 |
+| 用户导入表达 | 云端 `expression_library_items` 表为准，本机 `moss:expression-library:v1:<userId>` 为离线缓存 | 先经 `/api/expressions` 分批写入并确认 `stored`，成功后才更新本机；失败/未登录/演示模式报错且不改本机 | RLS 用户隔离；同一用户、场景和规范化表达幂等更新；译文、用法、记忆提示随行持久化，拓展例句以原生数组写入 jsonb 列 |
 | 学习记忆快照 | `moss:learning-memory:v1:<userId>` | Supabase 快照与 Realtime | 本地优先，按身份隔离 |
 | 学习进度与问题分析 | 学习记忆中的 `sceneProgress`、`items` 和 `events` | 随学习记忆快照同步 | 事件按 ID 合并并完整保留；地图、场景库和分析页只派生真实记录，空数据展示空状态 |
 | 表达学习记忆 | 学习记忆中的 `items` 与 `expression`/`review` 事件 | 随学习记忆快照同步，并经 `/api/memory-documents` 写向量记忆 | `sceneId` 使用词库分类而非场景 ID，因此不写入 `sceneProgress`，不影响场景完成度；词库学习完成一条（含闪卡/填空/听写）与艾宾浩斯循环都经 `recordExpressionStudy`/`rateReview` 写入这里，`expressionStudy.progress` 只保留词库内的轻量状态，不再需要手动「加入长期记忆」才能进复习队列；随机抽样不落盘 |

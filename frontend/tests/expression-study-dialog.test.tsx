@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ExpressionStudyDialog } from "@/features/expressions/expression-study-dialog"
+import { ExpressionStudyWorkspace } from "@/features/expressions/expression-study-dialog"
 import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import { createEmptyExpressionStudyState } from "@/lib/memory"
 
@@ -37,18 +37,17 @@ const item: ExpressionLibraryItem = {
 
 afterEach(() => cleanup())
 
-describe("ExpressionStudyDialog", () => {
+describe("ExpressionStudyWorkspace", () => {
   it("runs a flashcard round and records both progress and long-term memory on mastery", () => {
     const onProgress = vi.fn()
     const onStudyMemory = vi.fn()
     render(
-      <ExpressionStudyDialog
-        open
+      <ExpressionStudyWorkspace
         items={[item]}
         scope={{ kind: "filtered" }}
         study={createEmptyExpressionStudyState()}
         initialMode="flashcard"
-        onClose={vi.fn()}
+        onExit={vi.fn()}
         onProgress={onProgress}
         onStudyMemory={onStudyMemory}
       />,
@@ -69,13 +68,12 @@ describe("ExpressionStudyDialog", () => {
   it("also writes long-term memory when the learner only marks practice", () => {
     const onStudyMemory = vi.fn()
     render(
-      <ExpressionStudyDialog
-        open
+      <ExpressionStudyWorkspace
         items={[item]}
         scope={{ kind: "filtered" }}
         study={createEmptyExpressionStudyState()}
         initialMode="flashcard"
-        onClose={vi.fn()}
+        onExit={vi.fn()}
         onProgress={vi.fn()}
         onStudyMemory={onStudyMemory}
       />,
@@ -88,13 +86,12 @@ describe("ExpressionStudyDialog", () => {
 
   it("checks a cloze answer and shows the correct phrase when it is wrong", () => {
     render(
-      <ExpressionStudyDialog
-        open
+      <ExpressionStudyWorkspace
         items={[item]}
         scope={{ kind: "filtered" }}
         study={createEmptyExpressionStudyState()}
         initialMode="cloze"
-        onClose={vi.fn()}
+        onExit={vi.fn()}
         onProgress={vi.fn()}
       />,
     )

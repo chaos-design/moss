@@ -278,6 +278,14 @@
   （stash 旧代码同样超时），以本地 `--testTimeout=45000` 验证前端 101 文件 / 841 用例与
   后端各套件全绿；导入例句居中观感的桌面/390px 待人工核对。
 
+- T-342：学习从弹窗改为独立页面 `/workspace/expressions/study`。`scope/mode/groupId/status/count/session`
+  经 query 传递，筛选条件留在记忆快照；抽取 `useExpressionLibrarySource` 让词库页与学习页共用
+  数据源，避免第二条真相；参数解析对非法值回退。导入改为必须先入库：先 POST 确认 `stored`
+  再写本机，失败/未登录/演示模式报错且保留弹窗；修复 `extra_examples` 字符串化违反 jsonb
+  数组约束导致整批 502 的问题。新增导入失败保持本机、jsonb 数组、学习页写入与跳转、URL 解析
+  用例；前端 102 文件 / 846 用例与后端各套件通过，`pnpm build` 含新路由；独立学习页桌面/390px
+  观感待人工核对。
+
 ## 验证规则
 
 行为变更以 `pnpm check` 为基础；涉及 Next.js 路由或打包时追加 `pnpm build`，视觉变更

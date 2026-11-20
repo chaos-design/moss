@@ -4,6 +4,8 @@ import {
   buildCloze,
   checkClozeAnswer,
   checkDictation,
+  parseExpressionStudyMode,
+  parseExpressionStudyScope,
   resolveStudyItems,
 } from "@/lib/expression-study"
 
@@ -107,6 +109,28 @@ describe("expression study logic", () => {
         scope: { kind: "ebbinghaus" },
       }).map((entry) => entry.id),
     ).toEqual([a.id, b.id, c.id])
+  })
+
+  it("parses study page URL params back into scopes and modes", () => {
+    expect(parseExpressionStudyScope({ scope: "random", count: "5" })).toEqual({
+      kind: "random",
+      count: 5,
+    })
+    expect(parseExpressionStudyScope({ scope: "group", groupId: "g1" })).toEqual({
+      kind: "group",
+      groupId: "g1",
+    })
+    expect(parseExpressionStudyScope({ scope: "review", status: "mastered" })).toEqual({
+      kind: "review",
+      status: "mastered",
+    })
+    expect(parseExpressionStudyScope({ scope: "unknown" })).toEqual({ kind: "filtered" })
+    expect(parseExpressionStudyScope({ scope: "random", count: "bad" })).toEqual({
+      kind: "random",
+      count: 10,
+    })
+    expect(parseExpressionStudyMode("cloze")).toBe("cloze")
+    expect(parseExpressionStudyMode("bogus")).toBe("flashcard")
   })
 
   it("resolves favorites, groups and progress scopes by expression identity", () => {
