@@ -31,6 +31,7 @@ backend/services/tts/runtimes/cosyvoice/runtime
 .vscode
 .vercel
 .workbuddy
+.zcode
 
 __pycache__
 .venv
