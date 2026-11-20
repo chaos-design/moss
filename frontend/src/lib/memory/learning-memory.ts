@@ -1872,6 +1872,13 @@ export function recordExpressionStudy(
     return state
   }
 
+  // 按记忆条目身份幂等：同一条表达只记一次主动学习。重复学习、重试或跨会话再次进入
+  // 都不再累加强度与计数，也不追加第二条 expression 事件；强度与间隔只由真实找回
+  // （rateReview）决定。这和对话回合以 turnId 记账的语义一致——重试不该被当成第二次练习。
+  if (state.items.some((item) => item.id === input.itemId)) {
+    return state
+  }
+
   const nowIso = now.toISOString()
   const kind: LearningMemoryKind =
     input.libraryKind === "sentence-pattern" ? "grammar" : "expression"

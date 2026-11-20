@@ -111,6 +111,7 @@ import {
   getActiveGroups,
 } from "@/lib/memory"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
+import { cn } from "@/lib/utils"
 
 type SourceFilter = "all" | ExpressionSource
 
@@ -912,7 +913,14 @@ const ExpressionRows = memo(function ExpressionRows({
               <p className="mt-1 text-sm font-medium leading-6">{item.meaning}</p>
             </div>
 
-            <div className="grid min-w-0 gap-3 text-sm leading-6 md:grid-cols-2">
+            {/* 导入条目多出编辑/删除按钮，左列更高会把右列拉伸；让右列内容垂直居中，
+                例句 blockquote 不再贴着顶部留一大片空白。 */}
+            <div
+              className={cn(
+                "grid min-w-0 gap-3 text-sm leading-6 md:grid-cols-2",
+                item.source === "imported" && "lg:content-center",
+              )}
+            >
               <div>
                 <p className="text-xs font-medium text-foreground">为什么这样表达</p>
                 <p className="mt-1 text-muted-foreground">{item.why}</p>

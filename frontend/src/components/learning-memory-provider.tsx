@@ -605,7 +605,12 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
 
   const recordExpressionStudyAttempt = useCallback(
     (input: ExpressionStudyMemoryInput) => {
-      const nextState = recordExpressionStudy(stateRef.current, input)
+      const current = stateRef.current
+      const nextState = recordExpressionStudy(current, input)
+      // 按身份幂等命中：同一条表达已入记忆，跳过 setState 与向量写入。
+      if (nextState === current) {
+        return
+      }
       const nextItem = nextState.items.find((item) => item.id === input.itemId)
       stateRef.current = nextState
       setState(nextState)

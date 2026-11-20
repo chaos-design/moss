@@ -271,6 +271,13 @@
   4 条用例；`pnpm check`（前端 101 文件 / 841 用例）与 `pnpm build` 通过；按钮禁用态与
   新徽章的桌面/390px 观感待人工核对。
 
+- T-341：记忆写入与导入例句布局收尾。`recordExpressionStudy` 按 `expression-library-<clientId>`
+  身份幂等，重复学习不再累加强度/计数与事件，provider 命中后跳过 setState 与向量写入；
+  导入表达右侧信息列在 `lg` 以上垂直居中，修正例句 blockquote 贴顶留白。幂等断言替换原有
+  累加用例；`pnpm typecheck`/`lint`/`build` 通过，本机负载 13.5 导致 vitest 默认 10s 超时
+  （stash 旧代码同样超时），以本地 `--testTimeout=45000` 验证前端 101 文件 / 841 用例与
+  后端各套件全绿；导入例句居中观感的桌面/390px 待人工核对。
+
 ## 验证规则
 
 行为变更以 `pnpm check` 为基础；涉及 Next.js 路由或打包时追加 `pnpm build`，视觉变更

@@ -21,7 +21,7 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 101 文件，841 测试通过 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 101 文件 841 用例；本机负载下默认 10s 超时，本地放宽至 45s 全绿 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
 | `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 48 测试通过 |
@@ -1160,3 +1160,18 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
   艾宾浩斯来源标注共 4 条用例；`pnpm check` 通过（前端 101 文件 / 841 用例，后端各套件
   全绿），`pnpm build` 通过。
 - 视觉验证：行按钮禁用态与新增徽章的桌面/390px 观感待人工核对；本次未采集截图。
+
+## 2026-11-20 记忆写入幂等与导入例句布局
+
+- `recordExpressionStudy` 改为按记忆条目身份幂等：同一条表达重复学习不再累加强度、
+  `encounters` 与事件数，返回原状态引用；provider 据此跳过 setState 与向量写入。
+  「重试不重复计数」在词库学习链路上与对话 `turnId` 语义对齐，强度与间隔仍只由
+  `rateReview` 决定。原有「重复学习累加」用例改为断言幂等（encounters 1、strength 49、
+  events 1、同一引用）。
+- 用户导入表达比内置条目多出编辑/删除按钮，宽屏下左列更高会把右侧信息列拉伸，例句
+  blockquote 贴顶并留下大片空白；右侧内容在 `lg` 以上垂直居中，消除贴顶留白。
+- 自动化验证（2026-11-20，本机）：`pnpm typecheck`、`pnpm lint`、`pnpm build` 通过。
+  本机负载 13.5（浏览器进程持续占用 CPU），JSDOM 渲染普遍变慢，vitest 默认 10s 用例
+  超时导致词库工作区 5 个用例超时；stash 掉本次改动后旧代码同样超时，确认非本次改动引入。
+  以本地 `--testTimeout=45000` 复跑，前端 101 文件 / 841 用例全部通过，后端各套件全绿。
+- 视觉验证：导入例句垂直居中的桌面与 390px 观感待人工核对；本次未采集截图。

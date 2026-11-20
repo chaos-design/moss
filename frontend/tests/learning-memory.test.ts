@@ -378,7 +378,7 @@ describe("learning memory", () => {
     expect(next.items[0]?.kind).toBe("grammar")
   })
 
-  it("increments the same memory item when an expression is studied repeatedly", () => {
+  it("does not double-count repeated study of the same expression", () => {
     const state = createEmptyLearningMemory(now)
     const input = {
       itemId: "expression-library-item-3",
@@ -397,10 +397,12 @@ describe("learning memory", () => {
     expect(twice.items).toHaveLength(1)
     expect(twice.items[0]).toMatchObject({
       id: "expression-library-item-3",
-      encounters: 2,
-      strength: 53,
+      encounters: 1,
+      strength: 49,
     })
-    expect(twice.events).toHaveLength(2)
+    expect(twice.events).toHaveLength(1)
+    // 幂等返回同一份状态引用，调用方不会因此触发无意义的 setState/向量写入。
+    expect(twice).toBe(once)
   })
 
   it("records a recall attempt without granting the strength a self-rating would", () => {
