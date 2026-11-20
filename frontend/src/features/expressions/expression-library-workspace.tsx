@@ -668,6 +668,7 @@ export function ExpressionLibraryWorkspace() {
             initialMode={session.mode}
             onClose={() => setSession(null)}
             onProgress={recordExpressionProgress}
+            onStudyMemory={recordLibraryMemory}
             onReshuffle={session.scope.kind === "random" ? reshuffleStudy : undefined}
           />
         )
@@ -851,14 +852,21 @@ const ExpressionRows = memo(function ExpressionRows({
                           type="button"
                           variant="ghost"
                           size="icon-sm"
-                          aria-label={`把 ${item.phrase} 加入长期记忆`}
+                          aria-label={
+                            studied
+                              ? `${item.phrase} 已在长期记忆中`
+                              : `把 ${item.phrase} 加入长期记忆`
+                          }
+                          disabled={studied}
                           onClick={() => onStudy(item)}
                         />
                       }
                     >
                       <BrainCircuitIcon />
                     </TooltipTrigger>
-                    <TooltipContent>加入长期记忆</TooltipContent>
+                    <TooltipContent>
+                      {studied ? "已在记忆中，到期后到复习页巩固" : "加入长期记忆"}
+                    </TooltipContent>
                   </Tooltip>
                   {item.source === "imported" ? (
                     <>

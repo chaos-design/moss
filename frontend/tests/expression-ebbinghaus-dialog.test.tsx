@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ExpressionEbbinghausDialog } from "@/features/expressions/expression-ebbinghaus-dialog"
 import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
-import { createExpressionMemoryItemId } from "@/lib/memory"
+import { createExpressionMemoryItemId, type LearningMemoryItem } from "@/lib/memory"
 
 vi.mock("@/components/expression-text", () => ({
   ExpressionText: ({ text }: { text: string }) => <span>{text}</span>,
@@ -30,7 +30,10 @@ const pool = [item("rule of thumb", "a"), item("break the ice", "b")]
 
 afterEach(cleanup)
 
-function renderDialog() {
+function renderDialog(options?: {
+  catalogItems?: readonly ExpressionLibraryItem[]
+  memoryItems?: readonly LearningMemoryItem[]
+}) {
   const onLearn = vi.fn()
   const onRate = vi.fn()
   const onProgress = vi.fn()
@@ -39,8 +42,8 @@ function renderDialog() {
     <ExpressionEbbinghausDialog
       open
       pool={pool}
-      catalogItems={pool}
-      memoryItems={[]}
+      catalogItems={options?.catalogItems ?? pool}
+      memoryItems={options?.memoryItems ?? []}
       onClose={onClose}
       onLearn={onLearn}
       onRate={onRate}
@@ -83,5 +86,48 @@ describe("expression ebbinghaus dialog", () => {
     expect(screen.getByText("这一轮记忆循环完成了")).toBeTruthy()
     expect(onLearn).toHaveBeenCalledTimes(3)
     expect(onProgress).toHaveBeenCalledTimes(3)
+  })
+
+  it("labels freshly learned recall separately from genuinely due reviews", () => {
+    const dueMemory: LearningMemoryItem = {
+      id: createExpressionMemoryItemId("c"),
+      kind: "expression",
+      label: "keep tabs on",
+      cue: "主动学习并记住“keep tabs on”",
+      answer: "keep tabs on",
+      explanation: "测试记忆",
+      sourceSceneId: "work",
+      sourceSceneTitle: "职场",
+      transferTargets: [],
+      strength: 50,
+      encounters: 1,
+      successfulRecalls: 1,
+      lapseCount: 0,
+      intervalDays: 1,
+      easeFactor: 2.5,
+      repetitions: 1,
+      lastSeenAt: "2026-11-19T08:00:00.000Z",
+      nextReviewAt: "2026-11-19T08:00:00.000Z",
+    }
+    renderDialog({
+      catalogItems: [...pool, item("keep tabs on", "c")],
+      memoryItems: [dueMemory],
+    })
+
+    // 学完两条后进入复习，第一条是刚学条目。
+    fireEvent.click(screen.getByRole("button", { name: /揭示答案/ }))
+    fireEvent.click(screen.getByRole("button", { name: /记住了，下一题/ }))
+    fireEvent.click(screen.getByRole("button", { name: /揭示答案/ }))
+    fireEvent.click(screen.getByRole("button", { name: /记住了，下一题/ }))
+
+    expect(screen.getByText("刚学 · 即时召回")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /显示表达/ }))
+    fireEvent.click(screen.getByRole("button", { name: /记得/ }))
+    fireEvent.click(screen.getByRole("button", { name: /显示表达/ }))
+    fireEvent.click(screen.getByRole("button", { name: /记得/ }))
+
+    // 第三条来自长期记忆的到期队列。
+    expect(screen.getByText("已到期 · 间隔复习")).toBeTruthy()
+    expect(screen.getByText(/这条已到复习时间/)).toBeTruthy()
   })
 })

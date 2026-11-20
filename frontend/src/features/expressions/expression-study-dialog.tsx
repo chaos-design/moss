@@ -65,6 +65,7 @@ export function ExpressionStudyDialog({
   initialMode,
   onClose,
   onProgress,
+  onStudyMemory,
   onReshuffle,
 }: {
   open: boolean
@@ -74,6 +75,8 @@ export function ExpressionStudyDialog({
   initialMode: ExpressionStudyMode
   onClose: () => void
   onProgress: (identity: string, update: ExpressionProgressUpdate) => void
+  /** 完成一条时同步写入长期记忆，使词库进度与间隔复习队列成为同一条链路。 */
+  onStudyMemory?: (item: ExpressionLibraryItem) => void
   onReshuffle?: () => void
 }) {
   const [mode, setMode] = useState<ExpressionStudyMode>(initialMode)
@@ -95,6 +98,8 @@ export function ExpressionStudyDialog({
 
   function complete(status: ExpressionProgressStatus) {
     onProgress(identity, { status, incrementReviews: true })
+    // 主动学习也是一次真实接触：写进长期记忆并排近期复习，避免「学了却不在复习队列」。
+    onStudyMemory?.(item)
     setStats((current) => ({
       mastered: current.mastered + (status === "mastered" ? 1 : 0),
       practice: current.practice + (status === "learning" ? 1 : 0),

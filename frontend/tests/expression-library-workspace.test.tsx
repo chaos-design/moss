@@ -378,6 +378,22 @@ describe("ExpressionLibraryWorkspace", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it("writes long-term memory when a study session item is completed", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "rule of thumb" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "闪卡自测" }))
+    fireEvent.click(await screen.findByRole("button", { name: "揭示答案" }))
+    fireEvent.click(screen.getByRole("button", { name: "掌握了" }))
+
+    expect(memoryMocks.recordExpressionStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ label: "rule of thumb", phrase: "rule of thumb" }),
+    )
+  })
+
   it("marks expressions that already exist in long-term memory", async () => {
     const reviewedIndex =
       builtInExpressionItems.findIndex((item) => item.phrase === "rule of thumb") + 1
@@ -411,6 +427,8 @@ describe("ExpressionLibraryWorkspace", () => {
     })
 
     expect(await screen.findByText("已在记忆中")).toBeTruthy()
+    const addButton = screen.getByRole("button", { name: "rule of thumb 已在长期记忆中" })
+    expect((addButton as HTMLButtonElement).disabled).toBe(true)
   })
 
   it("reveals the example translation only after the eye is pressed", async () => {

@@ -44,7 +44,10 @@ import { cn } from "@/lib/utils"
 
 type Phase = "learn" | "review" | "rememorize" | "done"
 
-/** 复习卡片只关心「给出什么线索、答案是什么」，不绑定具体词库条目类型。 */
+/**
+ * 复习卡片只关心「给出什么线索、答案是什么」，不绑定具体词库条目类型。
+ * `origin` 区分刚学完的即时首次召回（学习步骤）与真正到期的间隔复习，避免把两者混为一谈。
+ */
 type ReviewStep = {
   id: string
   phrase: string
@@ -53,6 +56,7 @@ type ReviewStep = {
   example?: string
   exampleTranslation?: string
   item?: ExpressionLibraryItem
+  origin: "fresh" | "due"
 }
 
 const ratings: Array<{
@@ -76,6 +80,7 @@ function toReviewStep(item: ExpressionLibraryItem): ReviewStep {
     example: item.example,
     exampleTranslation: item.exampleTranslation,
     item,
+    origin: "fresh",
   }
 }
 
@@ -86,13 +91,14 @@ function stepFromMemoryItem(
   const clientId = getClientIdFromExpressionMemoryId(memoryItem.id)
   const item = clientId ? catalog.get(clientId) : undefined
   if (item) {
-    return { ...toReviewStep(item), id: memoryItem.id }
+    return { ...toReviewStep(item), id: memoryItem.id, origin: "due" }
   }
   return {
     id: memoryItem.id,
     phrase: memoryItem.answer,
     meaning: memoryItem.cue,
     context: memoryItem.explanation,
+    origin: "due",
   }
 }
 
@@ -139,7 +145,13 @@ export function ExpressionEbbinghausDialog({
   const [rememorizeQueue, setRememorizeQueue] = useState<ReviewStep[]>([])
   const [rememorizeIndex, setRememorizeIndex] = useState(0)
   const [rememorizeRevealed, setRememorizeRevealed] = useState(false)
-  const [counts, setCounts] = useState({ learned: 0, reviewed: 0, rememorized: 0 })
+  const [counts, setCounts] = useState({
+    learned: 0,
+    reviewed: 0,
+    freshReviewed: 0,
+    dueReviewed: 0,
+    rememorized: 0,
+  })
   const [ratingCounts, setRatingCounts] = useState<Record<RecallRating, number>>({
     again: 0,
     hard: 0,
@@ -182,7 +194,12 @@ export function ExpressionEbbinghausDialog({
     }
     onRate(reviewStep.id, rating)
     setRatingCounts((current) => ({ ...current, [rating]: current[rating] + 1 }))
-    setCounts((current) => ({ ...current, reviewed: current.reviewed + 1 }))
+    setCounts((current) => ({
+      ...current,
+      reviewed: current.reviewed + 1,
+      freshReviewed: current.freshReviewed + (reviewStep.origin === "fresh" ? 1 : 0),
+      dueReviewed: current.dueReviewed + (reviewStep.origin === "due" ? 1 : 0),
+    }))
 
     const needsRetry = needsRememorize(rating) && Boolean(reviewStep.item)
     if (needsRetry) {
@@ -308,11 +325,18 @@ export function ExpressionEbbinghausDialog({
         {phase === "review" ? (
           reviewStep ? (
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-              <p className="font-mono text-[10px] font-semibold uppercase text-primary">
-                Recall from memory
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-mono text-[10px] font-semibold uppercase text-primary">
+                  Recall from memory
+                </p>
+                <Badge variant={reviewStep.origin === "fresh" ? "secondary" : "default"}>
+                  {reviewStep.origin === "fresh" ? "刚学 · 即时召回" : "已到期 · 间隔复习"}
+                </Badge>
+              </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                根据含义回想表达，再揭示答案并自评。
+                {reviewStep.origin === "fresh"
+                  ? "这条刚学完，先做一次即时回忆；真正的间隔复习会在到期后由复习页承接。"
+                  : "这条已到复习时间，按找回难度评分会真实重排下次到期时间。"}
               </p>
               <h3 className="mt-4 font-serif text-2xl font-semibold leading-snug">
                 {reviewStep.meaning}
@@ -421,8 +445,8 @@ export function ExpressionEbbinghausDialog({
             />
             <h3 className="mt-4 font-serif text-xl font-semibold">这一轮记忆循环完成了</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              学习 {counts.learned} 条 · 复习 {counts.reviewed} 条 · 再记忆 {counts.rememorized}{" "}
-              条
+              学习 {counts.learned} 条 · 即时召回 {counts.freshReviewed} 条 · 到期复习{" "}
+              {counts.dueReviewed} 条 · 再记忆 {counts.rememorized} 条
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {(

@@ -38,8 +38,9 @@ const item: ExpressionLibraryItem = {
 afterEach(() => cleanup())
 
 describe("ExpressionStudyDialog", () => {
-  it("runs a flashcard round and records progress when the learner marks mastery", () => {
+  it("runs a flashcard round and records both progress and long-term memory on mastery", () => {
     const onProgress = vi.fn()
+    const onStudyMemory = vi.fn()
     render(
       <ExpressionStudyDialog
         open
@@ -49,6 +50,7 @@ describe("ExpressionStudyDialog", () => {
         initialMode="flashcard"
         onClose={vi.fn()}
         onProgress={onProgress}
+        onStudyMemory={onStudyMemory}
       />,
     )
 
@@ -60,7 +62,28 @@ describe("ExpressionStudyDialog", () => {
       "work:rule of thumb",
       expect.objectContaining({ status: "mastered", incrementReviews: true }),
     )
+    expect(onStudyMemory).toHaveBeenCalledWith(item)
     expect(screen.getByText("这一组学完了")).toBeTruthy()
+  })
+
+  it("also writes long-term memory when the learner only marks practice", () => {
+    const onStudyMemory = vi.fn()
+    render(
+      <ExpressionStudyDialog
+        open
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="flashcard"
+        onClose={vi.fn()}
+        onProgress={vi.fn()}
+        onStudyMemory={onStudyMemory}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "揭示答案" }))
+    fireEvent.click(screen.getByRole("button", { name: "再练一次" }))
+    expect(onStudyMemory).toHaveBeenCalledWith(item)
   })
 
   it("checks a cloze answer and shows the correct phrase when it is wrong", () => {
