@@ -115,9 +115,9 @@ flowchart LR
 | `example` | 可直接用于当前场景的完整英文句子 |
 | `context` | `日常`、`职场` 或 `通用` |
 
-`frontend/src/lib/expression-library.ts` 将 200 条审校表达与
+`frontend/src/lib/expression-library.ts` 将 270 条审校表达与
 `expression-library.generated.json` 的 900 条场景表达合并为独立词库。词库按
-`SceneCategory` 的 10 个分类组织；生成数据必须通过 1100 条、短语唯一、字段完整和完整
+`SceneCategory` 的 10 个分类组织；生成数据必须通过 1170 条、短语唯一、字段完整和完整
 例句断言。`frontend/scripts/generate-expression-library.mjs` 仅用于维护内置数据，运行时
 页面不会调用模型。不要把未经确认的民间词源写成确定事实。
 

@@ -245,7 +245,7 @@ flowchart LR
 
 | 数据 | 主副本 | 同步/传输 | 保留规则 |
 | --- | --- | --- | --- |
-| 内置场景与表达内容 | `demo-data.ts`、`conversation-scenes.ts`、`idiomatic-expressions.ts`、`expression-library.generated.json`、`shadowing-dialogues.ts` | 随 Web 构建发布，不写入用户快照 | 场景 ID 稳定；内置词库 1100 条（200 审校 + 900 场景补充）按 10 类场景归档；词源有争议时明确标注 |
+| 内置场景与表达内容 | `demo-data.ts`、`conversation-scenes.ts`、`idiomatic-expressions.ts`、`expression-library.generated.json`、`shadowing-dialogues.ts` | 随 Web 构建发布，不写入用户快照 | 场景 ID 稳定；内置词库 1170 条（270 审校 + 900 场景补充）按 10 类场景归档；词源有争议时明确标注 |
 | 用户导入表达 | `moss:expression-library:v1:<userId>` | 本机先写，通过 `/api/expressions` 分批同步 `expression_library_items` | RLS 用户隔离；同一用户、场景和规范化表达幂等更新 |
 | 学习记忆快照 | `moss:learning-memory:v1:<userId>` | Supabase 快照与 Realtime | 本地优先，按身份隔离 |
 | 学习进度与问题分析 | 学习记忆中的 `sceneProgress`、`items` 和 `events` | 随学习记忆快照同步 | 事件按 ID 合并并完整保留；地图、场景库和分析页只派生真实记录，空数据展示空状态 |

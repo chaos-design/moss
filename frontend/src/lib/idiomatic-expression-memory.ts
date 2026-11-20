@@ -2817,4 +2817,986 @@ export const idiomaticExpressionMemory: Record<string, IdiomaticExpressionMemory
       },
     ],
   },
+  "head over heels": {
+    usage:
+      "常用 fall head over heels (for) 或 be head over heels in love；语气热烈，口语为主。",
+    memoryTip: "头朝下脚朝天地栽进去：爱到失去平衡。",
+    examples: [
+      {
+        text: "They fell head over heels within a month of meeting.",
+        translation: "认识不到一个月，他们就爱得神魂颠倒。",
+      },
+      {
+        text: "She is head over heels about her new puppy.",
+        translation: "她对新来的小狗喜欢得不得了。",
+      },
+    ],
+  },
+  "over the moon": {
+    usage: "be over the moon (about / with)；英式口语偏多，形容持续一阵的狂喜。",
+    memoryTip: "高兴到越过月亮：够不着的高处也飞上去了。",
+    examples: [
+      {
+        text: "He was over the moon when the deal finally closed.",
+        translation: "交易最终谈成时，他欣喜若狂。",
+      },
+      {
+        text: "The kids were over the moon about the snow day.",
+        translation: "听说下雪放假，孩子们乐疯了。",
+      },
+    ],
+  },
+  "move heaven and earth": {
+    usage: "常与 to do 连用；主语可以是人、团队或机构。",
+    memoryTip: "天地都搬得动：办法用尽也要办成。",
+    examples: [
+      {
+        text: "The hospital moved heaven and earth to find a matching donor.",
+        translation: "医院想尽办法寻找匹配的供体。",
+      },
+      {
+        text: "She moved heaven and earth to get us front-row tickets.",
+        translation: "她竭尽全力给我们搞到了前排门票。",
+      },
+    ],
+  },
+  "call it quits": {
+    usage: "decide / agree to call it quits；散伙、收工或停止争论都用它。",
+    memoryTip: "账算清了：就此打住。",
+    examples: [
+      {
+        text: "Let's call it quits for today and pick it up tomorrow.",
+        translation: "今天就到此为止，明天接着干。",
+      },
+      {
+        text: "The band called it quits after the farewell tour.",
+        translation: "告别巡演结束后，乐队宣布解散。",
+      },
+    ],
+  },
+  "from scratch": {
+    usage: "build / start / learn from scratch；强调不依赖现成的基础。",
+    memoryTip: "从零让步线起跑：没有先跑几十米的便宜。",
+    examples: [
+      {
+        text: "She learned Spanish from scratch in one year.",
+        translation: "她一年之内从零学会了西班牙语。",
+      },
+      {
+        text: "The whole pipeline was rebuilt from scratch after the audit.",
+        translation: "审计之后，整条流水线从零重建。",
+      },
+    ],
+  },
+  "when it rains it pours": {
+    usage: "独立谚语句或 when 引导；坏事扎堆时感叹，语气无奈带幽默。",
+    memoryTip: "不雨则已，一雨倾盆：麻烦从不单来。",
+    examples: [
+      {
+        text: "First the car, then the fridge — when it rains it pours.",
+        translation: "先坏车再坏冰箱——祸不单行。",
+      },
+      {
+        text: "When it rains it pours: the deadline moved up and the printer broke.",
+        translation: "祸不单行：截止日期提前了，打印机还坏了。",
+      },
+    ],
+  },
+  "easier said than done": {
+    usage: "独立评语句或 that is easier said than done；承认建议正确但难执行。",
+    memoryTip: "嘴上功夫最省力。",
+    examples: [
+      {
+        text: "Merging the two teams by Friday? Easier said than done.",
+        translation: "周五之前合并两个团队？说起来容易做起来难。",
+      },
+      {
+        text: "Quitting sugar completely is easier said than done.",
+        translation: "彻底戒糖，说起来容易做起来难。",
+      },
+    ],
+  },
+  "second to none": {
+    usage: "be second to none；推荐与营销语气，正式场合也可用。",
+    memoryTip: "没人排在它前面：第一。",
+    examples: [
+      {
+        text: "The bakery's sourdough is second to none in town.",
+        translation: "那家面包店的酸面团全城第一。",
+      },
+      {
+        text: "Our uptime record is second to none in the industry.",
+        translation: "我们的在线率纪录在整个行业首屈一指。",
+      },
+    ],
+  },
+  "under wraps": {
+    usage: "keep / stay under wraps；发布会、谈判前的保密常用语。",
+    memoryTip: "裹进布里：谁都看不见。",
+    examples: [
+      {
+        text: "The cast list stayed under wraps until opening night.",
+        translation: "开演前，演员名单一直保密。",
+      },
+      {
+        text: "They kept the acquisition under wraps for months.",
+        translation: "这桩收购他们保密了好几个月。",
+      },
+    ],
+  },
+  "bent out of shape": {
+    usage: "get / be bent out of shape (about / over)；多指因小事气恼。",
+    memoryTip: "被拧变形：为小事炸毛。",
+    examples: [
+      {
+        text: "He got bent out of shape about the seating chart.",
+        translation: "他因为座位表的事特别气恼。",
+      },
+      {
+        text: "She was bent out of shape over the cold coffee.",
+        translation: "咖啡是凉的，她烦得不行。",
+      },
+    ],
+  },
+  "egg someone on": {
+    usage: "egg someone on (to do)；略带贬义或戏谑，主语多为同伴。",
+    memoryTip: "egg 是「催」不是「蛋」：磨着让人往前。",
+    examples: [
+      {
+        text: "His friends egged him on to sign up for the triathlon.",
+        translation: "朋友们撺掇他报名参加了铁人三项。",
+      },
+      {
+        text: "Stop egging her on during exam week.",
+        translation: "考试周就别再撺掇她了。",
+      },
+    ],
+  },
+  "a piece of my mind": {
+    usage: "give someone a piece of one's mind；所有格随主语变化，多指当面训斥。",
+    memoryTip: "把心里的火气分他一块：当场痛斥。",
+    examples: [
+      {
+        text: "The neighbour got a piece of her mind about the rubbish.",
+        translation: "因为垃圾的事，她把邻居狠狠数落了一顿。",
+      },
+      {
+        text: "He marched into the office to give them a piece of his mind.",
+        translation: "他冲进办公室，把他们劈头盖脸训了一通。",
+      },
+    ],
+  },
+  "the more the merrier": {
+    usage: "独立谚语句；欢迎更多人加入聚会、群组或活动。",
+    memoryTip: "双重比较级：数量加码，气氛加码。",
+    examples: [
+      {
+        text: "Bring your roommate too — the more the merrier.",
+        translation: "把室友也叫上——人越多越热闹。",
+      },
+      {
+        text: "For the workshop, the more the merrier.",
+        translation: "工作坊嘛，人越多越好。",
+      },
+    ],
+  },
+  "you can say that again": {
+    usage: "独立附和句；回应别人的感叹、抱怨或夸赞。",
+    memoryTip: "再听一遍都成立：热烈同意。",
+    examples: [
+      {
+        text: "'This queue is endless.' — You can say that again.",
+        translation: "「这队伍长得没边了。」——说得太对了。",
+      },
+      {
+        text: "'What a week.' — You can say that again.",
+        translation: "「这周真是够了。」——可不是嘛。",
+      },
+    ],
+  },
+  "it goes without saying": {
+    usage: "句首插入语 + that 从句；引出双方都明白的前提。",
+    memoryTip: "不说也成立：默认的常识。",
+    examples: [
+      {
+        text: "It goes without saying that the data stays confidential.",
+        translation: "不言而喻，数据必须保密。",
+      },
+      {
+        text: "It goes without saying: back up before you refactor.",
+        translation: "不用说，重构前先备份。",
+      },
+    ],
+  },
+  "come to think of it": {
+    usage: "句首插入语；说话说到一半想起相关的事，补一句。",
+    memoryTip: "说到一半想起：等一下，还有这茬。",
+    examples: [
+      {
+        text: "Come to think of it, the invoice never arrived.",
+        translation: "这么一想，发票压根就没寄来。",
+      },
+      {
+        text: "Come to think of it, we met years ago at that conference.",
+        translation: "仔细想起来，我们多年前在那个会上见过。",
+      },
+    ],
+  },
+  "as it turns out": {
+    usage: "句首插入语；揭晓与预期不同的事实，语气略带意外。",
+    memoryTip: "事情「转」出来才知道底：结果发现。",
+    examples: [
+      {
+        text: "As it turns out, the venue was double-booked.",
+        translation: "结果发现，场地被重复预订了。",
+      },
+      {
+        text: "As it turns out, he had already accepted the offer.",
+        translation: "结果发现，他早就接受了那个 offer。",
+      },
+    ],
+  },
+  "at the last minute": {
+    usage: "at the last minute 作状语；多带仓促、临时变卦的意味。",
+    memoryTip: "只剩最后一分钟：压着点才动。",
+    examples: [
+      {
+        text: "She found her passport at the last minute.",
+        translation: "她在最后一刻找到了护照。",
+      },
+      {
+        text: "They changed the design at the last minute.",
+        translation: "他们在最后一刻改了设计。",
+      },
+    ],
+  },
+  "in the works": {
+    usage: "be in the works；多为进行时或完成时，指筹备中尚未发布。",
+    memoryTip: "在生产线上：快了，但还没好。",
+    examples: [
+      {
+        text: "Two more practice scenes are in the works.",
+        translation: "还有两个练习场景正在筹备中。",
+      },
+      {
+        text: "A fix for the sync bug is in the works already.",
+        translation: "同步 bug 的修复已经在推进了。",
+      },
+    ],
+  },
+  "keep an eye out": {
+    usage:
+      "keep an eye out (for something)；注意「可能出现」的东西，与 keep an eye on（看管）不同。",
+    memoryTip: "放一只眼睛出去望风。",
+    examples: [
+      {
+        text: "Keep an eye out for delays on the line.",
+        translation: "留意一下线路上的延误通知。",
+      },
+      {
+        text: "I kept a closer eye out after the first scare.",
+        translation: "第一次虚惊之后，我盯得更紧了。",
+      },
+    ],
+  },
+  "day in and day out": {
+    usage: "作状语强调重复，常带一点单调意味。",
+    memoryTip: "一天接一天：循环不断。",
+    examples: [
+      {
+        text: "The machine runs day in and day out without a break.",
+        translation: "这台机器日复一日地运转，从不歇息。",
+      },
+      {
+        text: "Day in and day out, the same route to work.",
+        translation: "日复一日，上班都是同一条路线。",
+      },
+    ],
+  },
+  "from time to time": {
+    usage: "作状语表低频、不定期；比 occasionally 更口语。",
+    memoryTip: "在时间线上隔一段冒一次。",
+    examples: [
+      {
+        text: "From time to time, the server needs a manual reboot.",
+        translation: "服务器时不时需要手动重启一次。",
+      },
+      {
+        text: "We still write to each other from time to time.",
+        translation: "我们仍然时不时给彼此写信。",
+      },
+    ],
+  },
+  "for the time being": {
+    usage: "作状语；强调临时安排，暗示之后会换更好的方案。",
+    memoryTip: "眼下这段时间先这样。",
+    examples: [
+      {
+        text: "For the time being, share the demo link only internally.",
+        translation: "暂时只在内部分享演示链接。",
+      },
+      {
+        text: "The old sign will stay up for the time being.",
+        translation: "旧招牌暂时先留着。",
+      },
+    ],
+  },
+  "by and large": {
+    usage: "句首或句中状语；航海出身，作总体判断。",
+    memoryTip: "顶风顺风都能行船：综合各方面看。",
+    examples: [
+      {
+        text: "By and large, the migration went smoothly.",
+        translation: "总体而言，迁移进行得很顺利。",
+      },
+      {
+        text: "The tool is, by and large, worth the price.",
+        translation: "这个工具总的来说值这个价。",
+      },
+    ],
+  },
+  "as a matter of fact": {
+    usage: "句首插入语；纠正误解或强调事实，语气稍带郑重。",
+    memoryTip: "事实本身如此：跟你以为的不同。",
+    examples: [
+      {
+        text: "As a matter of fact, we closed early today.",
+        translation: "事实上，我们今天提早打烊了。",
+      },
+      {
+        text: "As a matter of fact, the new hire has been here for years.",
+        translation: "不瞒你说，那个新来的其实在这儿好多年了。",
+      },
+    ],
+  },
+  "it's on me": {
+    usage: "买单用语；账记在我头上，我请客。所有格随说话人变化（it's on him / her）。",
+    memoryTip: "账落在我名下：这顿我出。",
+    examples: [
+      {
+        text: "Dinner tonight? It's on me.",
+        translation: "今晚的晚餐？我请。",
+      },
+      {
+        text: "It's on me this time — you paid last round.",
+        translation: "这次我请——上回是你付的。",
+      },
+    ],
+  },
+  "it's up to you": {
+    usage: "独立答句；把决定权交给对方，常用于选择、取舍的场合。",
+    memoryTip: "责任落到你头上：你说了算。",
+    examples: [
+      {
+        text: "It's up to you which seat we take.",
+        translation: "我们坐哪个位置，由你决定。",
+      },
+      {
+        text: "It's up to you whether we tell them now or later.",
+        translation: "现在说还是晚点说，你定。",
+      },
+    ],
+  },
+  "no way": {
+    usage: "独立感叹；可表示不信（不会吧）或断然拒绝（绝不），语气强烈。",
+    memoryTip: "没有那条路：不可能。",
+    examples: [
+      {
+        text: "'The flight got moved to 6 a.m.' — No way.",
+        translation: "「航班改到早上六点了。」——不会吧。",
+      },
+      {
+        text: "No way am I missing the deadline again.",
+        translation: "我绝不会再错过截止日期。",
+      },
+    ],
+  },
+  "not at all": {
+    usage: "回应感谢时等于「哪里哪里」；也可强调彻底否定（一点也不）。",
+    memoryTip: "一丝一毫都没有：完全不。",
+    examples: [
+      {
+        text: "Thanks for waiting. Not at all.",
+        translation: "谢谢你等。哪里哪里。",
+      },
+      {
+        text: "The change is not at all noticeable.",
+        translation: "这个改动完全看不出来。",
+      },
+    ],
+  },
+  "one way or another": {
+    usage: "作状语；表达决心或安慰，途径未知但结果必至。",
+    memoryTip: "总有一条路通到结果。",
+    examples: [
+      {
+        text: "One way or another, the leak will be found.",
+        translation: "无论如何，泄漏点总会被找到。",
+      },
+      {
+        text: "She will get the refund, one way or another.",
+        translation: "不管怎样，退款她一定要拿回来。",
+      },
+    ],
+  },
+  "out of the question": {
+    usage: "作表语：be out of the question；强硬排除，比 impossible 更斩钉截铁。",
+    memoryTip: "连讨论的资格都没有。",
+    examples: [
+      {
+        text: "Shipping on Sunday is out of the question.",
+        translation: "周日发货根本不可能。",
+      },
+      {
+        text: "Sharing the admin key with a client is out of the question.",
+        translation: "把管理员密钥给客户，想都别想。",
+      },
+    ],
+  },
+  "to some extent": {
+    usage: "句首或句尾状语；部分承认，既不否认也不全盘认同。",
+    memoryTip: "在一定范围内成立。",
+    examples: [
+      {
+        text: "To some extent, the tool itself is to blame.",
+        translation: "某种程度上，工具本身也有责任。",
+      },
+      {
+        text: "I agree with the plan to some extent.",
+        translation: "我在一定程度上同意这个计划。",
+      },
+    ],
+  },
+  "under no circumstances": {
+    usage: "句首禁令；主句常倒装（should you / are you to），书面语气最强。",
+    memoryTip: "条件怎么变都不行。",
+    examples: [
+      {
+        text: "Under no circumstances should you share the token.",
+        translation: "任何情况下都不要把令牌分享出去。",
+      },
+      {
+        text: "Under no circumstances is the server room to be left unlocked.",
+        translation: "任何情况下机房都不得上锁缺席。",
+      },
+    ],
+  },
+  "up to date": {
+    usage: "be / keep / bring something up to date；作定语时常写作 up-to-date。",
+    memoryTip: "记录一直更新到今天这一页。",
+    examples: [
+      {
+        text: "Bring the manual up to date before the audit.",
+        translation: "审计之前把手册更新到最新。",
+      },
+      {
+        text: "All the licenses are up to date.",
+        translation: "所有许可证都在有效期内。",
+      },
+    ],
+  },
+  "as soon as possible": {
+    usage: "请求或要求的礼貌收尾；口语与邮件里常缩写为 ASAP。",
+    memoryTip: "把速度上限设为「能多快就多快」。",
+    examples: [
+      {
+        text: "Send the signed draft as soon as possible.",
+        translation: "请尽快把签好的稿子发过来。",
+      },
+      {
+        text: "We will restore service as soon as possible.",
+        translation: "我们会尽快恢复服务。",
+      },
+    ],
+  },
+  "at the latest": {
+    usage: "跟在时间后面划定底线：再晚不能晚于这个时刻。",
+    memoryTip: "时间上的最后红线。",
+    examples: [
+      {
+        text: "Submit the form by Wednesday at the latest.",
+        translation: "表格最迟周三提交。",
+      },
+      {
+        text: "The bus leaves at six at the latest.",
+        translation: "班车最晚六点发车。",
+      },
+    ],
+  },
+  "by chance": {
+    usage: "作状语说明偶得；与 on purpose（故意）相对。",
+    memoryTip: "靠运气而非计划。",
+    examples: [
+      {
+        text: "I ran into the author by chance at the bookshop.",
+        translation: "我在书店偶然碰到了那位作者。",
+      },
+      {
+        text: "Did you find the café by chance or by review?",
+        translation: "你是碰巧发现的这家咖啡馆，还是看了评价？",
+      },
+    ],
+  },
+  "by far": {
+    usage: "强调最高级：by far the best / the most；放在比较对象之前。",
+    memoryTip: "差距远到不用比。",
+    examples: [
+      {
+        text: "This route is by far the fastest.",
+        translation: "这条路线明显是最快的。",
+      },
+      {
+        text: "The second draft is by far the strongest.",
+        translation: "第二稿明显是最扎实的一版。",
+      },
+    ],
+  },
+  "by heart": {
+    usage: "know / learn something by heart；凭记忆复现，不看原文。",
+    memoryTip: "长在心里：脱口而出。",
+    examples: [
+      {
+        text: "Every agent knows the refund policy by heart.",
+        translation: "每个客服都把退款政策背得滚瓜烂熟。",
+      },
+      {
+        text: "He learned the safety code by heart in a week.",
+        translation: "他一周之内把安全守则背了下来。",
+      },
+    ],
+  },
+  "by mistake": {
+    usage: "作状语说明无意出错；与 on purpose 相对。",
+    memoryTip: "手滑，不是故意的。",
+    examples: [
+      {
+        text: "The refund was issued twice by mistake.",
+        translation: "退款被误发了一次——一共发了两次。",
+      },
+      {
+        text: "I sent the file to the wrong channel by mistake.",
+        translation: "我误把文件发到了错误的频道。",
+      },
+    ],
+  },
+  "in common": {
+    usage: "have (a lot / nothing) in common；比较两人或两物的共有之处。",
+    memoryTip: "彼此共有的那部分。",
+    examples: [
+      {
+        text: "The two designs have a lot in common.",
+        translation: "这两个设计有很多共同点。",
+      },
+      {
+        text: "They have nothing in common except the deadline.",
+        translation: "除了截止日期，他们毫无共同之处。",
+      },
+    ],
+  },
+  "in general": {
+    usage: "句首概括判断；与 in particular（具体而言）相对。",
+    memoryTip: "先说总规律，再谈例外。",
+    examples: [
+      {
+        text: "In general, the API responds within a second.",
+        translation: "总体来说，接口响应在一秒之内。",
+      },
+      {
+        text: "In general, customers prefer the smaller box.",
+        translation: "一般情况下，顾客更喜欢小盒装。",
+      },
+    ],
+  },
+  "in particular": {
+    usage: "紧跟被强调的名词或放句尾；从整体里挑出重点。",
+    memoryTip: "从一堆里单挑一个。",
+    examples: [
+      {
+        text: "Review the security patch in particular.",
+        translation: "尤其要检查那个安全补丁。",
+      },
+      {
+        text: "The last chapter is excellent in particular.",
+        translation: "最后一章写得特别好。",
+      },
+    ],
+  },
+  "in person": {
+    usage: "作状语；强调本人到场，与远程办理相对。",
+    memoryTip: "本人到场才算数。",
+    examples: [
+      {
+        text: "The notary must see you in person.",
+        translation: "公证人必须见到你本人。",
+      },
+      {
+        text: "We met the supplier in person before signing.",
+        translation: "签约之前我们当面见了供应商。",
+      },
+    ],
+  },
+  "in return": {
+    usage: "句尾状语说明互惠交换；what ... in return 提问也可。",
+    memoryTip: "有来有回。",
+    examples: [
+      {
+        text: "She mentored him, and he built her website in return.",
+        translation: "她指导他，他给她做网站作为回报。",
+      },
+      {
+        text: "What can we offer in return for the referral?",
+        translation: "对于这次推荐，我们能回报什么？",
+      },
+    ],
+  },
+  "in stock": {
+    usage: "be in stock；零售电商标准用语，反义是 out of stock（缺货）。",
+    memoryTip: "仓库里有货：随时能发。",
+    examples: [
+      {
+        text: "The grey model is in stock again.",
+        translation: "灰色款又有现货了。",
+      },
+      {
+        text: "We only ship what is in stock.",
+        translation: "我们只发现有货的订单。",
+      },
+    ],
+  },
+  "on average": {
+    usage: "修饰数字或频率；报告与总结的高频用语。",
+    memoryTip: "抹平个案看总体。",
+    examples: [
+      {
+        text: "On average, the app loses ten users a week.",
+        translation: "平均来看，这款应用每周流失十个用户。",
+      },
+      {
+        text: "Sessions last twelve minutes on average.",
+        translation: "会话时长平均十二分钟。",
+      },
+    ],
+  },
+  "on schedule": {
+    usage: "be / keep on schedule；项目语境，反义是 behind schedule（延误）。",
+    memoryTip: "贴着时间表走。",
+    examples: [
+      {
+        text: "The launch is on schedule for March.",
+        translation: "发布按计划定在三月。",
+      },
+      {
+        text: "We kept the review on schedule despite the outage.",
+        translation: "虽然出了故障，评审还是按时进行了。",
+      },
+    ],
+  },
+  "on the way": {
+    usage: "进行时态表示已在途中；也说 on one's way（代词随人称）。",
+    memoryTip: "已经出发，正在路上。",
+    examples: [
+      {
+        text: "Your order is on the way.",
+        translation: "你的订单已经在路上了。",
+      },
+      {
+        text: "The parts are on the way from the warehouse.",
+        translation: "配件正从仓库运过来。",
+      },
+    ],
+  },
+  "on time": {
+    usage: "arrive / be on time；反义 late；勿与 in time（来得及）混淆。",
+    memoryTip: "卡在约定的时刻上。",
+    examples: [
+      {
+        text: "The audit report came in on time.",
+        translation: "审计报告准时交了。",
+      },
+      {
+        text: "Please be on time for the handover.",
+        translation: "交接时请准时到场。",
+      },
+    ],
+  },
+  "out of date": {
+    usage: "be / go out of date；反义 up to date；定语写作 out-of-date。",
+    memoryTip: "信息停在过去那一页。",
+    examples: [
+      {
+        text: "The transit card system is out of date.",
+        translation: "这套交通卡系统太过时了。",
+      },
+      {
+        text: "That guidance went out of date last year.",
+        translation: "那份指南去年就失效了。",
+      },
+    ],
+  },
+  "to be fair": {
+    usage: "句首插入语；先承认对方有理，再讲但书，缓和批评。",
+    memoryTip: "先摆公道再挑毛病。",
+    examples: [
+      {
+        text: "To be fair, the beta was never promised to everyone.",
+        translation: "客观地说，测试版本来就承诺过不面向所有人。",
+      },
+      {
+        text: "To be fair, the support team did warn us twice.",
+        translation: "说句公道话，客服确实提醒过我们两次。",
+      },
+    ],
+  },
+  "to sum up": {
+    usage: "报告或发言收尾的句首插入语；后接结论要点。",
+    memoryTip: "把各点加总：结论如下。",
+    examples: [
+      {
+        text: "To sum up, three risks remain open.",
+        translation: "总结一下，还有三个风险未解决。",
+      },
+      {
+        text: "To sum up: better speed, same cost, fewer bugs.",
+        translation: "概括地说：速度更快，成本不变，bug 更少。",
+      },
+    ],
+  },
+  "under control": {
+    usage: "be / get / keep something under control；强调局面稳定，反义 out of control。",
+    memoryTip: "缰绳在手里。",
+    examples: [
+      {
+        text: "The leak is under control now.",
+        translation: "泄漏现在已经控制住了。",
+      },
+      {
+        text: "Keep the scope under control this quarter.",
+        translation: "这个季度要把需求范围管住。",
+      },
+    ],
+  },
+  "on my own": {
+    usage: "on one's own（代词随人称变化）；独自完成或独立承担。",
+    memoryTip: "一个人扛下来。",
+    examples: [
+      {
+        text: "She runs two shops on her own.",
+        translation: "她一个人打理两家店。",
+      },
+      {
+        text: "The migration was done on their own, without consultants.",
+        translation: "迁移是他们自己完成的，没用顾问。",
+      },
+    ],
+  },
+  "by accident": {
+    usage: "作状语说明无意为之；与 on purpose（故意）相对。",
+    memoryTip: "意外降临，不是计划内。",
+    examples: [
+      {
+        text: "The settings were reset by accident.",
+        translation: "设置被误重置了。",
+      },
+      {
+        text: "We discovered the shortcut by accident.",
+        translation: "我们是偶然发现这个捷径的。",
+      },
+    ],
+  },
+  "in detail": {
+    usage: "explain / describe / discuss in detail；强调逐项展开。",
+    memoryTip: "细节一块块讲清。",
+    examples: [
+      {
+        text: "The report walks through the incident in detail.",
+        translation: "报告把这次事故详细过了一遍。",
+      },
+      {
+        text: "We discussed the new schema in detail on Tuesday.",
+        translation: "周二我们详细讨论了新表结构。",
+      },
+    ],
+  },
+  "in a hurry": {
+    usage: "be in a hurry (to do)；匆忙状态，也暗示毛糙、易出错。",
+    memoryTip: "赶时间的人容易漏东西。",
+    examples: [
+      {
+        text: "The code review was done in a hurry.",
+        translation: "这次代码评审做得比较仓促。",
+      },
+      {
+        text: "He left in a hurry and forgot his badge.",
+        translation: "他急匆匆地走了，忘了带工牌。",
+      },
+    ],
+  },
+  "in the short term": {
+    usage: "与 in the long term 对比；规划和成本讨论的高频语。",
+    memoryTip: "把时间切成段来看。",
+    examples: [
+      {
+        text: "In the short term, we freeze hiring.",
+        translation: "短期内我们冻结招聘。",
+      },
+      {
+        text: "The patch helps in the short term but not in the long term.",
+        translation: "这个补丁短期有效，长期不行。",
+      },
+    ],
+  },
+  "out of control": {
+    usage: "be / go out of control；反义 under control；形容局面管不住。",
+    memoryTip: "缰绳脱手。",
+    examples: [
+      {
+        text: "The comments section went out of control.",
+        translation: "评论区彻底失控了。",
+      },
+      {
+        text: "Spending is out of control this quarter.",
+        translation: "这个季度开支失控了。",
+      },
+    ],
+  },
+  "out of curiosity": {
+    usage: "提问缓冲语，放句首；声明问题纯属好奇、并无冒犯。",
+    memoryTip: "先声明：我就是好奇。",
+    examples: [
+      {
+        text: "Out of curiosity, how long did the beta run?",
+        translation: "出于好奇问一下，测试期跑了多久？",
+      },
+      {
+        text: "Just out of curiosity, who picked the colour scheme?",
+        translation: "随口一问，配色是谁定的？",
+      },
+    ],
+  },
+  "just in case": {
+    usage: "句尾补充「以防万一」；可独立成句，可能性小但备着。",
+    memoryTip: "备着总没错。",
+    examples: [
+      {
+        text: "Save a copy locally just in case.",
+        translation: "在本地存一份副本，以防万一。",
+      },
+      {
+        text: "I brought an umbrella just in case.",
+        translation: "我带了把伞以防万一。",
+      },
+    ],
+  },
+  "in case": {
+    usage: "in case + 从句；in case of + 名词（突发情况）。",
+    memoryTip: "为「万一」提前做准备。",
+    examples: [
+      {
+        text: "Warm up the backup in case the primary fails.",
+        translation: "把备用机预热一下，以防主机宕掉。",
+      },
+      {
+        text: "In case of rain, the ceremony moves indoors.",
+        translation: "如果下雨，典礼改在室内举行。",
+      },
+    ],
+  },
+  "as usual": {
+    usage: "句尾状语；惯例重演，可带无奈或亲切语气。",
+    memoryTip: "一切照旧。",
+    examples: [
+      {
+        text: "The standup ran late, as usual.",
+        translation: "站会照例拖了堂。",
+      },
+      {
+        text: "As usual, the cat claimed the keyboard.",
+        translation: "和往常一样，键盘被猫霸占了。",
+      },
+    ],
+  },
+  "after all": {
+    usage: "句首或句尾；排除怀疑（终究）或提醒理由（毕竟）。",
+    memoryTip: "一切考虑完，还是这个结果。",
+    examples: [
+      {
+        text: "The shortcut worked after all.",
+        translation: "那条捷径终究还是可行的。",
+      },
+      {
+        text: "After all, we agreed on this last quarter.",
+        translation: "毕竟上个季度我们就这么说定了。",
+      },
+    ],
+  },
+  "all of a sudden": {
+    usage: "作状语；叙述毫无征兆的突然变化。",
+    memoryTip: "毫无征兆地发生。",
+    examples: [
+      {
+        text: "All of a sudden, the price doubled.",
+        translation: "突然间，价格翻了一倍。",
+      },
+      {
+        text: "Traffic spiked all of a sudden after the mention.",
+        translation: "被提及之后，流量一下子暴涨。",
+      },
+    ],
+  },
+  "more or less": {
+    usage: "修饰估算或含糊承认；可独立作答语「差不多」。",
+    memoryTip: "多一点少一点都算数。",
+    examples: [
+      {
+        text: "The migration is done, more or less.",
+        translation: "迁移基本完成了。",
+      },
+      {
+        text: "The project is done, more or less.",
+        translation: "项目基本完成了，差不多齐了。",
+      },
+    ],
+  },
+  "make the most of": {
+    usage: "make the most of something；积极利用现有条件，哪怕条件有限。",
+    memoryTip: "从条件里榨出最大价值。",
+    examples: [
+      {
+        text: "Make the most of the quiet mornings.",
+        translation: "好好利用安静的早晨。",
+      },
+      {
+        text: "We made the most of the shared workspace.",
+        translation: "我们把共享办公空间用到了极致。",
+      },
+    ],
+  },
+  "take advantage of": {
+    usage: "take advantage of something / someone；中性指抓住机会，贬义指占人便宜。",
+    memoryTip: "把眼前的好处拿到手。",
+    examples: [
+      {
+        text: "Small firms took advantage of the free tier.",
+        translation: "小公司们趁免费档薅了羊毛。",
+      },
+      {
+        text: "Don't take advantage of the intern's free time.",
+        translation: "别占实习生空闲时间的便宜。",
+      },
+    ],
+  },
+  "meet the deadline": {
+    usage: "meet / miss the deadline；项目管理的标配搭配，deadline 是交稿的「死线」。",
+    memoryTip: "在界线落下之前交出来。",
+    examples: [
+      {
+        text: "The team met the deadline twice this quarter.",
+        translation: "这个季度团队两次都赶上了截止期限。",
+      },
+      {
+        text: "Meeting the deadline matters more than perfection.",
+        translation: "比起完美，按时交付更重要。",
+      },
+    ],
+  },
 }
