@@ -17,7 +17,7 @@ export type SendShortcut = "enter" | "shift-enter"
 export type TutorMode = "natural" | "coach" | "english"
 
 export type ConversationPrefs = {
-  version: 6
+  version: 7
   transcriptLayout: TranscriptLayout
   sendShortcut: SendShortcut
   tutorMode: TutorMode
@@ -48,15 +48,20 @@ export const conversationPrefsStorageKey = "moss:conversation-prefs:v1"
 export const conversationPromptMaxLength = 12_000
 
 export const defaultConversationPrefs: ConversationPrefs = {
-  version: 6,
+  version: 7,
   transcriptLayout: "stacked",
   sendShortcut: "enter",
   tutorMode: "coach",
   sessionResumeMinutes: 30,
   consecutiveQuestionDelayMs: 500,
-  voiceSentenceDelayMs: 1_800,
+  voiceSentenceDelayMs: 1_000,
   conversationPrompt: "",
 }
+
+// v6 的判句等待默认值。识别结果在断句静音（900ms）之后才提交，提交后再等 1.8s
+// 才请求回答明显拖慢语音往返，v7 把默认值收紧到 1s；存储里仍等于旧默认值的记录
+// 视作「从未调过」一并折叠，用户显式改过的数值原样保留。
+const legacyVoiceSentenceDelayMs = 1_800
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {
   return typeof value === "number" && Number.isFinite(value)
@@ -119,7 +124,7 @@ export function parseConversationPrefs(value: string | null): ConversationPrefs 
   try {
     const parsed = JSON.parse(value) as Partial<ConversationPrefs> & Record<string, unknown>
     return {
-      version: 6,
+      version: 7,
       transcriptLayout: isTranscriptLayout(parsed.transcriptLayout)
         ? parsed.transcriptLayout
         : defaultConversationPrefs.transcriptLayout,
@@ -142,9 +147,11 @@ export function parseConversationPrefs(value: string | null): ConversationPrefs 
         3_000,
       ),
       voiceSentenceDelayMs: clampNumber(
-        parsed.voiceSentenceDelayMs,
+        parsed.voiceSentenceDelayMs === legacyVoiceSentenceDelayMs
+          ? defaultConversationPrefs.voiceSentenceDelayMs
+          : parsed.voiceSentenceDelayMs,
         defaultConversationPrefs.voiceSentenceDelayMs,
-        800,
+        400,
         5_000,
       ),
       conversationPrompt: normalizeConversationPrompt(migrateConversationPrompt(parsed)),

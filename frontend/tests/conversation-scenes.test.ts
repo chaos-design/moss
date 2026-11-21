@@ -109,11 +109,49 @@ describe("getConversationScene", () => {
     }
   })
 
+  it("keeps hand-written details for the twenty-five newly enriched scenes", () => {
+    // 这批场景此前只有分类级生成详情：手写角色一旦回退成默认文案即说明详情丢失。
+    const enrichedRoles: Record<string, string> = {
+      "food-delivery": "外卖平台客服",
+      "dinner-party": "聚餐主人",
+      "roommate-rules": "室友",
+      "car-rental": "租车门店职员",
+      "flight-delay": "机场地勤",
+      "salary-negotiation": "招聘经理",
+      "status-update": "项目经理",
+      "dentist-visit": "牙医",
+      "phone-plan": "营业厅店员",
+      "office-hours": "课程教授",
+      "fitting-room": "服装店员",
+      "street-food": "小吃摊主",
+      "farmers-market": "市集摊主",
+      "moving-day": "搬家工人",
+      "neighbor-noise": "楼上邻居",
+      "lost-luggage": "行李查询处员工",
+      "missed-flight": "航空公司地勤",
+      "project-kickoff": "项目负责人",
+      "performance-review": "直属经理",
+      "conflict-resolution": "合作同事",
+      "party-introduction": "派对主人",
+      "hosting-guests": "到访客人",
+      "appointment-booking": "诊所前台",
+      "internet-support": "网络客服",
+      "exam-preparation": "学习伙伴",
+    }
+    for (const [sceneId, partnerRole] of Object.entries(enrichedRoles)) {
+      const scene = getConversationScene(sceneId)
+      expect(scene.partnerRole, sceneId).toBe(partnerRole)
+      expect(scene.objective, sceneId).not.toBe("")
+      expect(scene.opening.translation, sceneId).not.toBe("")
+      expect(scene.recallItems.length, sceneId).toBeGreaterThanOrEqual(2)
+    }
+  })
+
   it("provides usage reasoning and origin notes for the idiomatic expression scene", () => {
     const scene = getConversationScene("idiomatic-english")
     const notes = scene.expressionNotes ?? []
 
-    expect(notes).toHaveLength(100)
+    expect(notes).toHaveLength(270)
     expect(new Set(notes.map((note) => note.phrase.toLocaleLowerCase())).size).toBe(
       notes.length,
     )

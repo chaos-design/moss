@@ -365,7 +365,8 @@ async function requestApiAudio(request: AudioRequest) {
       format: "mp3",
       speed: request.speed,
       text: request.text,
-      voice: request.voice || "alloy",
+      // 空音色按字段策略整体省略，让上游使用自己的默认音色；客户端不再强推 alloy。
+      ...(request.voice ? { voice: request.voice } : {}),
     }),
   })
     .catch(() => {
@@ -421,6 +422,8 @@ async function requestAudio(cacheKey: string, request: AudioRequest) {
   return audioPromise
 }
 
+// 401/402 与 5xx 一样属于「这条链路现在不可用」：凭据失效或余额不足时仍应回退系统语音，
+// 而不是让学习者听不到例句。诊断信息由设置页的测试入口负责展示。
 function isUnavailableStatus(status: number) {
-  return status === 502 || status === 503 || status === 504
+  return status === 401 || status === 402 || status === 502 || status === 503 || status === 504
 }

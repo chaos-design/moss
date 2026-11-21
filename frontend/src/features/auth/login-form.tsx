@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/input-group"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isDemoMode } from "@/lib/runtime-mode"
+import { getSafeRedirectPath } from "@/lib/safe-redirect"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { getSupabasePublicConfig } from "@/lib/supabase/config"
 
@@ -120,8 +121,12 @@ export function LoginForm({
       }
 
       toast.success(mode === "login" ? "登录成功，正在进入学习空间" : "账户已创建")
-      router.replace(nextPath)
-      router.refresh()
+      // signInWithPassword 已经把会话写进 cookie。用 App Router 的客户端软导航进入
+      // 目标页：只替换当前路由，不整页重载，因此不会出现「跳转时又刷新了当前页面」。
+      // /workspace 的服务端守卫与登录页共用 hasUsableSession，即使服务端暂时连不上
+      // Supabase Auth，也能凭刚写入的会话 cookie 放行，软导航不会再被 307 弹回登录页。
+      // 绝不能追加 refresh()：它会重新拉取当前 /login 路由并取消尚未完成的 replace。
+      router.replace(getSafeRedirectPath(nextPath))
     } catch (error) {
       toast.error(getAuthErrorMessage(error))
     } finally {

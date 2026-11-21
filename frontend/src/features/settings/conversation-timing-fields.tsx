@@ -125,11 +125,11 @@ export const ConversationTimingFields = memo(function ConversationTimingFields()
             onCommit={commitQuestionDelay}
           />
           <BoundedNumberField
-            description="说话停顿后继续等待，避免慢速表达被截断。"
+            description="说话停顿后继续等待，避免慢速表达被截断。识别本身另有约 0.9s 的断句静音。"
             id="voice-sentence-delay"
             label="语音识别判句等待（毫秒）"
             max={5000}
-            min={800}
+            min={400}
             step={100}
             value={prefs.voiceSentenceDelayMs}
             onCommit={commitVoiceDelay}

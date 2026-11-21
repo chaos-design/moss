@@ -74,12 +74,47 @@ describe("expression import", () => {
     expect(result.issues).toEqual([{ row: 3, message: "缺少英文表达" }])
   })
 
-  it("creates an importable CSV template", async () => {
+  it("parses translation, usage, memory tip and extra examples", () => {
+    const result = parseExpressionJsonImport(
+      JSON.stringify({
+        items: [
+          {
+            ...validExpression,
+            exampleTranslation: "能帮我看一下包吗？",
+            usage: "常接宾语。",
+            memoryTip: "想象眼睛停在目标上。",
+            examples: [
+              {
+                text: "Keep an eye on the kids.",
+                translation: "照看一下孩子。",
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    expect(result.issues).toEqual([])
+    expect(result.items[0]).toMatchObject({
+      exampleTranslation: "能帮我看一下包吗？",
+      usage: "常接宾语。",
+      memoryTip: "想象眼睛停在目标上。",
+      examples: [{ text: "Keep an eye on the kids.", translation: "照看一下孩子。" }],
+    })
+  })
+
+  it("creates an importable CSV template with the enriched fields", async () => {
     const template = createExpressionImportTemplate()
     const result = await parseExpressionImport(template, "template.csv")
 
     expect(result.items).toHaveLength(1)
     expect(result.issues).toEqual([])
+    expect(result.items[0]).toMatchObject({
+      exampleTranslation: expect.any(String),
+      usage: expect.any(String),
+      memoryTip: expect.any(String),
+    })
+    expect(result.items[0]?.examples).toHaveLength(1)
   })
 
   it("accepts expression rows from a Moss account export", async () => {

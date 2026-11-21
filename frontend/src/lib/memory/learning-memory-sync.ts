@@ -1,3 +1,4 @@
+import { mergeExpressionStudyState } from "./expression-study-state"
 import {
   createEmptyLearningMemory,
   type LearningMemoryEvent,
@@ -123,6 +124,7 @@ export function mergeLearningMemory(
     items: mergeMemoryItems(local.items, remote.items),
     sceneProgress: mergeSceneProgress(local.sceneProgress, remote.sceneProgress),
     events: mergeEvents(local.events, remote.events),
+    expressionStudy: mergeExpressionStudyState(local.expressionStudy, remote.expressionStudy),
     updatedAt:
       timestamp(local.updatedAt) > timestamp(remote.updatedAt)
         ? local.updatedAt

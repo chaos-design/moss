@@ -34,7 +34,15 @@ import type { IdiomaticExpressionContext } from "@/lib/idiomatic-expressions"
 
 type ExpressionDraft = Pick<
   ExpressionLibraryItem,
-  "context" | "example" | "kind" | "meaning" | "origin" | "phrase" | "sceneCategory" | "why"
+  | "context"
+  | "example"
+  | "exampleTranslation"
+  | "kind"
+  | "meaning"
+  | "origin"
+  | "phrase"
+  | "sceneCategory"
+  | "why"
 >
 
 const contextOptions: Array<{ label: string; value: IdiomaticExpressionContext }> = [
@@ -59,6 +67,7 @@ export function ExpressionEditDialog({
   const [draft, setDraft] = useState<ExpressionDraft>(() => ({
     context: item.context,
     example: item.example,
+    exampleTranslation: item.exampleTranslation ?? "",
     kind: item.kind,
     meaning: item.meaning,
     origin: item.origin,
@@ -253,6 +262,19 @@ export function ExpressionEditDialog({
                 aria-invalid={issues.some((issue) => issue.includes("英文例句"))}
                 className="min-h-20 resize-y"
                 onChange={(event) => updateDraft("example", event.target.value)}
+              />
+            </Field>
+
+            <Field data-invalid={issues.some((issue) => issue.includes("例句译文"))}>
+              <FieldLabel htmlFor="expression-edit-example-translation">例句译文</FieldLabel>
+              <Textarea
+                id="expression-edit-example-translation"
+                value={draft.exampleTranslation ?? ""}
+                maxLength={500}
+                aria-invalid={issues.some((issue) => issue.includes("例句译文"))}
+                className="min-h-16 resize-y"
+                placeholder="可选：填写后词库会为这句例句提供译文展开按钮"
+                onChange={(event) => updateDraft("exampleTranslation", event.target.value)}
               />
             </Field>
 

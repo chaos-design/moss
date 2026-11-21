@@ -9,7 +9,8 @@ const stateLabels: Record<VoiceCallStatus, string> = {
   idle: "语音待机",
   connecting: "正在建立语音连接",
   listening: "麦克风已开启，可以说话",
-  transcribing: "正在本机识别语音",
+  recording: "正在录音，聆听你的发言",
+  transcribing: "正在识别语音",
   thinking: "Moss 正在思考",
   speaking: "Moss 正在回应",
   muted: "麦克风已静音",
@@ -30,19 +31,24 @@ export function VoiceActivity({
   const idle = status === "idle"
   const speaking = status === "speaking"
   const listening = status === "listening"
+  // 录音中是唯一的红色阶段：学习者说话的瞬间就该被看见，而不是等到上传识别才变化。
+  const recording = status === "recording"
   const thinking = status === "thinking" || status === "connecting" || status === "transcribing"
   const unavailable = status === "manual"
-  const energized = listening || speaking || thinking
+  const energized = listening || recording || speaking || thinking
 
   return (
     <div
       className={cn(
         "relative grid shrink-0 place-items-center [perspective:220px]",
         compact ? "size-10" : "size-16",
+        // 与头部徽章共用一套状态色：连接=蓝、离线识别=紫、思考=琥珀、
+        // 可以说话=绿、播报中=品牌色，让每个阶段在头像与徽章上读作同一件事。
         status === "listening" && "text-[var(--success)]",
+        recording && "text-[var(--chart-1)]",
         status === "thinking" && "text-[var(--chart-3)]",
-        status === "connecting" && "text-[var(--chart-3)]",
-        status === "transcribing" && "text-[var(--chart-3)]",
+        status === "connecting" && "text-[var(--chart-4)]",
+        status === "transcribing" && "text-[var(--chart-5)]",
         status === "speaking" && "text-primary",
         unavailable && "text-destructive",
         (status === "idle" || status === "ended" || status === "muted") &&
@@ -60,6 +66,7 @@ export function VoiceActivity({
             thinking && "motion-safe:[animation-duration:1.8s]",
             speaking && "motion-safe:[animation-duration:1.2s]",
             listening && "motion-safe:[animation-duration:2.4s]",
+            recording && "motion-safe:[animation-duration:1s]",
             unavailable && "motion-safe:[animation-duration:3.2s]",
           )}
           aria-hidden="true"

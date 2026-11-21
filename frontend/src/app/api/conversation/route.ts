@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server"
-import { AiProviderStatusError, getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
+import {
+  type AiProviderConfig,
+  AiProviderStatusError,
+  getAiProviderConfig,
+  requestAiText,
+} from "@/lib/ai-provider"
 import {
   applyTutorModeToConversation,
+  type ConversationResponseData,
   parseProviderConversation,
 } from "@/lib/conversation-feedback"
 import { isTutorMode, type TutorMode } from "@/lib/conversation-prefs"
@@ -33,6 +39,7 @@ import {
 } from "@/lib/server/browser-model-config"
 import { consumeSharedRateLimit, isRateLimited } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 type ChatTurn = {
   role: "assistant" | "user"
@@ -60,6 +67,55 @@ const requestLimit = 20
 // ceiling is still the plan's maxDuration cap.
 const providerTimeoutMs = 110_000
 export const maxDuration = 120
+
+// 契约修复：模型偶尔不按输出契约返回 JSON（弱模型 / 免费档常见，图1 的
+// 「未按输出契约返回」即此）。允许重试几次：每次用聚焦请求把回复重排成解析器真正
+// 消费的最小 JSON 契约，任一次成功即采用；全部失败（限流 / 超时 / 仍不合规）时保持
+// 既有降级展示，不阻塞回复本身。修复是轻量重排，用短超时避免总时长顶穿路由时限。
+const conversationContractRepairAttempts = 2
+const conversationContractRepairTimeoutMs = 45_000
+// 修复只占用剩余时间预算：平台函数总时长被 maxDuration（120s）封顶，初次请求最坏已耗 110s，
+// 若再跑满两次 45s 修复会顶到 200s，函数在修复途中被平台终止，连已就绪的降级回复一起丢失。
+// 每次修复前扣除 5s 收尾余量计算剩余预算；预算不足 15s 时直接放弃修复，保留降级回复。
+const conversationRepairTimeMarginMs = 5_000
+const conversationMinimumRepairBudgetMs = 15_000
+const conversationMaxDurationMs = maxDuration * 1_000
+const conversationContractRepairPrompt = `You repair a previous reply for an English-learning chat. Output ONLY one JSON object, no prose and no code fences, with exactly these fields:
+{"reply": string — the English reply for the learner (reuse the given reply text verbatim when it is already good), "translation": string — Simplified Chinese translation of the reply, "recall": string — empty unless a recall hint is needed, "inputAnalysis": {"intent": "scene_reply" | "translation_request" | "language_question"}, "validation": {"status": "improve" | "accurate" | "guidance", "corrected": string — an improved version of the learner's original message (identical to it when it was already fine), "explanation": string — Simplified Chinese rationale, "issues": Array<{kind: "clarity" | "expression" | "task_coverage", original: string, corrected: string, explanation: string}>, "examples": Array<{english: string, chinese: string}>}}`
+
+async function repairConversationContract(input: {
+  config: AiProviderConfig
+  rawReply: string
+  originalInput: string
+  suggestedPhrase?: string
+  sceneTag?: string
+  timeoutMs: number
+}): Promise<ConversationResponseData | null> {
+  try {
+    const repaired = await requestAiText({
+      config: input.config,
+      temperature: 0.2,
+      maxTokens: 1200,
+      messages: [
+        { role: "system", content: conversationContractRepairPrompt },
+        {
+          role: "user",
+          content: `Learner's original message:\n${input.originalInput}\n\nAssistant reply to reformat:\n${input.rawReply}`,
+        },
+      ],
+      signal: AbortSignal.timeout(input.timeoutMs),
+    })
+    const parsed = parseProviderConversation(
+      repaired,
+      input.originalInput,
+      input.suggestedPhrase,
+      input.sceneTag,
+    )
+    return parsed.contractApplied ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 export function GET() {
   return NextResponse.json(getModelConfigPublicKey(), {
@@ -255,6 +311,8 @@ export async function PUT(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // 修复的时间预算从请求进入路由起算（见 conversationRepairTimeMarginMs 的注释）。
+  const requestStartedAt = Date.now()
   const demoMode = isDemoMode()
 
   // The browser sends only an encrypted model-config envelope. Plaintext modelConfig payloads
@@ -339,13 +397,10 @@ export async function POST(request: Request) {
     }
 
     if (supabase) {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser()
-      if (user && !error) {
-        clientKey = user.id
-        userId = user.id
+      const sessionUser = await resolveSessionUser(supabase)
+      if (sessionUser) {
+        clientKey = sessionUser.id
+        userId = sessionUser.id
       } else if (!usingClientConfig) {
         return NextResponse.json(
           { error: { code: "unauthorized", message: "请先登录后再开始对话。" } },
@@ -461,12 +516,38 @@ export async function POST(request: Request) {
       ],
       signal: AbortSignal.timeout(providerTimeoutMs),
     })
-    const parsed = parseProviderConversation(
+    let parsed = parseProviderConversation(
       content,
       latestUserContent,
       scene.focusPhrases[0]?.[1],
       scene.tags[0],
     )
+    if (!parsed.contractApplied) {
+      // 未按输出契约返回时聚焦重排最多重试几次；任一次成功即采用，全部失败保持降级。
+      // 每次修复先按「剩余时间预算」取预算：不足最小预算直接放弃，避免顶穿 maxDuration。
+      for (
+        let attempt = 0;
+        attempt < conversationContractRepairAttempts && !parsed.contractApplied;
+        attempt += 1
+      ) {
+        const remainingBudgetMs =
+          conversationMaxDurationMs -
+          (Date.now() - requestStartedAt) -
+          conversationRepairTimeMarginMs
+        if (remainingBudgetMs < conversationMinimumRepairBudgetMs) {
+          break
+        }
+        parsed =
+          (await repairConversationContract({
+            config: providerConfig,
+            rawReply: content,
+            originalInput: latestUserContent,
+            suggestedPhrase: scene.focusPhrases[0]?.[1],
+            sceneTag: scene.tags[0],
+            timeoutMs: Math.min(conversationContractRepairTimeoutMs, remainingBudgetMs),
+          })) ?? parsed
+      }
+    }
 
     await saveConversationMemory({
       client: supabase,

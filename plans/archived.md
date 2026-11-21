@@ -1,6 +1,6 @@
 # 归档中
 
-更新时间：2026-08-30
+更新时间：2026-11-20
 
 ## 工程基础
 
@@ -31,6 +31,9 @@
 - T-113 至 T-116：完成状态反馈、80 个场景、影子跟读和 pgvector 长期记忆。
 - T-118、T-119、T-129：完成非阻塞表达反馈、中英意图识别及英文主回复与中文辅助分区。
 - T-123 至 T-128：完成对话偏好、音色试听、历史恢复、提示栏和本地实时 ASR 交互。
+- T-319（P2，随 PR #8 合并）：修复窄视口下吸顶工作区头部溢出、搜索结果吸顶分组标签漏光，
+  并把分析页“下一步行动”卡片接入主题色；380px 以下隐藏品牌文字列、320px 无横向溢出，
+  搜索索引归一化构建期缓存（进程内基准 3.24ms → 0.21ms）。
 
 ## 语音系统
 
@@ -61,6 +64,11 @@
   `AGENTS.md` 与架构文档中补齐 Mermaid 系统图、依赖方向、数据所有权和降级策略。统一
   对话与翻译 API 的容量有界进程内限流，隐藏 provider 原始错误，并补齐 OpenAI 兼容请求
   的 token 预算与完整环境变量样例。
+- T-320：语音上游失败语义还原完成并经真实密钥验收：`/api/speech/*` 按上游状态码返回
+  401/402/429/503/504；适配器旧进程与无效密钥是「一律 502」的真实根因。有效密钥写入
+  `backend/services/<adapter>/.env.local` 并重启后，5583 ElevenLabs 与 5584 Fish Audio 的
+  真实合成均在设置页测试通过（audio/mpeg 40+ KB），ElevenLabs 识别返回正常；Fish Audio
+  识别因 `transcribe-1-pro` 需账户充值返回 402，提示已按合成/识别区分（识别无免费模型）。
 - T-106：模型配置仅保存在浏览器 `moss:model-config:v1`，通过 RSA-OAEP 与 AES-256-GCM
   加密信封进入同源推理接口，服务端只在当轮解密。明文配置会被拒绝，生产环境的自带模型
   主机受白名单约束，私网、回环、URL 凭据及 Provider 重定向均被拒绝。
@@ -183,6 +191,100 @@
   对方上一句作为提示；一次录音评分保存后自动播放紧随的对方台词，并把目标推进到本角色下一句。
   提示按台词去重，已作为接话播过的不重复播放；工具栏 Switch 可关闭并回到手动选句；对方播报
   期间禁用录音以免回声进入麦克风。
+- T-319：新增独立可选的 ElevenLabs 语音适配服务。`backend/services/elevenlabs` 在本机
+  `127.0.0.1:5583` 把 TTS/ASR 翻译为 OpenAI 兼容的 `/v1/audio/speech` 与
+  `/v1/audio/transcriptions`，支持音色别名、速度收敛、错误归一化和可选本地 Bearer token；
+  密钥只存在于适配器进程。`5578`/`5580`、`dev:offline` 和前端默认接入均未改动，只有学习者
+  主动选择 HTTP API 并填写本服务地址时才生效。新增 23 个单元测试，并用本地假上游完成真实
+  进程冒烟；未配置真实密钥，因此未验证真实音质、延迟与配额。
+- T-320：把本机 local 接口做成语音服务的一等配置。新增 `NEXT_PUBLIC_*_LOCAL_API_URL` 与
+  `NEXT_PUBLIC_*_LOCAL_API_MODEL`（构建期内联），设置页为 ASR/TTS 各提供“使用本机接口”
+  一键填入根地址与模型；端点校验和 `/api/speech/*` 的生产白名单内置允许回环主机，使
+  `pnpm build && pnpm start` 的同机自托管也能连通本机语音服务。浏览器仍经同源代理转发，
+  非回环私网与 URL 凭据仍被拒绝，`local` 接入的 WS/HTTP sidecar 回环限制不变。新增 8 个
+  前端断言覆盖配置、策略与 ASR/TTS 两条代理链路；`pnpm check` 与 `pnpm build` 通过。
+  未验证真实麦克风、真实上游、进程级端到端联调和 390px 视觉复验。
+- T-321：新增同构的 Fish Audio 本机适配器（`backend/services/fishaudio`，`127.0.0.1:5584`），
+  把 Fish Audio TTS/ASR 翻译为同一套 OpenAI 兼容语音契约；规则表新增 `services.fishAudio`、
+  `models.fishAudio`、`formats.fishAudioSupported` 与 `fishAudio` 提供商段（音色别名映射为
+  内置默认音色、speed 直接转发、latency 默认 balanced），设置页新增“使用 Fish Audio”一键
+  填入，文档与 `.env.example` 同步。47 个 Python 单测 + 前端规则/预设断言通过；本地假上游
+  完成 5584 端到端冒烟（health、探针、OpenAI TTS、ASR），浏览器经 demo 实例验证预设与
+  「测试合成接口」链路。未配置真实 `FISH_API_KEY`，真实音质、延迟与配额未验收。对话输入框
+  同步优化：草稿自动增高、Escape 收起、空草稿失焦收起、桌面自动聚焦与生成期间“停止生成
+  回复"按钮，新增 4 个交互断言；桌面与 390px 视口无横向溢出。
+- T-333：对话三类回复头像（已提交 assistant 首字母、生成中占位、识别条「你」）统一经
+  `keepTurnAvatarVisible` 按头像自身边界约束可视区，顶越界上移、被浮动面板压住下移，不再
+  用整条 article 顶/底边隐式推断，规避 content-visibility 测量干扰；ASR 方括号标注剥离扩展
+  到大小写不敏感且允许尾随句读的占位符（[xxx...]/[xXx]）及 unknow/unclear/clears throat/
+  groan/grunt/嗯/呃/咳/听不清，手打 [注意]/[温度]/[x] 仍保留，onPartial/onTranscript 接入
+  路径不变；识别条删除两处「可以继续说」提示，文本下方提示与无文本占位收敛为
+  「正在将这句话转换为文字…」；对话逐句与跟读同角色音色恒定已有单一来源，补测试锁定不退化。
+  conversation-workspace/call-runtime/shadowing-workspace/use-local-tts 新增 9 个用例，
+  `pnpm check`（前端 93 文件 780 用例 + 后端各套件）与 `pnpm build` 通过。真实麦克风、
+  逐句音色听感与 390px 视觉待人工验证。
+
+ - T-335：地道表达库新增学习工作流。学习记忆快照加顶层 `expressionStudy`（收藏、分组、逐条进度、
+   筛选位置），按表达身份记账，收藏/分组用按 key LWW + 墓碑合并使取消收藏可跨设备传播，进度
+   `reviews` 取最大值；复用 `sync_learning_memory` 的不透明 jsonb，不改 SQL。词库页恢复上次筛选、
+   行内收藏星标与分组入口、进度徽标，新增「我的学习」工作台与统一学习会话：闪卡自测、例句填空
+   （复用高亮切分 + 词干容错判定）、按分组集中学习、TTS 朗读 + MediaRecorder + ASR 转写的跟读听写
+   （阈值 0.8 容错比对，不支持录音时降级提示）。新增 expression-study/expression-study-state/
+   expression-study-dialog 三个套件及词库、记忆合并/Provider 用例，`pnpm check` + `pnpm build` 通过。
+   无浏览器自动化环境，桌面与 390px 截图、真实麦克风听写未人工验证；墓碑随使用量累积，长期需要清理策略。
+
+## 2026-11-20
+
+- T-335：地道表达第三轮扩容完成，270 条审校表达与 900 条场景补充合计 1170 条；
+  新增习语、应答和介词/动词短语分组，类型标注、译文、用法、记忆提示和拓展例句同步更新。
+  表达式库、场景、高亮与词库工作区断言全部通过，`pnpm check` 与 `pnpm build` 已在本轮终验
+  通过。
+- T-338：词库页性能优化。搜索文本按条目预建索引，避免每次查询对 1170 条记录重复拼接与
+  归一化；推荐分组改为打开弹窗时才构建，进度变化不再扫描全部维度；列表行 memo 化并稳定
+  回调引用，减少无关状态变化引起的重渲染。领域层新增按需构建用例；`pnpm check`（前端
+  99 文件 / 827 用例）与 `pnpm build` 通过。
+- T-336：修复地道表达库「开始学习」与行级分组菜单因 `DropdownMenuLabel` 脱离
+  `DropdownMenuGroup` 触发的 Base UI 上下文异常，并补两条菜单打开回归用例。新增五维推荐
+  分组（等级、场景、类型、语境、进度），等级按词数/类型/语境保守分层并标注非逐条 CEFR；
+  「仅加入」与「加入并学习」都通过稳定 ID 一次写入普通学习分组，重复加入补齐条目、保留
+  学习者改名。领域层与工作区新增 4 条用例；`pnpm check`（前端 97 文件 / 815 用例）与
+  `pnpm build` 通过，1280px / 390px 页面与弹窗无横向溢出。
+- T-337：导入契约补齐 `exampleTranslation`、`usage`、`memoryTip` 与最多 4 条
+  `examples`，CSV 模板/字段说明/预检/云端四列同步；新增「AI 生成」页，输入短语后走
+  `/api/expressions/generate`，仅发送加密模型配置信封，生成 JSON 先进入预检再导入。
+  词库例句区改为主题淡底 + 左侧强调线，场景库标题标识换成学习路径与对话气泡。
+  新增生成领域、路由、导入字段与工作区用例；`pnpm check`（前端 99 文件 / 826 用例）
+  与 `pnpm build` 通过，1280px / 390px 弹窗及场景页无横向溢出。
+
+- T-339：修复地道表达库「选择学习方式」点击无反应——Base UI `MenuItem` 只认 `onClick`，
+  面板里沿用的 Radix `onSelect` 不会触发，五个下拉项统一改为 `onClick` 并补工作区回归用例。
+  新增随机学习（当前筛选结果 Fisher-Yates 洗牌抽 5/10/20 条，完成页可重新抽样）与艾宾浩斯
+  记忆循环（学习→复习→再记忆三阶段）：学习写入 `recordExpressionStudy` 并排期，复习把刚学
+  条目与到期地道表达合并用四档评分走 `rateReview`，失败项进入再记忆再次排期；新增纯编排
+  领域模块与对话框用例。领域、工作区与组件新增 14 条用例；`pnpm check`（前端 101 文件 /
+  838 用例）与 `pnpm build` 通过；桌面与 390px 视觉待人工核对。
+
+- T-340：统一词库进度与长期记忆——普通学习会话（闪卡/填空/听写）完成一条时在写
+  `expressionStudy.progress` 的同时经 `recordExpressionStudy` 写入长期记忆并排近期复习，
+  行上「加入长期记忆」按钮在已入记忆后禁用；艾宾浩斯复习卡片显式区分「刚学 · 即时召回」
+  与「已到期 · 间隔复习」，完成页分开统计，避免学习步骤冒充真实间隔复习。新增/更新
+  4 条用例；`pnpm check`（前端 101 文件 / 841 用例）与 `pnpm build` 通过；按钮禁用态与
+  新徽章的桌面/390px 观感待人工核对。
+
+- T-341：记忆写入与导入例句布局收尾。`recordExpressionStudy` 按 `expression-library-<clientId>`
+  身份幂等，重复学习不再累加强度/计数与事件，provider 命中后跳过 setState 与向量写入；
+  导入表达右侧信息列在 `lg` 以上垂直居中，修正例句 blockquote 贴顶留白。幂等断言替换原有
+  累加用例；`pnpm typecheck`/`lint`/`build` 通过，本机负载 13.5 导致 vitest 默认 10s 超时
+  （stash 旧代码同样超时），以本地 `--testTimeout=45000` 验证前端 101 文件 / 841 用例与
+  后端各套件全绿；导入例句居中观感的桌面/390px 待人工核对。
+
+- T-342：学习从弹窗改为独立页面 `/workspace/expressions/study`。`scope/mode/groupId/status/count/session`
+  经 query 传递，筛选条件留在记忆快照；抽取 `useExpressionLibrarySource` 让词库页与学习页共用
+  数据源，避免第二条真相；参数解析对非法值回退。导入改为必须先入库：先 POST 确认 `stored`
+  再写本机，失败/未登录/演示模式报错且保留弹窗；修复 `extra_examples` 字符串化违反 jsonb
+  数组约束导致整批 502 的问题。新增导入失败保持本机、jsonb 数组、学习页写入与跳转、URL 解析
+  用例；前端 102 文件 / 846 用例与后端各套件通过，`pnpm build` 含新路由；独立学习页桌面/390px
+  观感待人工核对。
 
 ## 验证规则
 

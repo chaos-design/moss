@@ -12,7 +12,8 @@ flowchart LR
     Types --> Frontend[Vitest]
     Frontend --> TTS[Python TTS tests]
     TTS --> ASR[Python ASR tests]
-    ASR --> Database[Database contract tests]
+    ASR --> ElevenLabs[ElevenLabs adapter tests]
+    ElevenLabs --> Database[Database contract tests]
     Database --> Build[Next.js build]
 ```
 
@@ -20,10 +21,12 @@ flowchart LR
 | --- | --- | --- |
 | `pnpm lint` | TypeScript、Python 周边配置、Markdown 与格式 | 通过 |
 | `pnpm typecheck` | Next.js/React 严格类型 | 通过 |
-| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 72 文件，444 测试通过 |
+| `pnpm --dir frontend test` | 领域逻辑、route、hook、组件 | 102 文件 846 用例；本机负载下默认 10s 超时，本地放宽至 45s 全绿 |
 | `pnpm tts:test` | gateway、Audio8、CosyVoice | 15 测试通过 |
 | `pnpm asr:test` | 配置、PCM、VAD、WebSocket、安全边界 | 35 测试通过 |
-| `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 14 测试通过 |
+| `pnpm elevenlabs:test` | ElevenLabs 适配器配置、路由、上游映射、通用规则一致性与测试合成探针 | 48 测试通过 |
+| `pnpm fishaudio:test` | Fish Audio 适配器配置、路由、上游映射与测试合成探针 | 56 测试通过 |
+| `pnpm db:test` | SQL、RLS、记忆 RPC、共享限流、删除审计与 embedding 回填契约 | 15 测试通过 |
 | `pnpm memory:test` | 评估集校验、召回排序、参数网格和学习指标 | 6 测试通过 |
 | `pnpm test:coverage` | 核心学习算法 | 语句/函数/行 100%，分支 94.73% |
 | `pnpm build` | Next.js 路由、打包和服务端边界 | 通过 |
@@ -309,6 +312,43 @@ Prompt 基础契约的修改只经单元测试覆盖，未经真实模型验证�
 
 这些结果证明协议链路可运行，不代表所有目标硬件的质量、延迟或容量达标。
 
+## 2026-11-12 ElevenLabs 可选适配服务
+
+新增独立可选的 `backend/services/elevenlabs`，在本机 `127.0.0.1:5583` 把 ElevenLabs
+TTS/ASR 翻译为 Moss 已支持的 OpenAI 兼容语音契约。`5578` TTS 网关、`5580` ASR、前端默认
+接入与 `pnpm dev:offline` 均未改动；只有学习者把 ASR 与 TTS 都切到 HTTP API 并填写本服务
+地址时才会走 ElevenLabs。
+
+自动化结果：
+
+- `pnpm lint`：通过，263 个文件。
+- `pnpm typecheck`：通过。
+- `pnpm --dir frontend test`：77 文件、543 测试通过。默认 10s 上限下
+  `tests/shadowing-workspace.test.tsx > shows measured scores and saves the completed
+  attempt` 在本机耗时 10.2–11.9s 而超时；以 `--testTimeout=30000` 复跑全部通过，说明是本机
+  负载导致的既有重型用例超时，不是本次后端变更引入的行为回归。
+- `pnpm tts:test` 15、`pnpm asr:test` 35、`pnpm elevenlabs:test` 37、`pnpm db:test` 15、
+  `pnpm memory:test` 6：全部通过（ElevenLabs 新增规则一致性与测试合成探针用例）。
+- `pnpm build`：通过，Next.js 16.3.3 完成 28 个页面/路由的静态生成与类型检查。
+
+真实进程冒烟：以本地假上游监听 `127.0.0.1:5598`，启动适配器进程并验证
+`GET /health` 返回 `ready: true`；`POST /v1/audio/speech` 将 `alloy` 映射到 ElevenLabs
+voice ID、把 `speed: 1.5` 收敛为 `1.2`、以 `mp3_44100_128` 请求并原样返回
+`audio/mpeg`；`POST /v1/audio/transcriptions` 以 multipart 上传并返回
+`{"text":"mock transcript"}`；`aac` 返回 `400 unsupported_format`，非白名单 Origin
+返回 `403`。本机 macOS 系统代理会拦截回环请求，冒烟时需设置
+`NO_PROXY=127.0.0.1,localhost`；这只影响本地假上游测试，不影响默认 HTTPS 上游。
+
+后续补充的测试合成探针同样以本地假上游（不消耗额度）复跑：`pnpm elevenlabs:start` 在
+未显式设置模型/音色/格式时，由 `frontend/src/lib/speech-rules.json` 注入默认值，
+`GET /health` 返回 `eleven_v4` / `scribe_v2`；`POST /v1/audio/speech/test` 与
+`pnpm elevenlabs:test:synthesis` 均返回 `ok: true`，含 `audio/mpeg`、字节数、耗时与
+模型/音色/格式诊断，每次探测各调用上游一次。
+
+未验证：本环境没有 `ELEVENLABS_API_KEY`，因此未调用真实 ElevenLabs 服务，未验证真实音色
+质量、端到端延迟、账户配额、计费与保留策略。上述冒烟只证明协议翻译、进程启动和错误映射，
+不能替代配置真实密钥后的验收。
+
 ## 2026-10-07 影子跟读自动跟随与角色反馈
 
 本轮新增中栏转写的目标句跟随：只滚动中栏容器，不滚动页面，播放对方台词时跟随播放句，
@@ -435,3 +475,811 @@ PostgreSQL `42501` 拒绝匿名访问，最新远端匿名权限检查通过。�
 真实导出、Auth 删除和残留检查。长期记忆评估的数据协议、参数网格和指标计算已由
 `pnpm memory:test` 覆盖，真实 HNSW 参数对比仍等待去标识化评估集和可重建索引的隔离
 数据库。静态契约测试和合成样例不能替代这些集成验证。
+
+## 2026-11-12 本机 local 语音接口配置
+
+为 HTTP API 语音接入补充了可配置的本机 local 接口：新增 4 个构建期内联环境变量，设置页为
+ASR 与 TTS 各提供“使用本机接口”一键填入，并让回环端点在生产构建的端点策略与
+`/api/speech/*` 白名单中内置允许。浏览器仍不直连本机端口，非回环私网主机与 URL 内嵌凭据
+仍被拒绝，`local` 接入的 WS/HTTP sidecar 回环限制不变。
+
+自动化结果：
+
+- `pnpm check`：通过（Biome、TypeScript、前端 Vitest、Python TTS/ASR/ElevenLabs 单测、
+  SQL 契约与记忆评估测试）。
+- `pnpm build`：通过（Next.js 16.3.3，28 个路由生成成功）。
+- 新增 8 个前端断言：本机接口预设的环境变量读取与 URL 拼接、回环端点在 `production`
+  下的合法性、生产白名单对回环/私网/URL 凭据的区分，以及 `/api/speech/asr` 与
+  `/api/speech/tts` 到 `127.0.0.1:5583/v1/audio/*` 的转发与 Bearer 头传递。
+
+未执行：真实麦克风录音、真实 ElevenLabs 上游调用、本机服务进程级端到端联调、桌面与
+390px 视口截图复验。Vercel 等无本机服务的运行环境不在本次验证范围内。
+
+## 2026-11-12 Fish Audio 本机适配器与对话输入框交互
+
+新增 Fish Audio 本机适配器（`backend/services/fishaudio`，loopback `5584`），把 Fish Audio
+的 TTS/ASR 翻译为 Moss 的 OpenAI 兼容语音契约，与 5583 ElevenLabs 适配器同构：`/health`、
+`/v1/audio/speech`、`/v1/audio/speech/test`（自检探针）、`/v1/audio/transcriptions`，
+共享 `frontend/src/lib/speech-rules.json` 规则表（`services.fishAudio`、`models.fishAudio`、
+`formats.fishAudioSupported`、`fishAudio` 提供商段）。设置页新增“使用 Fish Audio”一键
+填入；音色别名（含共享测试合成默认值 `alloy`）映射为空串 = Fish Audio 内置默认音色，
+`speed` 直接转发（上游接受 0.5–2），实时性档位默认 `balanced`。对话输入框同步优化：
+内容自动增高（上限约 5 行）、Escape 收起、空草稿失焦收起、桌面端自动聚焦，以及生成期间
+的“停止生成回复”按钮（草稿为空时唯一的打断入口）。
+
+自动化结果：
+
+- `pnpm fishaudio:test`：47 个用例通过（规则表一致性、`httpx.MockTransport` 客户端翻译、
+  FastAPI TestClient 端点契约与探针）。
+- 前端 Vitest 相关文件（conversation-workspace、speech-service-card、speech-rules、
+  speech-config）共 57 个用例通过，含新增的停止按钮、Escape 收起、Fish Audio 预设与
+  规则一致性断言。
+- `pnpm check`：通过（Biome、TypeScript、前端 Vitest、TTS/ASR/ElevenLabs/FishAudio 单测、
+  SQL 契约与记忆评估测试）。
+- `pnpm build`：通过（Next.js 编译成功，29 个静态页生成）。
+
+未执行：真实 Fish Audio 上游调用（当前环境未配置 `FISH_API_KEY`，探针仅通过本地假上游
+验证）、真实麦克风录音、桌面与 390px 视口截图复验。付费模型在账户未充值时会返回
+`fishaudio_payment_required`，需要在配置真实密钥后单独验收。
+
+## 2026-11-13 语音配置统一规范与外部 HTTP API 直连
+
+按「服务 × 接入方式」把语音配置整理为统一字段规范（`speechFieldPolicies`，表格见
+`docs/speech-rules.md`「配置字段规范」）。核心语义变化：**模型与音色是否必填由服务端决定**——
+`/api/speech/*` 网关对空模型/空音色不再拒绝而是按契约省略字段转发；除非显式设置
+`NEXT_PUBLIC_*_API_MODEL`，浏览器不再替学习者填充 `whisper-1`/`tts-1` 默认模型（旧逻辑会把
+空模型偷偷换成 whisper-1，指向 5584 时还会触发 Fish Audio 付费模型回落）；5583/5584 适配器
+对空模型/空音色回退到服务端默认值。设置页新增：ASR「测试识别接口」（内置 0.2s WAV 测试音）、
+TTS「音色」字段（与对话页接口音色同一存储）、本机接入的识别引擎与本机音色选择器、生效配置
+中的引擎/音色展示。
+
+自动化结果：
+
+- `pnpm check`：通过（Biome、TypeScript、前端 Vitest、TTS/ASR/ElevenLabs(38)/FishAudio(48)、
+  SQL 契约与记忆评估测试）。
+- `pnpm build`：通过。
+- 端到端：本地假外部 OpenAI 兼容服务（127.0.0.1:5590）验证空模型/空音色经 `/api/speech/asr`
+  与 `/api/speech/tts` 直连成功（上游确认收到省略字段的请求）；demo 实例浏览器验证设置页新
+  字段渲染与「测试识别接口」「测试合成接口」两条诊断链路均返回成功。
+
+未执行：真实外部语音服务（OpenAI 等）联调、真实麦克风录音。`NEXT_PUBLIC_*_API_MODEL` 的
+兜底语义变化需要已在环境里显式配置模型名的部署不受影响（仅移除了代码内硬编码默认）。
+
+## 2026-11-13 转写朗读状态可视化与可打断
+
+对话运行时新增朗读目标追踪（`speechTargetText` + `stopSpeech`）：转写里每条回复的
+「播放本轮英语」按钮现在反映 Agent 语音反馈的真实状态——合成中显示加载图标、播放中变为
+「停止播放」（`aria-pressed`），再次点击立即打断朗读并清空目标文本，语音播完自动恢复
+播放入口。文字与语音模式都可用；预览试听（音色试听）不占用该状态。
+
+自动化结果：
+
+- `pnpm check`：通过（前端 Vitest 新增 3 个断言：朗读目标追踪与停止清空、转写按钮
+  播放/停止切换、aria-pressed 状态；其余套件不变）。
+- `pnpm build`：通过。
+- demo 实例浏览器验证：点击播放按钮出现「停止播放」（aria-pressed=true），语音自然播完后
+  自动恢复「播放本轮英语」，无残留停止控件。
+
+未执行：真实麦克风与真实 TTS 音频链路下的打断体验（回声防护路径不变）。
+
+## 2026-11-13 语音反馈边界修复
+
+继续排查上一轮语音反馈改动在语音通话模式下的边界，修复两个问题：
+
+1. **通话中停止朗读会卡死通话**：朗读开始时 ASR 已暂停、状态置为 speaking，转写里的
+   「停止播放」按钮只停播不恢复识别，通话会卡在 speaking 且没有语音起点信号可以唤醒。
+   现在 `stopSpeech` 在通话中（未静音）停止朗读后立即重启识别并回到 listening。
+2. **拼音组合中按 Escape 会误收起输入框**：Escape 在 IME 组合期间的语义是取消组词，
+   输入框收起现在仅在非组合状态触发（`isComposing` 守卫）。
+
+自动化结果：
+
+- `pnpm check`：通过（新增 2 个测试：通话中停止朗读恢复监听、IME 组合中 Escape 不收起；
+  全套用例通过）。
+- `pnpm build`：通过。
+- demo 实例浏览器验证：390px 设置页无横向溢出（390/390），语音服务卡片新增的模型/音色
+  字段在卡片内滚动容器中完整可用。
+
+未执行：真实麦克风通话中的停止体验（依赖真实回声与识别时序）。
+
+## 2026-11-13 语音服务下拉与按服务独立测试
+
+按 `docs/detailed-design.md` §5.5 落地设置页的语音服务接入能力：
+
+1. **本机服务地址改为下拉选择**：选项来自 `speech-rules.json` 的 `localServices`，与 MOSS
+   本机服务可用项一致（本机 ASR 5580、FunASR 外部 10095、本机 TTS 网关 5578、ElevenLabs
+   适配器 5583、Fish Audio 适配器 5584）；不再接受手填地址；选中 `api` 接入的本机适配器时
+   自动对齐接入方式、地址与模型，切回本机服务时清掉残留的适配器地址。
+2. **两个独立测试按钮**：ASR 与 TTS 各一个常驻的「测试识别接口」「测试合成接口」，分别验证
+   本服务已配置地址与对应服务；各自维护 `idle`/`testing`/`success`/`error` 与结果文案，
+   一个服务的测试不覆盖另一个；任一配置项变化只失效本服务已有的结果。
+3. **引擎/音色按服务独立匹配**：新增 `moss:speech-local-config:v1`，以服务 ID 为键分别保存
+   识别引擎与音色；切换服务时恢复目标服务自己的取值，不属于该服务的值回退到该服务默认值，
+   不再把 FunASR 引擎或 Audio8 音色带到其他服务。
+4. **上游诊断可定位**：`/api/speech/*` 网关在本机适配器返回 JSON 错误体时透传 `code` 与
+   简短 `message`，设置页失败文案附带错误码；合成诊断对本机回环适配器不再强推 `alloy`。
+
+自动化结果：
+
+- `pnpm check`：通过（lint、typecheck、前端 82 个测试文件 633 个用例、后端 Python 与脚本
+  测试全部通过）。
+- 语音相关 4 个测试文件：51 个用例通过，其中新增 18 个（`local-service-config` 8、
+  设置页 7、ASR 路由 1、合成诊断 2）。
+- `pnpm build`：通过（以独立 `NEXT_DIST_DIR` 构建，29 条路由正常产出）。
+
+未执行：5583/5584 的真实端到端合成与识别（本机 ElevenLabs 密钥为 key ID、Fish Audio
+经当前代理不可达，均返回上游错误）；新下拉与测试按钮的浏览器手工点验。
+
+## 2026-11-13 语音服务卡片布局与 502 诊断
+
+按页面反馈调整语音服务卡片，并排查「测试接口 502」：
+
+1. **下拉展示地址**：本机服务下拉的触发器与每个选项都显示服务名和地址；触发器地址过长时
+   截断并用 `title` 保留完整值，选项内允许换行，避免长 WebSocket 地址撑破弹层。
+2. **测试按钮按分类吸底**：ASR 与 TTS 的测试按钮与结果文案分别移到各自栏目的卡片页脚，
+   页脚在字段区滚动时固定可见；未选 HTTP API 时按钮禁用并只显示一行原因，不再堆叠两条
+   长提示。
+3. **并排卡片等高**：模型服务/学习策略、对话方式/系统发音两组网格由 `items-start` 改为
+   `items-stretch`，卡片 `h-full`（表单内卡片 `flex-1`），短卡片拉伸到与相邻卡片底部对齐。
+4. **502 诊断**：ElevenLabs 用 `400 + detail.code=invalid_api_key` 表示密钥错误（本机填的是
+   key ID），适配器此前误归为「请求参数错误」；现按上游 `detail.code` 归为
+   `elevenlabs_unauthorized（invalid_api_key）`，只透传机器码不带上游自由文本。两个适配器
+   在连接建立失败（`ConnectError`，请求未送达）时重试一次，降低代理抖动导致的
+   `*_unreachable`。设置页对 `unauthorized` / `unreachable` / `payment_required` 追加
+   可执行的排查提示。
+
+自动化结果：
+
+- `pnpm check`：通过（lint、typecheck、前端 82 个测试文件 636 个用例；ElevenLabs 40 个、
+  Fish Audio 48 个 Python 用例）。
+- `pnpm build`：通过（独立 `NEXT_DIST_DIR`，29 条路由正常产出）。
+- 新增测试：下拉展示地址、测试按钮位于卡片页脚、502 鉴权提示；适配器新增 key ID 400 →
+  `elevenlabs_unauthorized` 与空音色回退默认音色的用例。
+
+实测结论：`/api/speech/tts/test` 对 5583 返回 `ok:false`、`status:502`，上游为
+`400 invalid_api_key`（`API key ID used as API key`）；5584 为 `401`。两者都是服务端凭据
+问题而非页面链路，修复后页面展示「上游凭据无效，请检查对应服务端的 API Key」。
+
+未执行：填入有效 `sk_` 密钥后的真实合成/识别；浏览器手工点验页脚吸底与等高效果。
+
+## 2026-11-14 例句译文、复习范围与考题式地道表达
+
+改动：
+
+1. **词库例句译文**：`IdiomaticExpressionNote` 新增可选 `exampleTranslation`，100 条审校内容
+   补齐中文译文；例句行末的眼睛按钮用 `aria-expanded` 展开/收起译文，默认收起。导入字段别名
+   增加 `exampleTranslation` / `example_translation` / `例句译文`，编辑弹窗可维护，译文参与搜索。
+2. **复习范围**：新增 `lib/memory/review-scope.ts`，`moss:review-scope:v1` 保存
+   混合 / 地道表达 / 场景；`getReviewQueue` 改为委托 `getScopedReviewQueue`，调度顺序不变。
+   跨范围目标不强行插入；带 `?memory=` 进入且当前范围装不下目标时，首次水合后自动切到目标范围。
+3. **考题式地道表达复习**：`features/review/expression-exam.ts` 按条目重复次数轮换释义选择、
+   表达选择与例句填空；选项由词库其他条目提供，顺序来自确定性哈希；无法挖空时回退释义题。
+   作答或跳过记为一次回想尝试，四档自评仍是唯一写入强度与间隔的信号。
+4. **语音失败语义**：`/api/speech/*` 不再把上游 401/402/429/503/504 压成 502，按适配器错误码
+   还原为 `speech_credentials_invalid`、`speech_payment_required`、`speech_rate_limited`、
+   `speech_unavailable`、`speech_not_configured`、`speech_timeout`、`speech_request_rejected`；
+   浏览器侧仍把 401/402 与 5xx 视为链路不可用并回退系统语音或浏览器识别。
+
+自动化结果：
+
+- `pnpm lint`：通过。
+- `pnpm typecheck`：通过。
+- `pnpm --dir frontend test`：84 文件、653 用例通过。
+- `pnpm tts:test` 15、`pnpm asr:test` 35、`pnpm elevenlabs:test` 40、`pnpm fishaudio:test` 48、
+  `pnpm db:test` 15、`pnpm memory:test` 6：通过。
+- `pnpm build`：通过（`NEXT_DIST_DIR=.next-verify`，29 条路由正常产出）。
+
+实测证据（本机，临时端口）：
+
+- 以当前代码启动的 5583 适配器（临时 5593）返回 `elevenlabs_unauthorized`（`invalid_api_key`，
+  上游说明为 `API key ID used as API key`）；`/api/speech/tts/test` 返回 `status:401`、
+  `speech_credentials_invalid`，并给出「上游凭据无效」的下一步提示。
+- 以当前代码启动的 5584 适配器（临时 5594）返回 `fishaudio_unreachable`；诊断返回 `status:503`、
+  `speech_unavailable`，与本机网络无法访问 `api.fish.audio` 一致。
+- 运行中的 5583/5584 是改动前启动的进程，仍返回旧错误码；需重启 `pnpm elevenlabs:start` /
+  `pnpm fishaudio:start` 后才会显示新的诊断结果。
+
+未执行：
+
+- 有效 `sk_` 密钥下的真实合成；`api.fish.audio` 的真实合成（本机网络不可达）。
+- 浏览器手工截图核验：当前环境没有浏览器自动化，桌面与 390px 的视觉验收待补。
+
+## 2026-11-14 长期记忆吸顶与分批挂载、语音一键接入、数据扩充
+
+改动：
+
+1. **长期记忆页**：顶部四条统计保留；向下滚动时一条精简栏吸顶（`sticky top-16`），只保留
+   「长期记忆数 · 待找回数」与「全部 / 表达 / 词汇 / 语法 / 发音」分类；分类只改变候选集合，
+   排序仍按记忆强度。列表与句子列表共用 `useIncrementalList`，首批 12 条，哨兵进入视口后
+   追加 12 条，并显示「已显示 x / y 条」。顶部学习提醒最多列 5 条，其余提示去复习页。
+2. **语音服务设置**：每个服务栏顶部新增「一键接入」（ElevenLabs 适配器 / Fish Audio 适配器 /
+   OpenAI 官方），一次点击同时对齐接入方式、地址与模型；设置页在服务端并行探活 5578、5580、
+   5583、5584 并注入「在线 / 未启动」，`GET /api/speech/services` 供「重新检测」强制刷新；
+   回环适配器隐藏 API 密钥输入并说明密钥在服务端，音色提供默认与六个兼容别名快捷按钮。
+3. **数据扩充**：默认学习记忆由 5 条增至 50 条（表达 / 词汇 / 语法 / 发音四类，覆盖 20+
+   场景，强度与到期时间错开，含迁移目标）；精讲地道表达由 100 条增至 140 条并补齐
+   `exampleTranslation`，全库 1040 条；精讲条目带类型标注（习语 / 固定搭配 / 短语动词 / 句型），
+   其中后 40 条显式标注 `kind`，前 100 条经 `note.kind ?? "idiom"`（`expression-library.ts`）
+   默认按「习语」展示。
+4. **演示模式**：`NEXT_PUBLIC_DEMO_MODE=true` 时用默认记忆填充工作区，正式环境仍从空记忆开始。
+
+自动化结果：
+
+- `pnpm lint`：通过。
+- `pnpm typecheck`：通过。
+- `pnpm --dir frontend test`：85 文件、659 用例通过。
+- `pnpm build`：通过（`NEXT_DIST_DIR=.next-verify`）；`/workspace/settings` 因服务端探活改为
+  按请求渲染（ƒ），其余路由不变。
+- 新增测试：探测路由（5584 模拟 503、全部拒连）、长期记忆吸顶/分类/分批、句子列表分批、
+  学习提醒截断、一键接入与回环隐藏密钥。
+
+未执行：浏览器手工截图核验（当前环境无浏览器自动化），390px 视觉验收待补。
+
+## 2026-11-14 例句就近译文开关与高亮、语音探活三态与 502 运行时验证
+
+改动：
+
+1. **例句译文开关就近**：词库行已在前一轮把译文开关移到例句末尾；本轮把复习考试卡的
+   「显示译文/收起译文」从单独居中一行移到例句句尾（`expression-exam-card.tsx`），与词库
+   同一位置习惯，并补 aria-label「显示/收起 <phrase> 的例句译文」。
+2. **目标表达高亮**（前一轮完成，本轮验证）：词库与考试卡例句经 `ExpressionText` +
+   `splitExpressionHighlights` 高亮目标表达；词库数据测试断言 140 条精讲词条的每条拓展
+   例句都能命中高亮（含 `keeps tabs on` 等词尾变化与不规则过去式）。
+3. **精讲表达记忆增强**（前一轮完成，本轮验证）：`idiomatic-expression-memory.ts` 对 140 条
+   精讲词条全部提供 `usage`、`memoryTip` 与各 2 条带中文翻译的拓展例句；考试卡作答后展示
+   「更多例句 / 用法 / 记忆提示」。本轮统一两个未加引号的 key（`bandwidth`、`bottleneck`）。
+4. **语音探活三态**：`LocalSpeechServiceProbe` 新增 `state: ready | unconfigured | down`；
+   适配器 `/health` 返回 503 且 body 带 `configured:false` 时显示「已启动·缺密钥」徽章并
+   提示对应 `.env.local`；「检测本机服务」在缺密钥时不再误报「均未启动」；一键接入圆点
+   用空心警示点区分缺密钥态。
+5. **失败提示精确化**：`describeSpeechFailureHint` 识别本机适配器凭据错误后直接给出
+   `backend/services/elevenlabs/.env.local`（ELEVENLABS_API_KEY，需 sk_ 开头 Secret Key）/
+   `backend/services/fishaudio/.env.local`（FISH_API_KEY）；`/api/speech/*` 的
+   `speech_endpoint_unreachable` 按端口号给出对应启动命令（端口取自规则表）。
+
+运行时验证（本机实际执行）：
+
+- 定位 5583/5584「仍出现 502」的两个根因：运行中的适配器是错误码改造前启动的旧进程；
+  且现存 `ELEVENLABS_API_KEY` 是 64 位 Key ID 而非 `sk_` Secret Key。重启两个适配器后，
+  经 `/api/speech/tts/test` 实测：5583 上游 401（`invalid_api_key`）→ 诊断返回
+  `status:401 speech_credentials_invalid`；5584 上游 401 → `status:401
+  speech_credentials_invalid`。两个上游域名当前出口可达（不再表现为 503 unreachable）。
+- 浏览器实测（demo 构建 + 5579）：不可达地址（浏览器历史保存的 5590）提示带具体地址与
+  `speech_endpoint_unreachable`；一键接入 5583 后测试提示精确到
+  `backend/services/elevenlabs/.env.local` 与 `sk_` 要求。
+- 视觉核验（内置浏览器截图 + 结构断言，1440px 与 390px）：词库行目标表达 `<mark>` 高亮、
+  译文开关位于例句段落内且展开正常；考试卡作答后「更多例句 / 用法 / 记忆提示」完整呈现；
+  词库、复习、设置页在 390px 均无横向溢出。
+- `pnpm check`：通过（86 个前端测试文件 / 670 用例 + 后端套件 + biome + tsc）。
+- `pnpm build`：通过。
+
+未执行：
+
+- ~~有效 `sk_` Secret Key 与有效 Fish Audio Key 下的真实合成~~ → 已在同日补齐，见下。
+
+### 有效密钥后的复测（同日 2026-11-14）
+
+用户提供真实密钥并写入两份 `.env.local`（gitignore 覆盖，未入库），重启两个适配器后实测：
+
+- `POST /api/speech/tts/test`（经 5577 开发服务器）：5583 ElevenLabs 返回 `ok:true`、
+  `audio/mpeg` 41.8 KB / 3.1 s；5584 Fish Audio 返回 `ok:true`、`audio/mpeg` 38 KB / 3.0 s。
+- 设置页 UI（demo 构建 + 5579）：TTS 一键接入 ElevenLabs 后「测试合成接口」显示绿色
+  「语音合成接口可用，音频已正常返回。audio/mpeg · 46.2 KB · 2625 ms」；ASR 一键接入
+  ElevenLabs 后「测试识别接口」显示绿色「语音识别接口可用」（内置测试音频经 scribe_v2
+  返回空文本）；切 Fish Audio 预设合成同样绿色（43.3 KB · 2018 ms）。
+- `POST /api/speech/asr` 直测：5583 把 440 Hz 测试音转写为 `[beep]`；5584 返回 402
+  `speech_payment_required`——`transcribe-1-pro` 需账户充值。据此修正 fishaudio 适配器的
+  402 提示按服务区分：合成建议改用免费模型 `s2.1-pro-free`，识别不再误导（Fish Audio
+  暂无免费识别模型），补 `test_payment_required_hint_matches_service` 用例
+  （`pnpm fishaudio:test` 49 用例通过）。
+- 「本机服务」徽章：本机 TTS 网关在线、ElevenLabs 适配器在线、Fish Audio 适配器在线、
+  本机 ASR 服务未启动（5580 未启动，与实际一致）。
+
+剩余未执行：Fish Audio 识别（`transcribe-1-pro`）需账户充值后才能验证；本机 ASR 5580
+链路未启动。
+
+## 2026-11-14 语音参数兜底、模型/音色配置对齐官方文档、未登录对话同步门控
+
+改动：
+
+1. **语音参数兜底默认值**：5583 ElevenLabs 适配器在上游拒绝时自动重试一次——
+   `404 voice_not_found` 改用默认音色（George），`400 bad_request` 且消息含 "invalid ID"
+   改用默认模型；5584 Fish Audio 在 `reference_id` 被 400/404/422 拒绝时去掉音色重试一次。
+   兜底仍失败时保留上游语义，`voice_not_found` 提示「可清空音色直接使用服务端默认音色」。
+   覆盖场景：设置页手误音色名（如 `multilingual`）不再让整条语音链路报
+   `speech_request_rejected`。
+2. **模型选择对齐官方文档**：ElevenLabs 默认 TTS 模型由 `eleven_v4` 改为
+   `eleven_flash_v2_5`（官方模型页标注 API 半价档，约 100ms 延迟档位；2026-11-14 在免费层
+   实测可用）；规则表新增 `models.localApiTtsOptions`（flash_v2_5 / v4 / multilingual_v2 /
+   v3）、`localApiAsrOptions`、`fishAudioTtsOptions`、`fishAudioAsrOptions`，设置页对
+   5583/5584 显示模型快捷按钮。
+3. **音色映射修复与补充**：实测发现旧 `nova → Rachel(21m00Tcm4TlvDq8ikWAM)`、
+   `shimmer → AZnzlk1XvdvUeBnXmlld` 两个映射目标已转付费专属（402 paid_plan_required），
+   改映射到仍免费的 Laura / Lily；新增 `voice.premadeElevenLabs` 官方预置音色表
+   （george/adam/bill/brian/callum/emma/jessica/laura/liam/lily/matilda/river/roger），
+   全部用免费层合成请求逐一验证。设置页音色快捷按钮按适配器区分：5583 显示预置音色，
+   5584 无公开预置音色（reference_id 账户私有），OpenAI 兼容服务仍显示六个兼容别名。
+4. **未登录对话同步门控**：`use-conversation-sessions` 接入 `useAuth`——未登录/匿名/演示
+   模式时完全跳过云端同步（此前每次挂载都会向 `/api/conversations` 发请求并收到 401）；
+   本机写入不受影响，登录后由合并流程补传本地会话。
+
+自动化结果：
+
+- `pnpm elevenlabs:test`：43 用例通过（含 voice/model 兜底重试、兜底失败保留可执行提示、
+  规则表别名与 Python 镜像一致性）。
+- `pnpm fishaudio:test`：51 用例通过（含 reference_id 兜底、未发送音色不重试、402 提示
+  按服务区分）。
+- `pnpm --dir frontend test`：相关套件（speech-service-card、conversation-sessions、
+  speech-routes）通过。
+
+## 2026-11-14 修复 api 接入识别收不到用户输入（语音通话静音断句）
+
+问题与定位：
+
+- 用户反馈语音通话「收不到用户输入的声音」。适配器日志显示其 TTS 正常（17:36 两次
+  `/v1/audio/speech` 200，voice=multilingual 经兜底成功），但当天没有任何新的
+  `/v1/audio/transcriptions` 请求；本机 ASR（5580）全天未启动。
+- 根因：HTTP API 接入的识别在语音通话里**没有「说完一句话」的触发器**。`use-browser-asr`
+  的 api 分支只持续累积录音块，上传仅发生在 `pause()`（助手播报开始或手动静音）；
+  用户说话期间没有 VAD、没有语音事件，回合永远无法提交，输入因此「石沉大海」。
+
+修复：
+
+- 新增 `frontend/src/features/speech/api-asr-turn-detection.ts`：镜像流式识别的客户端
+  能量检测（噪声底自适应校准 500ms、说话确认 320ms、静音 1.2s 断句、单段上限 25s），
+  纯逻辑按帧喂数据，5 个单元测试覆盖校准/断句/短促噪声/强制断句/重置。
+- `use-browser-asr` 的 api 分支接入 Web Audio（AnalyserNode + 100ms 轮询 RMS）：
+  说话开始触发 `onSpeechStart`（可打断等待中的回复），静音断句走 `flushRecordedAudio`——
+  只快照已积累音频块并上传，**录音保持运行**，上传与提交期间监听不中断；
+  无 AudioContext 的环境降级为原有的手动静音上传。
+- 对话页「识别来源」提示更新为「说完停顿约 1 秒自动整段上传识别」。
+
+自动化结果：检测器 5/5 通过；`tests/voice-conversation.test.tsx`（35）、
+`tests/conversation-sessions.test.tsx`、`tests/speech-service-card.test.tsx`、
+`tests/speech-routes.test.ts` 全部通过；biome/tsc 通过。
+
+未执行：真实麦克风通话的端到端录音验证（浏览器环境无受控麦克风），依赖单元测试与
+既有 api 链路（`/api/speech/asr` → 5583 → scribe_v2 已于同日实测可用）佐证。
+
+### 2026-11-14 用户实测跟进：invalid_audio 与 MediaRecorder.start 失败
+
+上一条修复上线后用户实测暴露两个叠加问题，均已定位并修复：
+
+1. **`invalid_audio`（上游 400）**：录音跨回合后，VAD 快照上传的是 MediaRecorder 的
+   **后续分片**——webm 分片只有第一块带文件头，无头的分片不是独立音频文件，上游以
+   invalid_audio 拒绝。实测确认完整 webm（原始与规范化 mime）都能通过链路
+   （440Hz 振荡器 → MediaRecorder → `/api/speech/asr` → 200 `[dial tone]`），
+   问题在分片而非格式。
+2. **`MediaRecorder.start` 抛错**：`use-browser-asr.teardown` 在回合间隙停掉了
+   通话运行时持有的麦克风流轨道，下一轮 `start()` 在死流上建 MediaRecorder 直接失败。
+
+修复：
+
+- api 通道**弃用 MediaRecorder**，改为与 VAD 共用同一张 Web Audio 图采集 PCM
+  （ScriptProcessorNode，与流式识别同一模式），断句时降采样 16kHz 并经
+  `lib/audio-wav.ts` 的 `encodeWavBlob` 编码为**完整 WAV** 上传——每轮都是独立
+  合法文件，格式问题从根上消除（25s 上限约 800KB，远低于 8MB 网关限制）。
+- **轨道所有权**：`use-browser-asr` 只停自己 `getUserMedia` 获取的流；运行时持有的
+  流由运行时在通话结束时释放。浏览器/本机接入同样受益。
+- gateway 上传文件名按实际容器取扩展名（speech.wav/.m4a/.webm），不再固定 .webm。
+
+自动化结果：`audio-wav` 3 用例（头部/采样编码/空样本）+ 检测器 5 用例 + 相关套件
+共 91 用例通过；biome（0 警告）、tsc、`pnpm build` 通过。
+
+未执行：真实麦克风端到端通话（需人工验证）；已在 IAB 用振荡器验证 webm 全链路与
+`/api/speech/asr` → 5583 → scribe_v2 的 WAV 上传（同日 `[beep]`）。
+
+## 2026-11-14 对话链路实测修复：契约修复重试与认证降级统一
+
+用户实测反馈两个问题：
+
+1. **「未按输出契约返回」（图1）**：模型对语音输入 "Hi" 直接回了纯文本
+   "Hello! How have you been?"，翻译 / 纠错 / 判句缺失。`parseProviderPayload`
+   已有 JSON.parse + 括号配对提取，能容忍围栏与前后缀散文，本例确认是模型
+   完全没有输出 JSON。
+   **修复**：路由层新增契约修复重试——`contractApplied=false` 时用一次聚焦请求
+   （仅含解析器消费的最小 JSON 契约说明 + 学习者原句 + 待重排回复）让模型重排；
+   修复失败（限流 / 超时 / 仍不合规）保持既有降级展示，不阻塞回复本身。
+2. **`/api/conversations` PUT 401**：用户已登录（workspace 可进、cookie 有效），
+   但六个 `auth.getUser()` 认证路由在本机受限网络下 Node fetch 连不上 Supabase
+   Auth（AuthRetryableFetchError）而直接判 401——workspace 守卫早已有
+   `hasUsableSession` 网络故障降级，API 路由没有。
+   **修复**：`lib/supabase/session.ts` 新增 `resolveSessionUser`（返回完整 User；
+   仅网络不可达时降级读 cookie 会话，4xx 一律未登录），`hasUsableSession` 改为
+   基于它实现；`/api/conversations`、`/api/conversation`、`/api/expressions`、
+   `/api/account`、`/api/memory-documents`、`/api/translation` 六个路由统一接入。
+
+自动化结果：新增 7 个用例（修复重试成功 / 修复失败保持降级 / resolveSessionUser
+四态 / conversations PUT 网络降级）；认证与对话相关 8 个套件共 84 用例、更广泛
+回归 63 用例全部通过；biome、tsc、`pnpm build` 通过。
+
+未执行：真实登录环境的浏览器端到端（需 Supabase 凭据与受限网络复现）；契约修复
+对免费档模型的实际成功率需持续观察。
+
+
+## 2026-11-14 双语识别与播报实证、识别条上浮、Fish 说话人标记清理
+
+用户要求：识别中英文、回答中英文，两个语音服务都要支持；识别中的消息固定在输入框上方。
+
+实证（真实上游请求）：
+
+- **中文合成**：Fish Audio `s2.1-pro-free` 合成「你好，最近怎么样？」→ 163KB WAV ✓；
+  ElevenLabs `eleven_flash_v2_5` + George 同文本 → 27.6KB 音频 ✓（免费层用 mp3 输出）。
+- **中文识别**：ElevenLabs scribe 对中文 WAV 精确转写「你好，最近怎么样？」（未传语言，
+  自动检测，中英混说同样支持）✓；Fish `transcribe-1-pro` 也转写成功，但文本混入
+  `<|speaker:0|>` 说话人标记。
+- **限制发现**：ElevenLabs 免费层 TTS 输出仅 mp3——`wav_44100` 被上游 403
+  `output_format_not_allowed`（Pro 档以上）；此前一度误报为凭据问题。适配器已把该错误
+  映射为 `400 elevenlabs_request_rejected` 并提示改用 mp3；语音通话运行时固定 mp3，不受影响。
+
+修复：
+
+1. **Fish 转写清理**：适配器剥离 `<|speaker:N|>` 说话人标记（`re.sub`），测试覆盖。
+2. **识别条上浮**：语音通话时在输入区（通话面板）上方固定渲染识别条——有转写文本时显示
+   「你（识别中）：…」+ 弹跳圆点，静音断句上传中显示「正在将这句话转换为文字…」动效；
+   `role="status"` 供读屏播报。转写历史区的占位轮次动画维持上一轮实现。
+
+自动化结果：elevenlabs 45 / fishaudio 52 用例通过（含标记清理与格式门槛映射两个新用例）；
+前端语音/对话套件 83 用例通过；biome、tsc 通过。
+
+未执行：真实麦克风双语通话的端到端听感验证（需人工）；Fish ASR 转写质量依赖账户余额。
+
+### 2026-11-14 语音通话体验跟进：回声打断、可视区滚动、识别 UI 精简
+
+用户实测反馈三点，均已修复：
+
+1. **回复播放总被中断、变成识别消息**：`pause()` 先停采集、但静音检测器要等上传
+   完成（约 1s）才随 teardown 解除——这一窗口里扬声器播报被 VAD 当成说话人，
+   触发 speech-start 立即打断回复。修复：`pause()` **同步解除检测器**再异步上传。
+2. **识别消息被挡住**：转写区只对已提交消息做「对齐顶部」滚动，正在识别的轮次
+   不滚动且可能落在浮动面板之下。修复：通话期间按 liveTranscript / callStatus
+   变化把 `data-live-transcript-turn` smooth 滚进可视区，并补偿面板高度防止遮挡。
+3. **识别 UI 过繁**：转写占位的识别环 + 三弹跳点、识别条的「你（识别中）」标签
+   与多组动效叠加。精简为单一呼吸点 + 文案；识别条收敛为一行（呼吸点 + 截断文本 +
+   「识别中」角标），长文本截断显示、完整内容仍在转写区。
+
+自动化结果：语音/对话套件 88 用例通过；biome（0 警告）、tsc、`pnpm build` 通过。
+
+未执行：真实扬声器/麦克风环境的回声复现验证（修复逻辑经代码路径推演 + 单元层
+回归覆盖；需人工在开扬声器场景复测一轮）。
+
+### 2026-11-14 识别条移除与真实打断（barge-in）
+
+用户跟进反馈：输入框上方的识别条区域太大（移除，转写区内滚动可见的实时轮次是唯一
+识别展示）；播报不应等播完才恢复识别，需要区分杂音与真实发言、真说话立即打断。
+
+修复：
+
+1. **移除输入区上方的识别条**，转写区内的实时轮次（单呼吸点 + 文案 + smooth 滚入
+   可视区并补偿面板高度）成为唯一识别展示。
+2. **播报期间保留高阈值打断监听**：`pause()` 停采集并解除采集用检测器（同步，防回声
+   误触发）后，保留同一张 Web Audio 图上的**打断监听**——`thresholdBoost 2.5` 高倍
+   阈值 + 320ms 持续确认：扬声器回声经噪声底自适应远低于该阈值不触发，真实靠近
+   麦克风的说话（能量更高）触发 `speech-start` → 运行时打断播报并立即重启完整采集
+   （仅 api 通道需要；本机/浏览器通道本就保持监听）。静音时音轨被禁用，监听只听到
+   静音，天然安全；运行时对静音期间的 speech-start 也直接忽略。
+
+自动化结果：检测器新增「回声不触发 / 真说话触发」用例；语音/对话 5 套件 94 用例
+通过；biome、tsc、`pnpm build` 通过。
+
+未执行：真实扬声器环境的打断灵敏度人工验证（回声响度因设备而异，2.5 倍阈值如有
+漏判/误判可在 `apiBargeInThresholdBoost` 调整）。
+
+### 2026-11-14 识别上传 5xx 自动重试与手动重试按钮
+
+用户要求：识别接口 5xx 自动重试几次，仍失败则结束本次识别并变成重试按钮。
+
+实现：`SpeechApiClientError` 附带 HTTP 状态码；`use-browser-asr` 的上传对 5xx 与
+网络瞬断自动重试 2 次（退避 700ms / 1400ms），4xx（参数 / 凭据 / 限流）不重试。
+重试耗尽后：暂停本轮采集、保留录音、通话面板显示「重试识别」按钮——重试会把
+保留的录音重新上传，成功即恢复监听并让转写进入回合（`listeningRef` 在重试入口
+复位），仍失败则按钮保留可反复重试。
+
+自动化结果：`speech-client-retry` 5 用例（5xx / 网络瞬断可重试、4xx 与未知错误
+不重试）；语音/对话/转写路由 5 套件 99 用例通过；biome、tsc、`pnpm build` 通过。
+
+未执行：真实 5xx 上游的连击重试人工验证（单测以状态码分类覆盖；网关超时 30s
+意味着极端情况下重试总时长上限约 90s，运行时 `AbortSignal.timeout` 之外无额外
+打断）。
+
+### 2026-11-14 无场景参数进入对话页先渲染骨架
+
+用户反馈：切换到 AI 对话时先闪现默认场景内容再被重定向切到上次场景。修复：无
+`?scene=` 进入时，场景要等客户端读取「上次场景」（localStorage）才能确定——确定前
+渲染场景解析骨架（与路由级 loading 共用同一组件），确定后再渲染内容；重定向期间
+骨架保持。
+
+实现：骨架从 `app/workspace/conversation/loading.tsx` 提取为
+`features/conversation/conversation-loading.tsx` 供两处共用；`ConversationWorkspace`
+新增 `sceneResolved` 门——`restoreLastScene` 且场景未定时渲染骨架，重定向/确认后放行。
+显式 `?scene=` 不经过骨架。
+
+自动化结果：新增 2 个用例（骨架先渲染且重定向期间保持 / 同场景直接渲染内容）；
+对话工作区套件 36 用例通过；biome、tsc、`pnpm build` 通过。
+
+## 2026-11-16 PR #9 评审修复（P1/P2/P3 全量收尾，T-331）
+
+依据 4 轮 PR 评审（`ac75658` → `9abf573` → `a9e24f0`）对 22 项遗留问题按 7 个批次修复并
+回归。逐条修复与验证：
+
+- **P1 语音网关 loopback 加固**：生产构建回环语音代理仅限规则表端口（5578/5580/5583/5584），
+  且要求已登录会话；无认证服务的自托管可用 `MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true`
+  显式开启匿名（默认关闭、失败关闭）；`/api/speech/*` 限流键改按请求者（登录用户 ID，
+  匿名取来源 IP），换端口 / 加路径段不再绕过限流。speech-routes 新增端口白名单、登录门控、
+  限流键 3 组用例。
+- **P2 对话可靠性**：契约修复改为按 `maxDuration(120s) - 已耗时 - 5s 余量` 收窄每次修复
+  超时，预算 <15s 直接跳过（此前最坏 110+45+45=200s 会顶穿函数上限、连降级回复一起丢失）；
+  api 识别逐句上传走单条串行队列按断句顺序提交（后一句不会反超先一句写反消息顺序），
+  重试耗尽即暂停采集、手动重试成功后恢复。conversation-route 新增预算收窄/跳过 2 用例，
+  browser-asr 新增乱序提交与耗尽即停 2 用例。
+- **P2 设置与配置**：回环端点保留可选 API 密钥字段并说明适配器访问令牌
+  （MOSS_ELEVENLABS_ACCESS_TOKEN / MOSS_FISHAUDIO_ACCESS_TOKEN）可在此填写；
+  `NEXT_PUBLIC_*_FISH_AUDIO_*` 四项补进 next.config 客户端内联列表并加断言；探活新增
+  「启动中」态（503 + ready:false 且无 configured）与「未启动」区分；ElevenLabs 默认 TTS
+  模型在 env 模板与文档统一为 `eleven_flash_v2_5`。
+- **P3 会话与记忆**：`useConversationSessions` 把本地恢复与云端加载拆成两个 effect，auth
+  完成（loading→authenticated）不再二次 dispatch `session-restored` 清空正在输入的草稿；
+  演示模式不再读写 `moss:learning-memory:v1`，虚构种子不会随 union 合并进云端；
+  两处 `await router.replace`（Next 16 返回 void）去掉无意义 await 并更正注释；
+  转写播放按钮按消息 id 精确定位（`speechTargetMessageId`），两条相同回复不再同时显示停止态。
+- **P3 适配器后端（Python）**：非 ASCII / 不可打印 model 在入口拦成 400 `invalid_model`
+  （此前作为 HTTP 头冒泡成未处理 500）；Bearer / ASR-WS token 改按字节比较，非 ASCII token
+  失败关闭回 401 而非 500；413 文案改为反映实际可配置上限（`MOSS_*_MAX_AUDIO_BYTES`）而非
+  写死 8 MB；`{"text": null}` 按省略处理回退默认探测文本而非 400 invalid_text。
+  elevenlabs / fishaudio 套件各补对应回归用例。
+- **P3 跟读 / 高亮 / 杂项**：例句高亮补 5 条例目（had/would → 'd 缩约、多词所有格、
+  主语代词替换、play it by ear 动宾插入）使 140 条精讲例句全部可高亮；`useIncrementalList`
+  哨兵改按节点身份重挂 observer（同总数筛选切换不再停在旧节点）；记忆定制跟读不再覆盖
+  共享预设位置键；随机连续换场前移到「自动接话」守卫之前（关闭自动接话仍生效）；
+  中文句子中间的识别标注替换为空串（不留「今天 很热」空格）；`readShadowingLevelFilter`
+  改经 `readJson` 读取（与 `writeJson` 对称、localStorage 异常兜底「全部」）。
+
+自动化结果（2026-11-16）：`pnpm lint`、`pnpm typecheck` 通过；`pnpm --dir frontend test`
+92 文件 764 用例通过；Python 套件 tts 15 / asr 35 / elevenlabs 48 / fishaudio 56 / db 15 /
+memory 6 全部通过；`pnpm build` 通过。
+
+未执行：真实麦克风端到端（三种 ASR/TTS 通道）、live provider 往返、390px 视觉验收与
+marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。跟读计时用例在 10s 上限下负载
+敏感偶发超时，单独复跑稳定通过，已在门禁表注明。
+
+## 2026-11-16 跟读播放跟随、通话阶段配色、回复可视区与占位符剥离（T-332）
+
+本轮改动与验证：
+
+- 跟读「听对话」阶段整段/单句播放时，正在播台词经新增 `scrollShadowingLineToCenter`
+  平滑滚到可视区中间（高于视口的台词顶对齐、目标夹取在 0）；播放行加
+  `shadowing-line-pulse` 弱呼吸光晕（只动画 box-shadow、1.8s、reduced-motion 关闭）
+  与更明显的边框/底色。scroll-shadowing-line 新增居中/平滑/顶对齐/夹取 4 用例，
+  shadowing-workspace 新增播放行居中跟随与呼吸类断言。
+- 通话四阶段独立配色：连接 `chart-4` 蓝、离线识别 `chart-5` 紫、思考 `chart-3` 琥珀、
+  可以说话 `success` 绿、播报中品牌色；头部状态徽章、`VoiceActivity` 头像与识别条
+  两态共用同一套映射（此前连接/识别/思考共用一个琥珀色）。voice-activity 新增
+  五态配色 + 中性态用例。
+- 回复生成期「正在回应」占位（`data-pending-reply-turn`）按 nearest 滚进转写可视区，
+  仍被浮动输入面板压住时按面板顶再补一段滚动（与识别条同一套补偿）。
+  conversation-workspace 新增 pending 滚入用例。
+- ASR 方括号剥离扩展到整段重复同一占位字符的产物（`[xxxx]`、`[？？]`，≥2 个才判），
+  手打单字符 `[x]` 与既有保留规则不变；call-runtime 新增 4 例。
+- 390px 溢出修复：工作台横幅品牌文字列（nowrap 全称）在 390px 下把整行撑到 480px，
+  改为 `max-sm` 视觉隐藏（32px 标记保留），workspace-header 用例同步更新。
+
+自动化与视觉记录（2026-11-16，本机）：
+
+- `pnpm check`（lint + typecheck + 前端 93 文件 / 775 用例 + 后端 6 套）通过；
+  `pnpm build`（标准与 demo 双构建）通过。
+- 390px 视觉探查（demo 构建 + `next start` 5579 + 应用内浏览器 computed-style 断言）：
+  跟读页 `body.scrollWidth === 390` 无横向溢出；播放「当前台词」时恰有 1 个
+  `shadowing-line-pulse` 元素、计算样式 `animation-name: shadowing-line-pulse`、
+  `animation-duration: 1.8s`；对话页 390px 与 1440px 桌面均无横向溢出，
+  `data-conversation-composer` 面板存在。
+- 未执行：真实麦克风的通话阶段配色观感（连接/识别/思考需要真实 ASR 通道驱动）、
+  整段播放居中跟随的手感与 marquee 流畅度，待人工验证；跟读计时类用例在 10s 上限下
+  负载敏感偶发超时，单独复跑稳定通过。
+
+## 2026-11-16 Fish Audio 免费模型链路验证（经本机代理）
+
+- 本机出口到 `api.fish.audio` 直连被路由阻断（2026-11-16 实测：3 个 DNS 解析器给出的
+  9+ 个边缘 IP 全部连接超时，同时 cloudflare / api.github.com 正常；非 SNI 过滤——
+  同 IP 换 SNI 也超时，判定为 IP 级不可达）。
+- 发现本机 Clash Verge（mihomo）mixed 端口 `127.0.0.1:7897` 可到达 Fish：直连
+  `POST /v1/tts`（`s2.1-pro-free` + reference 音色）返回 200 / 27KB mp3（2.4s）。
+- 5584 适配器经 `pnpm fishaudio:start` 读取本地（gitignored）`.env.local` 的
+  `HTTPS_PROXY=http://127.0.0.1:7897` 后，`POST /v1/audio/speech` 返回 200 / 54KB mp3。
+- 设置页（5577 dev）「测试合成接口」实测绿：`语音合成接口可用，音频已正常返回。
+  audio/mpeg · 34.3 KB · 1444 ms`；生效配置为 `127.0.0.1:5584/v1 · s2.1-pro-free ·
+  音色 74c6aba5…`（浏览器 speech-config，仅存本机）。
+- 未变：直连出口仍不可达；若 Clash 端口/节点变化，需同步
+  `backend/services/fishaudio/.env.local` 的 `HTTPS_PROXY` 并重启适配器。Fish ASR
+  （`transcribe-1-pro` 付费档）未实测。
+
+## 2026-11-20 地道表达开始学习修复与推荐分组
+
+- 修复词库「开始学习」和行级「加入分组」菜单点击即报 `MenuGroupContext is missing`：
+  Base UI 的 `DropdownMenuLabel` 必须位于 `DropdownMenuGroup` 内。新增两条工作区回归用例，
+  并保留菜单可打开的直接断言。
+- 新增按等级、场景、类型、语境、进度五维派生的推荐分组。等级组按词数、表达类型和语境
+  分层，界面明确说明不是逐条 CEFR 标注；推荐组不落库，加入后写为稳定 ID 的普通分组，
+  重复加入只补缺失条目并保留改名。领域层新增 2 条用例，工作区覆盖「仅加入」与
+  「加入并学习」各 1 条。
+- 自动化验证（2026-11-20，本机）：`pnpm check` 通过（前端 97 文件 / 815 用例，后端
+  TTS、ASR、ElevenLabs、Fish Audio、Supabase 与记忆评估套件全绿）；`pnpm build` 通过。
+- 视觉验证（demo dev + 无头浏览器）：1280px 与 390px 的词库页、推荐分组弹窗均正常渲染；
+  两种宽度的 `document.documentElement.scrollWidth` 分别为 1280 与 390，无横向溢出。
+
+## 2026-11-20 导入字段增强与 AI 生成
+
+- 导入契约补齐 `exampleTranslation`、`usage`、`memoryTip` 和最多 4 条 `examples`；CSV
+  模板用 JSON 数组字符串承载拓展例句，JSON 直接使用数组。四列随导入同步到
+  `expression_library_items`，`parseImportedExpressionItem` 也会保留这些字段。
+- 导入弹窗新增「AI 生成」页：输入短语后请求 `/api/expressions/generate`，使用 Supabase
+  session 或加密浏览器模型配置调用当前 AI 接口；模型只返回导入契约 JSON，结果先写入
+  JSON 预检编辑器，确认后才走本机优先导入。演示模式返回结构完整的示例记录且不调用模型。
+- 词库例句区改为主题淡底 + 左侧强调线；场景库标题标识换成穿过场景锚点的学习路径与对话气泡，
+  保留用户已有的长期记忆主题标识改动。
+- 自动化验证（2026-11-20，本机）：`pnpm check` 通过（前端 99 文件 / 826 用例，后端各套件
+  全绿）；`pnpm build` 通过，新增 `/api/expressions/generate` 路由进入构建产物。
+- 视觉验证（demo dev + 无头浏览器）：1280px 与 390px 的 AI 生成弹窗均显示预检摘要与
+  `导入 1 条` 按钮，场景库标题标识无遮挡；`scrollWidth` 分别为 1280 / 390，无横向溢出。
+
+## 2026-11-20 词库页性能优化
+
+- 搜索文本按条目预建索引，查询时只做一次 `includes`，不再为 1170 条记录逐次拼接、归一化
+  与去重；索引随词库集合变化重建，结果保持原有搜索语义。
+- 推荐分组从页面常驻计算改为弹窗打开时构建，并支持按维度按需构建；进度变化不再让所有
+  静态维度重复扫描全库。列表行改为 memo 组件，开始学习、加入长期记忆和推荐分组回调使用
+  稳定引用，减少无关状态变化触发的行重渲染。
+- 新增推荐维度过滤用例；原有词库、推荐、导入和生成用例保持通过。CDP 固定交互序列重复
+  测量未见布局/样式次数回退（重排 36–41 次）。
+- 自动化验证（2026-11-20，本机）：`pnpm check` 通过（前端 99 文件 / 827 用例，后端各套件
+  全绿）；`pnpm build` 通过。
+
+## 2026-11-20 地道表达学习方式修复、随机学习与艾宾浩斯记忆循环
+
+- 修复「开始学习 → 选择学习方式」点击无反应：Base UI 的 `MenuItem` 只认 `onClick`，
+  面板里沿用的 Radix `onSelect` 不会触发。五个下拉项统一改为 `onClick`，闪卡/填空/听写、
+  随机学习与艾宾浩斯入口都能真正进入会话。
+- 新增随机学习：从当前筛选结果 Fisher-Yates 洗牌后抽 5/10/20 条，可沿用三种练习模式；
+  完成页可「换一组随机学习」重新抽样，抽样本身不写入持久化状态。
+- 新增艾宾浩斯记忆循环：学习阶段优先挑未进入长期记忆的表达（默认 8 条），逐条写入
+  `recordExpressionStudy` 并把首次复习排到 10 分钟后；复习阶段合并刚学的条目与已到期的
+  地道表达，用四档评分调用 `rateReview` 真实更新 SM-2 强度/间隔/到期时间；「忘记了/
+  有点难」进入再记忆阶段重新学习并再次排期。完成页可跳到复习页承接后续间隔复习。
+- 自动化验证（2026-11-20，本机）：`pnpm check` 通过（前端 101 文件 / 838 用例，后端各套件
+  全绿）；`pnpm build` 通过。
+- 视觉验证：待人工在桌面与 390px 下核对新增菜单项与三阶段对话框；本次未采集截图。
+
+## 2026-11-20 词库进度与长期记忆统一、艾宾浩斯来源标注
+
+- 普通学习会话（闪卡/填空/听写）每完成一条，在写 `expressionStudy.progress` 的同时经
+  `recordExpressionStudy` 写入长期记忆并把首次复习排到 10 分钟后。词库行的「已掌握/学习中」
+  因此直接对应复习队列里的到期条目，消除「学了却不在复习队列」的割裂；行上「加入长期记忆」
+  按钮在条目已入记忆后禁用，只保留不经学习直接加入的入口。
+- 艾宾浩斯循环复习卡片显式标注「刚学 · 即时召回」与「已到期 · 间隔复习」，完成页分开统计
+  两类条数。即时召回被诚实呈现为学习步骤，真正的间隔排期仍由四档评分与复习页承接。
+- 自动化验证（2026-11-20，本机）：新增学习对话框写入、工作区会话完成写入、按钮禁用与
+  艾宾浩斯来源标注共 4 条用例；`pnpm check` 通过（前端 101 文件 / 841 用例，后端各套件
+  全绿），`pnpm build` 通过。
+- 视觉验证：行按钮禁用态与新增徽章的桌面/390px 观感待人工核对；本次未采集截图。
+
+## 2026-11-20 记忆写入幂等与导入例句布局
+
+- `recordExpressionStudy` 改为按记忆条目身份幂等：同一条表达重复学习不再累加强度、
+  `encounters` 与事件数，返回原状态引用；provider 据此跳过 setState 与向量写入。
+  「重试不重复计数」在词库学习链路上与对话 `turnId` 语义对齐，强度与间隔仍只由
+  `rateReview` 决定。原有「重复学习累加」用例改为断言幂等（encounters 1、strength 49、
+  events 1、同一引用）。
+- 用户导入表达比内置条目多出编辑/删除按钮，宽屏下左列更高会把右侧信息列拉伸，例句
+  blockquote 贴顶并留下大片空白；右侧内容在 `lg` 以上垂直居中，消除贴顶留白。
+- 自动化验证（2026-11-20，本机）：`pnpm typecheck`、`pnpm lint`、`pnpm build` 通过。
+  本机负载 13.5（浏览器进程持续占用 CPU），JSDOM 渲染普遍变慢，vitest 默认 10s 用例
+  超时导致词库工作区 5 个用例超时；stash 掉本次改动后旧代码同样超时，确认非本次改动引入。
+  以本地 `--testTimeout=45000` 复跑，前端 101 文件 / 841 用例全部通过，后端各套件全绿。
+- 视觉验证：导入例句垂直居中的桌面与 390px 观感待人工核对；本次未采集截图。
+
+## 2026-11-20 学习独立页面与导入必须入库
+
+- 学习从弹窗改为独立页面 `/workspace/expressions/study`：`scope/mode/groupId/status/count/session`
+  经 query 传递，筛选条件留在学习记忆快照。词库页与学习页共用 `useExpressionLibrarySource`
+  加载和派生词库集合；参数解析 `parseExpressionStudyScope/parseExpressionStudyMode` 对非法值回退。
+  闪卡/填空/听写与艾宾浩斯循环都改为页面内组件，返回按钮跳回词库。
+- 导入改为必须先入库：`handleImport` 先 POST 并确认 `stored`，成功后才写本机；未登录/演示/失败
+  时报错、保留弹窗、本机不变。修复 `extra_examples` 用 `JSON.stringify` 写成字符串违反
+  `jsonb_typeof='array'` 约束导致整批 502 的问题，改为传原生数组。
+- 自动化验证（2026-11-20，本机）：新增导入失败保持本机、repository jsonb 数组、学习页写入与
+  跳转、URL 参数解析用例；前端 102 文件 / 846 用例全部通过，`pnpm db:test` 15 用例通过，
+  `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（新路由 `/workspace/expressions/study` 进入产物）。
+  本机负载仍高，vitest 以本地 `--testTimeout=45000` 复跑。
+- 视觉验证：独立学习页与返回按钮在桌面/390px 的观感待人工核对；本次未采集截图。
+
+## 2026-11-21 加载稳定性、导入重试、高亮容错、随机分组与学习路径
+
+- 加载：`useExpressionLibrarySource` 给云端读取加 8 秒超时、`auth.getUser` 加 5 秒上限，单条脏记录
+  只跳过不整页失败，云端失败不回写空缓存（保留上次成功快照），并在词库页显示「重试加载」入口。
+- 导入重试：`saveCloudExpressionItems` 对 502/504 与网络异常做 3 次有界指数退避重试，400/401/409/
+  413/429/503 不重试；`POST /api/expressions` 把唯一约束冲突映射成 409、未知失败保留 502，
+  同批重复 `clientId` 在入口挡成 400。
+- 高亮：`splitExpressionHighlights` 容忍词间插入一个冠词/虚词（`need lecture`→`need a lecture`），
+  只放宽单个虚词并守住词边界。
+- 随机学习固化为分组：弹窗选择已有组或建新组，建新组做名称重名校验，使用已有组校验组仍存在；
+  抽样写成 group 后进入学习页，去掉「换一组随机学习」。分组可重命名/删除。
+- 学习路径：`LearningPlanStep` 增加 expression 步骤（找回→表达→对话→跟读），dashboard 图标同步。
+- 自动化验证（2026-11-21，本机）：`pnpm typecheck`、`pnpm lint`、`pnpm build` 通过；前端 103 文件 /
+  858 用例全绿（含导入重试/脏数据隔离/高亮虚词/随机分组/学习路径/加载失败重试新用例），后端各
+  套件全绿。本机负载高，vitest 以 `--testTimeout=45000` 复跑。
+- 视觉验证：随机分组弹窗与「重试加载」提示的桌面/390px 观感待人工核对；本次未采集截图。
+- 高亮样式按参考图调整：目标表达改为主题蓝色加粗文字、去掉浅色背景块；短谓语表达把前置
+  助动词和否定/完成副词纳入高亮，`give up` 的 `is giving up`、`have never given up`、
+  `has already given up` 整体命中，`Don't give up` 仍只高亮 `give up`。补充 6 条高亮断言；
+  桌面截图确认新样式无背景块。本机全量在 45s 上限下仍有跟读计时用例受负载超时，单独复跑
+  通过；高亮与词库相关套件全绿。
+
+## 2026-11-21 学习入口简化与页内详细引导
+
+- 「开始学习」菜单收敛为「快速开始 / 换种练法 / 按计划学 / 随机抽取」四组，每项附一句说明；
+  随机 5/10/20 合并为「随机抽一组」，条数改在弹窗内选择（默认 10）。全部玩法保留。
+- 独立学习页顶部新增默认展开、可折叠的 `ExpressionStudyGuide`：当前玩法的分步说明、四档评分
+  的含义与间隔效果、学完写入长期记忆并到复习页找回的去向；闪卡/填空/听写卡片内补「第 1 步 /
+  第 2 步」提示。
+- 自动化验证（2026-11-21，本机）：新增引导组件 3 例、随机弹窗条数选择 1 例，更新工作区菜单
+  断言；前端全量用例与 `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以
+  `--testTimeout=45000` 复跑）。
+- 视觉验证：菜单多分组文案与默认展开的引导卡在桌面/390px 的观感待人工核对；本次未采集截图。
+
+## 2026-11-21 学习交互与高亮深度优化
+
+- 高亮：补双写辅音词形（run → running、stop → stopped，排除 w/x/y 结尾），延续此前助动词与
+  插入虚词规则，全库 270 条拓展例句守卫保持通过。
+- 引导：`ExpressionStudyGuide` 文案更友好，窄屏挂载后自动折叠（默认展开避免 hydration 不一致，
+  用户切换后不再自动改动）。
+- 学习交互：闪卡/填空/听写支持键盘流（空格/回车揭示、1 再练、2 掌握，焦点在控件上交还原生
+  激活），卡片顶部显示快捷操作与学后去向提示。
+- 分组：名称唯一做成 state 写入不变量（create/rename/add 新建分支经 `isExpressionGroupNameTaken`
+  拒绝重名，大小写/空白不敏感），provider `createGroup` 同名复用已有 id；合并层刻意不按名称去重
+  以保留各组的 `itemIds`。
+- 自动化验证（2026-11-21，本机）：新增双写辅音、键盘流、分组判重用例，前端全量用例与
+  `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以 `--testTimeout=45000` 复跑）。
+- 视觉验证：窄屏引导折叠态与键盘提示条的桌面/390px 观感待人工核对；本次未采集截图。
+
+## 2026-11-21 学习交互深度打磨与视觉验证
+
+- 即时反馈：每条自评后 toast 说明「写入长期记忆 + 约 10 分钟后到期 + 可到复习页找回」，消除
+  「点了没反应」的错觉；听写结果态补空格重听，形成纯键盘闭环。
+- 跨设备同名分组：`findDuplicateGroupNames` 在学习面板做只读提示，不自动合并（合并按 id LWW，
+  强制同名合并会丢 itemIds），引导用户在管理分组里重命名区分。
+- 自动化验证（2026-11-21，本机）：前端全量用例与 `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过。
+- **视觉验证（本次真实执行）**：用 headless Chrome + CDP 对生产构建（demo 模式，`next start`）做
+  390px 与 1280px 实测，地道表达词库页、学习页（闪卡/艾宾浩斯）、复习页的
+  `documentElement.scrollWidth` 均等于 `clientWidth`，无横向溢出；390px 下学习引导默认折叠
+  （`aria-expanded=false`），点击后展开并显示详细玩法（`true`）。此前报告里的「待人工核对」本轮
+  已由自动化覆盖；未覆盖项仅剩真实麦克风与 live provider。
+
+## 2026-11-22 修复 /api/expressions 持续 502
+
+根因与修复（此前所有数据库错误被吞成裸 502，无法定位）：
+- `extra_examples` 无拓展例句时传 `null`，PostgREST 映射为 `'null'::jsonb`，
+  `jsonb_typeof='null'` 违反表约束 `= 'array'`（23514），导致每批导入 502；改为始终写 `[]`。
+- upsert 冲突目标用 generated column `normalized_phrase`，部分实例缺该唯一约束时报 42P10；
+  改用稳定的 `(user_id, client_id)` 唯一约束（clientId 由身份哈希而来，语义等价）。
+- GET 路径单条脏记录曾抛错让整页 502；改为跳过单条坏记录。
+- 数据库错误不再一律 502：新增 `databaseFailure` 打印真实 code/message 并按 code 分类——
+  23514/23502/22P02→400 `expression_library_invalid_data`，42P10/42703/42P01/42501→503
+  `expression_library_schema_mismatch`（不可重试，提示迁移），23505→409，其余 502 可重试。
+- 自动化验证（2026-11-22，本机）：repository/route/client 全绿；新增空数组、脏行跳过、
+  400/503 分类用例；前端 104 文件 / 871 用例通过，`pnpm typecheck`/`pnpm lint`/`pnpm build` 通过。
+- 说明：本环境无 Supabase 实例/凭据，未对真实数据库执行写操作；若部署实例另有 schema 问题，
+  服务端日志会打印真实 Postgres code，据此定位。
+
+## 2026-11-22 学习页随机简化与引导轻量化
+
+- 随机学习一键化：删除 `ExpressionRandomStudyDialog` 与 `sampleStudyIdentities`（及各自测试），
+  面板「随机抽 10 条」直接以 `random` scope 从当前筛选结果抽词进入学习页；不弹条数/分组、不建组，
+  纯抽词不入持久化状态（刷新重抽）。workspace 移除 `startRandom`/`onStartRandom` 接线。
+- 引导轻量化：`ExpressionStudyGuide` 从学习页顶部常驻独立区块改为学习卡标题栏内的「玩法说明」
+  按需按钮（Popover 浮层，默认收起），闪卡/填空/听写卡与艾宾浩斯卡各自内嵌；展开不挤压卡片。
+- 布局对齐：学习路由加 `PageHeading`（eyebrow/title/description + 范围与玩法徽章），容器有界高度
+  与词库/复习页一致，内容超出只在卡片内滚动；学习页去掉重复的顶层区块。
+- 高亮样式：`ExpressionText` 已是蓝色加粗无底色（`bg-transparent font-bold text-chart-4`），
+  补 2 条守卫用例锁定 mark 样式与周围文本不变。
+- 自动化验证（2026-11-22，本机）：新增/更新随机一键、按需引导、高亮守卫用例；前端全量用例与
+  `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以 `--testTimeout=45000` 复跑）。
+- 视觉验证：Popover 在 jsdom 可展开已由组件测试覆盖；桌面/390px 实际观感待人工核对。

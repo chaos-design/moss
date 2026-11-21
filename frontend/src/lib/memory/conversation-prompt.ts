@@ -116,6 +116,7 @@ export function createConversationPrompt(
     sceneEnglishTitle: scene.englishTitle,
     partnerRole: scene.partnerRole,
     objective: scene.objective,
+    sceneLevel: scene.level,
     targetExpressions: targetExpressions.join("; "),
     shortTermMemory: shortTermMemory
       ? `goal: ${shortTermMemory.activeGoal}; ${shortTermMemory.turnCount} turns in this scene; recent learner inputs: ${shortTermMemory.recentUserInputs.join(" | ")}`

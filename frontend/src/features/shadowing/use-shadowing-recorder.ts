@@ -30,6 +30,11 @@ function selectMimeType() {
   )
 }
 
+// 与 createWaveform 同一换算：RMS 峰值映射到 8–100 的条高。
+function toWaveformBar(peak: number) {
+  return Math.max(8, Math.min(100, Math.round(peak * 650)))
+}
+
 function createWaveform(samples: number[]) {
   if (samples.length === 0) {
     return Array.from({ length: waveformBarCount }, () => 8)
@@ -39,7 +44,7 @@ function createWaveform(samples: number[]) {
   return Array.from({ length: waveformBarCount }, (_, index) => {
     const bucket = samples.slice(index * bucketSize, (index + 1) * bucketSize)
     const peak = bucket.length > 0 ? Math.max(...bucket) : 0
-    return Math.max(8, Math.min(100, Math.round(peak * 650)))
+    return toWaveformBar(peak)
   })
 }
 

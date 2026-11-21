@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "loopbackHosts": ["127.0.0.1", "localhost", "::1"],
+  "allowedProtocols": ["http:", "https:", "ws:", "wss:"],
+  "services": {
+    "frontend": {
+      "port": 5577,
+      "origin": "http://localhost:5577",
+      "routes": {
+        "asrProxy": "/api/speech/asr",
+        "ttsProxy": "/api/speech/tts",
+        "ttsTest": "/api/speech/tts/test"
+      }
+    },
+    "ttsGateway": {
+      "port": 5578,
+      "url": "http://127.0.0.1:5578",
+      "routes": {
+        "health": "/health",
+        "prepare": "/v1/tts/prepare",
+        "synthesize": "/v1/tts/synthesize"
+      }
+    },
+    "asr": {
+      "port": 5580,
+      "url": "ws://127.0.0.1:5580/v1/asr/stream",
+      "routes": { "health": "/health", "stream": "/v1/asr/stream" }
+    },
+    "cosyvoiceSidecar": { "port": 5581, "url": "http://127.0.0.1:5581" },
+    "audio8Sidecar": { "port": 5582, "url": "http://127.0.0.1:5582" },
+    "localApi": {
+      "port": 5583,
+      "baseUrl": "http://127.0.0.1:5583/v1",
+      "routes": {
+        "health": "/health",
+        "speech": "/audio/speech",
+        "speechTest": "/audio/speech/test",
+        "transcriptions": "/audio/transcriptions"
+      }
+    },
+    "fishAudio": {
+      "port": 5584,
+      "baseUrl": "http://127.0.0.1:5584/v1",
+      "routes": {
+        "health": "/health",
+        "speech": "/audio/speech",
+        "speechTest": "/audio/speech/test",
+        "transcriptions": "/audio/transcriptions"
+      }
+    }
+  },
+  "models": {
+    "localApi": { "tts": "eleven_flash_v2_5", "asr": "scribe_v2" },
+    "remoteApi": { "tts": "tts-1", "asr": "whisper-1" },
+    "fishAudio": { "tts": "s2.1-pro-free", "asr": "transcribe-1-pro" },
+    "localApiTtsOptions": [
+      "eleven_flash_v2_5",
+      "eleven_v4",
+      "eleven_multilingual_v2",
+      "eleven_v3"
+    ],
+    "localApiAsrOptions": ["scribe_v2"],
+    "fishAudioTtsOptions": ["s2.1-pro-free"],
+    "fishAudioAsrOptions": ["transcribe-1-pro"],
+    "ttsGatewayEngines": ["kokoro", "audio8", "cosyvoice"],
+    "asrEngines": ["qwen3-asr", "sensevoice"],
+    "localModelIds": {
+      "kokoro": "kokoro-v1.0.onnx",
+      "kokoroZh": "kokoro-v1.1-zh.onnx",
+      "audio8": "Audio8/Audio8-TTS-Preview-0.6b",
+      "cosyvoice": "CosyVoice-300M-SFT",
+      "qwen3Asr": "Qwen/Qwen3-ASR-1.7B",
+      "sensevoice": "iic/SenseVoiceSmall"
+    }
+  },
+  "voice": {
+    "default": "JBFqnCBsd6RMkjVDRZzb",
+    "aliases": {
+      "alloy": "JBFqnCBsd6RMkjVDRZzb",
+      "echo": "onwK4e9ZLuTAKqWW03F9",
+      "fable": "EXAVITQu4vr4xnSDxMaL",
+      "onyx": "pNInz6obpgDQGcFmaJgB",
+      "nova": "FGY2WhTYpPnrIDTdsKH5",
+      "shimmer": "pFZP5JQG7iQjIQuC4Bku"
+    },
+    "premadeElevenLabs": {
+      "george": "JBFqnCBsd6RMkjVDRZzb",
+      "adam": "pNInz6obpgDQGcFmaJgB",
+      "bill": "pqHfZKP75CvOlQylNhV4",
+      "brian": "nPczCjzI2devNBz1zQrb",
+      "callum": "N2lVS1w4EtoT3dr4eOWO",
+      "emma": "EXAVITQu4vr4xnSDxMaL",
+      "jessica": "cgSgspJ2msm6clMCkdW9",
+      "laura": "FGY2WhTYpPnrIDTdsKH5",
+      "liam": "TX3LPaxmHKxFdv7VOQHJ",
+      "lily": "pFZP5JQG7iQjIQuC4Bku",
+      "matilda": "XrExE9yKIg1WjnnlVkGX",
+      "river": "SAz9YHcvj6GT2YYXdXww",
+      "roger": "CwhRBWXzGAHq8TQ4Fs17"
+    }
+  },
+  "formats": {
+    "default": "mp3",
+    "routeAllowed": ["mp3", "opus", "aac", "flac", "wav", "pcm"],
+    "adapterSupported": {
+      "mp3": {
+        "outputFormat": "mp3_44100_128",
+        "contentType": "audio/mpeg",
+        "sampleRate": 44100
+      },
+      "opus": {
+        "outputFormat": "opus_48000_128",
+        "contentType": "audio/ogg",
+        "sampleRate": 48000
+      },
+      "pcm": { "outputFormat": "pcm_16000", "contentType": "audio/pcm", "sampleRate": 16000 },
+      "wav": { "outputFormat": "wav_44100", "contentType": "audio/wav", "sampleRate": 44100 }
+    },
+    "fishAudioSupported": {
+      "mp3": { "outputFormat": "mp3", "contentType": "audio/mpeg", "sampleRate": 44100 },
+      "opus": { "outputFormat": "opus", "contentType": "audio/ogg", "sampleRate": 48000 },
+      "pcm": { "outputFormat": "pcm", "contentType": "audio/pcm", "sampleRate": 44100 },
+      "wav": { "outputFormat": "wav", "contentType": "audio/wav", "sampleRate": 44100 }
+    }
+  },
+  "localServices": {
+    "asr": [
+      {
+        "id": "moss-asr",
+        "label": "本机 ASR 服务",
+        "endpoint": "ws://127.0.0.1:5580/v1/asr/stream",
+        "transport": "local",
+        "engines": ["qwen3-asr", "sensevoice"]
+      },
+      {
+        "id": "funasr",
+        "label": "FunASR（外部）",
+        "endpoint": "ws://127.0.0.1:10095",
+        "transport": "local",
+        "engines": ["funasr"]
+      },
+      {
+        "id": "local-api",
+        "label": "本机 local 接口（ElevenLabs 适配器）",
+        "endpoint": "http://127.0.0.1:5583/v1",
+        "transport": "api",
+        "modelSource": "localApi"
+      },
+      {
+        "id": "fish-audio",
+        "label": "Fish Audio 适配器",
+        "endpoint": "http://127.0.0.1:5584/v1",
+        "transport": "api",
+        "modelSource": "fishAudio"
+      }
+    ],
+    "tts": [
+      {
+        "id": "moss-tts",
+        "label": "本机 TTS 网关",
+        "endpoint": "http://127.0.0.1:5578",
+        "transport": "local",
+        "voices": "gateway"
+      },
+      {
+        "id": "local-api",
+        "label": "本机 local 接口（ElevenLabs 适配器）",
+        "endpoint": "http://127.0.0.1:5583/v1",
+        "transport": "api",
+        "modelSource": "localApi",
+        "voices": "elevenlabs"
+      },
+      {
+        "id": "fish-audio",
+        "label": "Fish Audio 适配器",
+        "endpoint": "http://127.0.0.1:5584/v1",
+        "transport": "api",
+        "modelSource": "fishAudio",
+        "voices": "fishaudio"
+      }
+    ]
+  },
+  "limits": {
+    "maxTtsTextLength": 2000,
+    "maxAsrAudioBytes": 8000000,
+    "maxSpeechRequestBytes": 64000,
+    "maxEndpointLength": 300,
+    "maxApiKeyLength": 400,
+    "maxModelLength": 120,
+    "maxVoiceLength": 120,
+    "speechRequestTimeoutMs": 30000,
+    "adapterTimeoutSeconds": 45,
+    "ttsRateLimitPerMinute": 240
+  },
+  "speed": { "min": 0.5, "max": 2, "providerMin": 0.7, "providerMax": 1.2, "default": 1 },
+  "fishAudio": {
+    "latency": "balanced",
+    "defaultVoice": "",
+    "voiceAliases": {
+      "alloy": "",
+      "echo": "",
+      "fable": "",
+      "onyx": "",
+      "nova": "",
+      "shimmer": ""
+    },
+    "speed": { "min": 0.5, "max": 2 }
+  },
+  "testSynthesis": {
+    "text": "Moss 语音接口测试成功。",
+    "voice": "alloy",
+    "format": "mp3",
+    "speed": 1,
+    "minimumAudioBytes": 4,
+    "contentTypePrefix": "audio/"
+  }
+}

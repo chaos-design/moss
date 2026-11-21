@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   getUserLearningMemoryStorageKey,
@@ -33,6 +33,26 @@ function MemoryProbe() {
       <span data-testid="review-strength">{reviewItem?.strength ?? -1}</span>
       <button type="button" onClick={() => rateReview("clarify-trade-off", "good")}>
         Rate review
+      </button>
+    </div>
+  )
+}
+
+function StudyProbe() {
+  const { state, toggleFavorite, createGroup } = useLearningMemory()
+  const favorites = Object.values(state.expressionStudy.favorites).filter(
+    (entry) => !entry.deletedAt,
+  )
+  const groups = Object.values(state.expressionStudy.groups).filter((group) => !group.deletedAt)
+  return (
+    <div>
+      <span data-testid="favorites">{favorites.length}</span>
+      <span data-testid="groups">{groups.length}</span>
+      <button type="button" onClick={() => toggleFavorite("work:rule of thumb")}>
+        Toggle favorite
+      </button>
+      <button type="button" onClick={() => createGroup("面试表达")}>
+        Create group
       </button>
     </div>
   )
@@ -143,6 +163,54 @@ describe("LearningMemoryProvider cloud sync", () => {
       expect(screen.getByTestId("status").textContent).toBe("local")
     })
     expect(mocks.getSupabaseBrowserClient).not.toHaveBeenCalled()
+  })
+
+  it("keeps demo seed memory out of the production storage key even after an in-session edit", async () => {
+    // 演示模式在会话内改动状态后，仍不得写生产键：否则切回正式模式/登录后，
+    // 虚构条目会被当作真实记忆合并进云端。
+    mocks.isDemoMode.mockReturnValue(true)
+    mocks.getSupabaseBrowserClient.mockReturnValue(null)
+
+    render(
+      <LearningMemoryProvider>
+        <MemoryProbe />
+      </LearningMemoryProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status").textContent).toBe("local")
+    })
+    // 会话内触发一次状态变更（评分走内存，不经过持久化）。
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Rate review" }))
+    })
+
+    // 演示种子仍在工作区可见（有可评条目），但生产键始终为空。
+    expect(Number(screen.getByTestId("review-strength").textContent)).toBeGreaterThanOrEqual(0)
+    expect(window.localStorage.getItem(learningMemoryStorageKey)).toBeNull()
+  })
+
+  it("persists expression study favorites and groups in the local snapshot", async () => {
+    mocks.getSupabaseBrowserClient.mockReturnValue(null)
+    render(
+      <LearningMemoryProvider>
+        <StudyProbe />
+      </LearningMemoryProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId("favorites").textContent).toBe("0"))
+    fireEvent.click(screen.getByRole("button", { name: "Toggle favorite" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create group" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("favorites").textContent).toBe("1")
+      expect(screen.getByTestId("groups").textContent).toBe("1")
+    })
+    const stored = window.localStorage.getItem(learningMemoryStorageKey)
+    expect(stored).toBeTruthy()
+    const parsed = JSON.parse(stored ?? "{}")
+    expect(parsed.expressionStudy.favorites["work:rule of thumb"]).toBeTruthy()
+    expect(Object.values(parsed.expressionStudy.groups)[0]).toMatchObject({ name: "面试表达" })
   })
 
   it("creates the first cloud snapshot with revision zero as the expectation", async () => {

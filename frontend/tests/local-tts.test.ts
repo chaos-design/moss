@@ -307,6 +307,27 @@ describe("TTS service client", () => {
     expect(browserSpeak).not.toHaveBeenCalled()
   })
 
+  it("omits the voice field for the API transport when no voice is configured", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(new Uint8Array([73, 68, 51]), {
+        status: 200,
+        headers: { "Content-Type": "audio/mpeg" },
+      }),
+    )
+    const player = new TtsClientPlayer("kokoro", "", {
+      transport: "api",
+      endpoint: "https://speech.example.com/v1",
+      apiKey: "sk-test",
+      model: "tts-1",
+    })
+
+    await player.speak("Upstream picks the voice.")
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    // 空音色按字段策略整体省略，由上游使用自己的默认音色；客户端不再强推 alloy。
+    expect(payload).not.toHaveProperty("voice")
+  })
+
   it("falls back to browser speech when a configured API transport is unreachable", async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ error: { message: "无法连接语音合成接口" } }), {
