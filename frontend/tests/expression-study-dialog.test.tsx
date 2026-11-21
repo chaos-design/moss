@@ -6,6 +6,11 @@ import { ExpressionStudyWorkspace } from "@/features/expressions/expression-stud
 import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import { createEmptyExpressionStudyState } from "@/lib/memory"
 
+const toastSuccess = vi.fn()
+vi.mock("sonner", () => ({
+  toast: { success: (...args: unknown[]) => toastSuccess(...args) },
+}))
+
 vi.mock("@/features/expressions/use-expression-dictation", () => ({
   useExpressionDictation: () => ({
     phase: "idle",
@@ -35,7 +40,10 @@ const item: ExpressionLibraryItem = {
   source: "builtin",
 }
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  toastSuccess.mockReset()
+})
 
 describe("ExpressionStudyWorkspace", () => {
   it("runs a flashcard round and records both progress and long-term memory on mastery", () => {
@@ -62,6 +70,11 @@ describe("ExpressionStudyWorkspace", () => {
       expect.objectContaining({ status: "mastered", incrementReviews: true }),
     )
     expect(onStudyMemory).toHaveBeenCalledWith(item)
+    // 即时反馈说明写入长期记忆与下次到期。
+    expect(toastSuccess).toHaveBeenCalledWith(
+      expect.stringContaining("10 分钟后到期"),
+      expect.objectContaining({ description: expect.stringContaining("长期记忆") }),
+    )
     expect(screen.getByText("这一组学完了")).toBeTruthy()
   })
 

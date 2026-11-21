@@ -11,6 +11,7 @@ import {
   XIcon,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import { ExpressionText } from "@/components/expression-text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -96,6 +97,11 @@ export function ExpressionStudyWorkspace({
     onProgress(identity, { status, incrementReviews: true })
     // 主动学习也是一次真实接触：写进长期记忆并排近期复习，避免「学了却不在复习队列」。
     onStudyMemory?.(item)
+    // 即时反馈：明确告诉学习者这一条发生了什么、何时再回来，避免「点了没反应」的错觉。
+    // 「再练」和「掌握」都会写长期记忆并把首次复习排到约 10 分钟后，只是强度增量不同。
+    toast.success(status === "mastered" ? "已记住，约 10 分钟后到期" : "已记录，稍后再练一次", {
+      description: `“${item.phrase}”已写入长期记忆，可在「智能复习」页找回。`,
+    })
     setStats((current) => ({
       mastered: current.mastered + (status === "mastered" ? 1 : 0),
       practice: current.practice + (status === "learning" ? 1 : 0),
@@ -149,6 +155,12 @@ export function ExpressionStudyWorkspace({
       } else if (mode === "cloze" && cloze) {
         setClozeResult(checkClozeAnswer(cloze.answer, clozeAnswer))
       }
+      return
+    }
+    // 听写出结果后空格重听例句，配合 1/2 评分形成纯键盘闭环。
+    if (mode === "dictation" && dictation.phase === "result" && event.key === " ") {
+      event.preventDefault()
+      void dictation.play(item.example)
       return
     }
     if (revealedNow && (event.key === "1" || event.key === "2")) {
@@ -263,7 +275,7 @@ export function ExpressionStudyWorkspace({
             <p className="mb-4 rounded-md bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
               <span className="font-medium text-foreground">快捷操作</span>
               {mode === "dictation"
-                ? "：听写用按钮录音；结果出来后按 1 再练、2 掌握。"
+                ? "：听写用按钮录音；结果出来后空格重听、1 再练、2 掌握。"
                 : "：空格揭示 · 1 再练一次 · 2 掌握了。"}
               <span className="block">{afterStudyHint}</span>
             </p>

@@ -1239,3 +1239,16 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
 - 自动化验证（2026-11-21，本机）：新增双写辅音、键盘流、分组判重用例，前端全量用例与
   `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以 `--testTimeout=45000` 复跑）。
 - 视觉验证：窄屏引导折叠态与键盘提示条的桌面/390px 观感待人工核对；本次未采集截图。
+
+## 2026-11-21 学习交互深度打磨与视觉验证
+
+- 即时反馈：每条自评后 toast 说明「写入长期记忆 + 约 10 分钟后到期 + 可到复习页找回」，消除
+  「点了没反应」的错觉；听写结果态补空格重听，形成纯键盘闭环。
+- 跨设备同名分组：`findDuplicateGroupNames` 在学习面板做只读提示，不自动合并（合并按 id LWW，
+  强制同名合并会丢 itemIds），引导用户在管理分组里重命名区分。
+- 自动化验证（2026-11-21，本机）：前端全量用例与 `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过。
+- **视觉验证（本次真实执行）**：用 headless Chrome + CDP 对生产构建（demo 模式，`next start`）做
+  390px 与 1280px 实测，地道表达词库页、学习页（闪卡/艾宾浩斯）、复习页的
+  `documentElement.scrollWidth` 均等于 `clientWidth`，无横向溢出；390px 下学习引导默认折叠
+  （`aria-expanded=false`），点击后展开并显示详细玩法（`true`）。此前报告里的「待人工核对」本轮
+  已由自动化覆盖；未覆盖项仅剩真实麦克风与 live provider。

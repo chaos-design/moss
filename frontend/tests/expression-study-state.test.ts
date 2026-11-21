@@ -3,6 +3,7 @@ import {
   createEmptyExpressionStudyState,
   createExpressionGroup,
   deleteExpressionGroup,
+  findDuplicateGroupNames,
   getActiveFavorites,
   getActiveGroups,
   isExpressionGroupNameTaken,
@@ -124,6 +125,24 @@ describe("expression study state", () => {
       t("2026-01-02T00:00:00.000Z"),
     )
     expect(mergeExpressionStudyState(a, b)).toEqual(mergeExpressionStudyState(b, a))
+  })
+
+  it("detects same-name groups without mutating them", () => {
+    const base = createEmptyExpressionStudyState(t("2026-01-01T00:00:00.000Z"))
+    const g1 = {
+      id: "g1",
+      name: "面试表达",
+      itemIds: ["work:a"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+    // 模拟跨设备合并后的两份同名组；检测只报告，不删除任何组（避免丢 itemIds）。
+    const merged = {
+      ...base,
+      groups: { g1, g2: { ...g1, id: "g2", itemIds: ["work:b"] } },
+    }
+    expect(findDuplicateGroupNames(merged)).toContain("面试表达")
+    expect(Object.keys(merged.groups)).toHaveLength(2)
   })
 
   it("rejects duplicate group names irrespective of case and whitespace", () => {

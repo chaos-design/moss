@@ -40,6 +40,7 @@ import type { ExpressionStudyMode, ExpressionStudyScope } from "@/lib/expression
 import type { ExpressionProgressStatus } from "@/lib/memory"
 import {
   type ExpressionStudyState,
+  findDuplicateGroupNames,
   getActiveFavorites,
   getActiveGroups,
   isExpressionGroupNameTaken,
@@ -78,6 +79,7 @@ export function ExpressionStudyPanel({
 
   const favorites = getActiveFavorites(study)
   const groups = getActiveGroups(study)
+  const duplicateGroupNames = findDuplicateGroupNames(study)
   const progress = Object.values(study.progress)
   const mastered = progress.filter((entry) => entry.status === "mastered").length
   const learning = progress.filter((entry) => entry.status === "learning").length
@@ -233,6 +235,13 @@ export function ExpressionStudyPanel({
               </button>
             ))}
           </div>
+        ) : null}
+
+        {duplicateGroupNames.length > 0 ? (
+          <p className="w-full text-xs text-muted-foreground" role="status">
+            有同名分组（{duplicateGroupNames.join("、")}
+            ），可能来自不同设备；为避免丢失条目未自动合并， 可在「管理分组」里重命名区分。
+          </p>
         ) : null}
       </section>
 

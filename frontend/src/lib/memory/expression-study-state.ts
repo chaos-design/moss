@@ -464,6 +464,29 @@ export function getActiveGroups(state: ExpressionStudyState): ExpressionGroup[] 
   return Object.values(state.groups).filter((group) => !group.deletedAt)
 }
 
+/**
+ * 跨设备同步后可能出现的同名分组名（大小写/空白不敏感）。合并刻意按 id LWW 不去重，
+ * 以免丢掉任一分组的 itemIds；这里只把它们找出来供 UI 提示，让用户自行重命名区分。
+ */
+export function findDuplicateGroupNames(state: ExpressionStudyState): string[] {
+  const seen = new Map<string, string>()
+  const duplicates = new Set<string>()
+  for (const group of getActiveGroups(state)) {
+    const key = group.name.trim().toLocaleLowerCase()
+    if (!key) {
+      continue
+    }
+    const first = seen.get(key)
+    if (first !== undefined) {
+      duplicates.add(first)
+      duplicates.add(group.name)
+    } else {
+      seen.set(key, group.name)
+    }
+  }
+  return [...duplicates]
+}
+
 export function getExpressionProgress(
   state: ExpressionStudyState,
   identity: string,
