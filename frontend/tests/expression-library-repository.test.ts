@@ -57,6 +57,43 @@ describe("expression library repository", () => {
     expect(query.eq).toHaveBeenCalledWith("user_id", "user-1")
   })
 
+  it("skips a single invalid row instead of failing the whole page", async () => {
+    const validRow = {
+      id: "row-1",
+      client_id: "item-1",
+      phrase: "keep an eye on",
+      meaning: "留意",
+      reasoning: "解释",
+      origin_note: "来源",
+      example: "Could you keep an eye on my bag?",
+      context: "通用",
+      kind: "idiom",
+      scene_category: "social",
+      created_at: "2026-08-30T12:00:00.000Z",
+      updated_at: "2026-08-30T12:00:00.000Z",
+    }
+    const query = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      order: vi.fn(() => query),
+      range: vi.fn().mockResolvedValue({
+        data: [validRow, { ...validRow, id: "row-2", meaning: "" }],
+        error: null,
+      }),
+    }
+    const client = { from: vi.fn(() => query) }
+
+    const result = await listExpressionLibraryItems({
+      client: client as never,
+      offset: 0,
+      pageSize: 200,
+      userId: "user-1",
+    })
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].phrase).toBe("keep an eye on")
+  })
+
   it("upserts normalized user-owned records", async () => {
     const upsert = vi.fn().mockResolvedValue({ error: null })
     const client = { from: vi.fn(() => ({ upsert })) }
@@ -78,8 +115,24 @@ describe("expression library repository", () => {
           user_id: "user-1",
         }),
       ],
-      { onConflict: "user_id,scene_category,normalized_phrase" },
+      { onConflict: "user_id,client_id" },
     )
+  })
+
+  it("writes an empty array for extra_examples when there are no examples", async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null })
+    const client = { from: vi.fn(() => ({ upsert })) }
+
+    await upsertExpressionLibraryItems({
+      client: client as never,
+      items: [item],
+      userId: "user-1",
+    })
+
+    // 传 null 会被 PostgREST 映射成 'null'::jsonb，jsonb_typeof='null' 触发 23514 → 502。
+    expect(upsert).toHaveBeenCalledWith([expect.objectContaining({ extra_examples: [] })], {
+      onConflict: "user_id,client_id",
+    })
   })
 
   it("writes extra examples as a native array for the jsonb constraint", async () => {
@@ -96,7 +149,7 @@ describe("expression library repository", () => {
     // 表约束要求 jsonb_typeof(extra_examples) = 'array'；stringify 成字符串会被 23514 拒绝。
     expect(upsert).toHaveBeenCalledWith(
       [expect.objectContaining({ extra_examples: examples })],
-      { onConflict: "user_id,scene_category,normalized_phrase" },
+      { onConflict: "user_id,client_id" },
     )
   })
 

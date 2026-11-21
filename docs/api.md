@@ -665,9 +665,15 @@ toast、对话记录和本机存储，规则如下：
 `housing`、`transport`、`work`、`social`、`health`、`services`、`learning` 和
 `emergency`；`context` 只接受 `日常`、`职场`、`通用`；`kind` 只接受 `idiom`、
 `collocation`、`phrasal-verb`、`sentence-pattern`。服务端从 session 写入 `user_id`，
-并按 `(user_id, scene_category, normalized_phrase)` 幂等更新。同批重复的规范化表达或 `clientId`
-返回 `400`；数据库唯一约束冲突返回 `409 expression_library_conflict`（不可重试），其余未知写入
-失败返回 `502 expression_library_write_failed`（客户端可重试）。
+并按稳定的 `(user_id, client_id)` 唯一约束幂等更新（`clientId` 由场景与规范化短语哈希而来，
+不依赖 generated column，避免实例缺失该约束时报 `42P10`）。`extra_examples` 始终写数组：
+无拓展例句时写 `[]`，避免传 `null` 触发 `jsonb_typeof` 检查约束 `23514`。
+
+错误分类（数据库真实 code 会记录到服务端日志，不再一律 502）：同批重复表达/`clientId` 返回
+`400`；检查约束/非空/类型错误（`23514`/`23502`/`22P02`）返回 `400 expression_library_invalid_data`；
+唯一约束冲突返回 `409 expression_library_conflict`（不可重试）；表结构/迁移未就绪
+（`42P10`/`42703`/`42P01`/`42501`）返回 `503 expression_library_schema_mismatch`（重试无意义）；
+其余未知写入失败返回 `502 expression_library_write_failed`（客户端可重试）。
 
 `PUT` 请求体使用 `{ "item": { ... } }`，按当前用户和稳定 `clientId` 更新单条导入表达。
 字段校验与 `POST` 相同；若修改后的场景和规范化表达与另一条记录冲突，返回 `409`。

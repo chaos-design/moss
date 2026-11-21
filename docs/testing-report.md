@@ -1252,3 +1252,19 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
   `documentElement.scrollWidth` 均等于 `clientWidth`，无横向溢出；390px 下学习引导默认折叠
   （`aria-expanded=false`），点击后展开并显示详细玩法（`true`）。此前报告里的「待人工核对」本轮
   已由自动化覆盖；未覆盖项仅剩真实麦克风与 live provider。
+
+## 2026-11-22 修复 /api/expressions 持续 502
+
+根因与修复（此前所有数据库错误被吞成裸 502，无法定位）：
+- `extra_examples` 无拓展例句时传 `null`，PostgREST 映射为 `'null'::jsonb`，
+  `jsonb_typeof='null'` 违反表约束 `= 'array'`（23514），导致每批导入 502；改为始终写 `[]`。
+- upsert 冲突目标用 generated column `normalized_phrase`，部分实例缺该唯一约束时报 42P10；
+  改用稳定的 `(user_id, client_id)` 唯一约束（clientId 由身份哈希而来，语义等价）。
+- GET 路径单条脏记录曾抛错让整页 502；改为跳过单条坏记录。
+- 数据库错误不再一律 502：新增 `databaseFailure` 打印真实 code/message 并按 code 分类——
+  23514/23502/22P02→400 `expression_library_invalid_data`，42P10/42703/42P01/42501→503
+  `expression_library_schema_mismatch`（不可重试，提示迁移），23505→409，其余 502 可重试。
+- 自动化验证（2026-11-22，本机）：repository/route/client 全绿；新增空数组、脏行跳过、
+  400/503 分类用例；前端 104 文件 / 871 用例通过，`pnpm typecheck`/`pnpm lint`/`pnpm build` 通过。
+- 说明：本环境无 Supabase 实例/凭据，未对真实数据库执行写操作；若部署实例另有 schema 问题，
+  服务端日志会打印真实 Postgres code，据此定位。

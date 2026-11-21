@@ -141,6 +141,31 @@ describe("/api/expressions", () => {
     expect((await response.json()).error.code).toBe("expression_library_write_failed")
   })
 
+  it("maps a check-constraint violation to a non-retryable 400", async () => {
+    mocks.upsertExpressionLibraryItems.mockRejectedValueOnce({
+      code: "23514",
+      message: 'new row for relation "expression_library_items" violates check constraint',
+    })
+
+    const response = await POST(createPostRequest([expression]))
+
+    expect(response.status).toBe(400)
+    expect((await response.json()).error.code).toBe("expression_library_invalid_data")
+  })
+
+  it("maps a missing on_conflict constraint to a schema 503 instead of 502", async () => {
+    mocks.upsertExpressionLibraryItems.mockRejectedValueOnce({
+      code: "42P10",
+      message:
+        "there is no unique or exclusion constraint matching the ON CONFLICT specification",
+    })
+
+    const response = await POST(createPostRequest([expression]))
+
+    expect(response.status).toBe(503)
+    expect((await response.json()).error.code).toBe("expression_library_schema_mismatch")
+  })
+
   it("imports a validated batch for the authenticated user", async () => {
     const response = await POST(createPostRequest([expression]))
 

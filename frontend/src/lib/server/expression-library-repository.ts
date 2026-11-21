@@ -51,9 +51,11 @@ function createExpressionRow(item: ExpressionLibraryItem, userId: string) {
     context: item.context,
     example: item.example,
     example_translation: item.exampleTranslation ?? null,
-    // extra_examples 是 jsonb 列且表约束要求数组；传原生数组让驱动正确序列化，
-    // 不能 JSON.stringify 成字符串标量，否则 jsonb_typeof 判定为 'string' 整批 23514。
-    extra_examples: item.examples ?? null,
+    // extra_examples 是 jsonb 列且表约束 CHECK (jsonb_typeof(x) = 'array')。
+    // 必须始终是数组：既不能 JSON.stringify 成字符串标量（jsonb_typeof='string'），
+    // 也不能传 null（PostgREST 把 JSON null 映射成 'null'::jsonb，jsonb_typeof='null'），
+    // 两者都会触发 23514 让整批导入 502。无拓展例句时写空数组。
+    extra_examples: item.examples ?? [],
     kind: item.kind,
     meaning: item.meaning,
     memory_tip: item.memoryTip ?? null,
@@ -91,13 +93,14 @@ export async function listExpressionLibraryItems({
     throw error
   }
   const rows = Array.isArray(data) ? (data as ExpressionLibraryRow[]) : []
-  const parsedItems = rows.slice(0, pageSize).map(parseExpressionRow)
-  if (parsedItems.some((item) => item === null)) {
-    throw new Error("Expression library query returned an invalid row.")
-  }
+  // 单条脏数据只跳过，不让一条历史坏记录让整个 GET 永远 502；分页判断仍基于原始行数。
+  const parsedItems = rows
+    .slice(0, pageSize)
+    .map(parseExpressionRow)
+    .filter((item): item is ExpressionLibraryItem => item !== null)
   return {
     nextOffset: rows.length > pageSize ? offset + pageSize : null,
-    items: parsedItems.filter((item): item is ExpressionLibraryItem => item !== null),
+    items: parsedItems,
   }
 }
 
@@ -111,9 +114,12 @@ export async function upsertExpressionLibraryItems({
   userId: string
 }) {
   const rows = items.map((item) => createExpressionRow(item, userId))
+  // 冲突目标用稳定的 client_id 唯一约束，而不是 generated column normalized_phrase：
+  // clientId 由身份（sceneCategory:规范化短语）哈希而来，本来就等价且稳定；
+  // generated column 上的唯一约束在部分 Supabase 实例缺失，会导致 on_conflict 42P10 整批 502。
   const { error } = await client
     .from("expression_library_items")
-    .upsert(rows, { onConflict: "user_id,scene_category,normalized_phrase" })
+    .upsert(rows, { onConflict: "user_id,client_id" })
   if (error) {
     throw error
   }
