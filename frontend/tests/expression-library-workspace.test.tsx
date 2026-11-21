@@ -453,7 +453,7 @@ describe("ExpressionLibraryWorkspace", () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
-    fireEvent.click(await screen.findByRole("menuitem", { name: "例句填空" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /例句填空/ }))
 
     expect(routerPush).toHaveBeenCalledWith(
       "/workspace/expressions/study?scope=filtered&mode=cloze",
@@ -572,23 +572,26 @@ describe("ExpressionLibraryWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
 
-    expect(await screen.findByRole("menuitem", { name: "闪卡自测" })).toBeTruthy()
+    expect(await screen.findByRole("menuitem", { name: /闪卡自测/ })).toBeTruthy()
   })
 
-  it("exposes random and ebbinghaus learning methods in the start menu", async () => {
+  it("exposes random and ebbinghaus learning methods in the simplified start menu", async () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
 
-    expect(await screen.findByRole("menuitem", { name: "随机学 5 条" })).toBeTruthy()
-    expect(screen.getByRole("menuitem", { name: "艾宾浩斯记忆循环" })).toBeTruthy()
+    expect(await screen.findByRole("menuitem", { name: /随机抽一组/ })).toBeTruthy()
+    expect(screen.getByRole("menuitem", { name: /艾宾浩斯记忆循环/ })).toBeTruthy()
+    // 简化后的四个分组标签都在。
+    expect(screen.getByText("快速开始")).toBeTruthy()
+    expect(screen.getByText("按计划学")).toBeTruthy()
   })
 
   it("固化为新分组后以 group scope 进入学习页", async () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
-    fireEvent.click(await screen.findByRole("menuitem", { name: "随机学 5 条" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /随机抽一组/ }))
     // 随机学习先让你选择分组或建新组。
     fireEvent.click(await screen.findByRole("button", { name: "创建新分组" }))
     fireEvent.change(screen.getByRole("textbox", { name: "新随机分组名称" }), {
@@ -611,7 +614,7 @@ describe("ExpressionLibraryWorkspace", () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
-    fireEvent.click(await screen.findByRole("menuitem", { name: "艾宾浩斯记忆循环" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /艾宾浩斯记忆循环/ }))
 
     expect(routerPush).toHaveBeenCalledWith(
       "/workspace/expressions/study?scope=ebbinghaus&mode=flashcard",

@@ -19,21 +19,23 @@ import type { ExpressionGroup } from "@/lib/memory"
  * 随机学习固化弹窗：抽取的表达会写入一个分组，之后可以像普通分组一样编辑/删除。
  * 既可以复用已有分组，也可以新建；新建时做名称重名校验（现有 state 只按 id 去重）。
  */
+const randomCountOptions = [5, 10, 20]
+
 export function ExpressionRandomStudyDialog({
   open,
   onOpenChange,
-  count,
   groups,
   onConfirm,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  count: number
   groups: readonly ExpressionGroup[]
   onConfirm: (
+    count: number,
     target: { kind: "existing"; groupId: string } | { kind: "new"; name: string },
   ) => void
 }) {
+  const [count, setCount] = useState(10)
   const [targetKind, setTargetKind] = useState<"existing" | "new">(
     groups.length > 0 ? "existing" : "new",
   )
@@ -59,7 +61,7 @@ export function ExpressionRandomStudyDialog({
         setError("所选分组已不存在，请重新选择。")
         return
       }
-      onConfirm({ kind: "existing", groupId: selectedGroupId })
+      onConfirm(count, { kind: "existing", groupId: selectedGroupId })
       return
     }
     if (!trimmed) {
@@ -70,7 +72,7 @@ export function ExpressionRandomStudyDialog({
       setError("已存在同名分组，请换一个名称或选择使用已有分组。")
       return
     }
-    onConfirm({ kind: "new", name: trimmed })
+    onConfirm(count, { kind: "new", name: trimmed })
   }
 
   return (
@@ -87,6 +89,25 @@ export function ExpressionRandomStudyDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 rounded-lg border p-3">
+            <span className="text-xs font-medium text-muted-foreground">先选抽多少条</span>
+            <div className="flex gap-2">
+              {randomCountOptions.map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  size="sm"
+                  variant={count === option ? "default" : "outline"}
+                  aria-pressed={count === option}
+                  className="flex-1"
+                  onClick={() => setCount(option)}
+                >
+                  {option} 条
+                </Button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs font-medium text-muted-foreground">再选放进哪个分组</p>
           {groups.length > 0 ? (
             <div className="flex flex-col gap-2 rounded-lg border p-3">
               <Button

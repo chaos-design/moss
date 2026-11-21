@@ -18,21 +18,36 @@ const groups: ExpressionGroup[] = [
 afterEach(cleanup)
 
 describe("ExpressionRandomStudyDialog", () => {
-  it("uses an existing group when confirmed", () => {
+  it("uses an existing group with the default count when confirmed", () => {
     const onConfirm = vi.fn()
     render(
       <ExpressionRandomStudyDialog
         open
         onOpenChange={vi.fn()}
-        count={5}
         groups={groups}
         onConfirm={onConfirm}
       />,
     )
 
-    // 默认选中已有分组。
+    // 默认选中已有分组，默认 10 条。
     fireEvent.click(screen.getByRole("button", { name: "抽取并开始学习" }))
-    expect(onConfirm).toHaveBeenCalledWith({ kind: "existing", groupId: "g1" })
+    expect(onConfirm).toHaveBeenCalledWith(10, { kind: "existing", groupId: "g1" })
+  })
+
+  it("passes the chosen count to onConfirm", () => {
+    const onConfirm = vi.fn()
+    render(
+      <ExpressionRandomStudyDialog
+        open
+        onOpenChange={vi.fn()}
+        groups={groups}
+        onConfirm={onConfirm}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "5 条" }))
+    fireEvent.click(screen.getByRole("button", { name: "抽取并开始学习" }))
+    expect(onConfirm).toHaveBeenCalledWith(5, { kind: "existing", groupId: "g1" })
   })
 
   it("rejects a new group name that duplicates an existing one", () => {
@@ -41,7 +56,6 @@ describe("ExpressionRandomStudyDialog", () => {
       <ExpressionRandomStudyDialog
         open
         onOpenChange={vi.fn()}
-        count={5}
         groups={groups}
         onConfirm={onConfirm}
       />,
@@ -63,7 +77,6 @@ describe("ExpressionRandomStudyDialog", () => {
       <ExpressionRandomStudyDialog
         open
         onOpenChange={vi.fn()}
-        count={10}
         groups={groups}
         onConfirm={onConfirm}
       />,
@@ -75,6 +88,6 @@ describe("ExpressionRandomStudyDialog", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "抽取并开始学习" }))
 
-    expect(onConfirm).toHaveBeenCalledWith({ kind: "new", name: "随机精读" })
+    expect(onConfirm).toHaveBeenCalledWith(10, { kind: "new", name: "随机精读" })
   })
 })

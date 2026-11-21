@@ -271,7 +271,10 @@ function Flashcard({
       {!revealed ? (
         <div className="grid gap-4 py-4">
           <p className="text-sm text-muted-foreground">
-            先在脑子里回忆它的含义和使用场景，再揭示答案。
+            第 1 步：先在脑子里回忆它的含义和使用场景。
+          </p>
+          <p className="text-xs text-muted-foreground">
+            第 2 步：想好了再揭示答案，诚实自评是否真的记住。
           </p>
           <Button type="button" onClick={onReveal}>
             <EyeIcon data-icon="inline-start" />
@@ -342,7 +345,12 @@ function ClozeCard({
 }) {
   return (
     <div className="grid gap-5">
-      <p className="text-sm text-muted-foreground">根据例句语境，填入空缺的地道表达。</p>
+      <p className="text-sm text-muted-foreground">
+        第 1 步：读例句，根据语境在空格里填入目标表达（大小写、时态、复数都算对）。
+      </p>
+      <p className="text-xs text-muted-foreground">
+        第 2 步：点「检查答案」核对，再自评是否掌握。
+      </p>
       <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-lg leading-9">
         {cloze ? (
           <span>
@@ -421,7 +429,8 @@ function DictationCard({
   return (
     <div className="grid gap-5">
       <p className="text-sm text-muted-foreground">
-        先听例句发音，再复述并录音。识别结果会与目标表达做容错比对。
+        第 1 步：点「听例句」听发音。第 2 步：点「开始录音」复述，说完点「停止并识别」。
+        识别结果会与目标表达做容错比对；不想开口时可切换到闪卡或填空。
       </p>
       <div className="flex flex-wrap gap-2">
         <Button

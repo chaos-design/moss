@@ -5,6 +5,7 @@ import { useMemo } from "react"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { ExpressionEbbinghausWorkspace } from "@/features/expressions/expression-ebbinghaus-dialog"
 import { ExpressionStudyWorkspace } from "@/features/expressions/expression-study-dialog"
+import { ExpressionStudyGuide } from "@/features/expressions/expression-study-guide"
 import { useExpressionLibrarySource } from "@/features/expressions/use-expression-library-source"
 import {
   type ExpressionLibraryItem,
@@ -65,7 +66,10 @@ export function ExpressionStudyPage({
   )
 
   return (
-    <div className="flex min-h-0 flex-1 justify-center">
+    <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-col gap-4">
+      <ExpressionStudyGuide
+        target={scope.kind === "ebbinghaus" ? { kind: "ebbinghaus" } : { kind: "mode", mode }}
+      />
       {scope.kind === "ebbinghaus" ? (
         <ExpressionEbbinghausWorkspace
           pool={sessionItems}

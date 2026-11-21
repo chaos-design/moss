@@ -36,16 +36,9 @@ import { ExpressionRandomStudyDialog } from "@/features/expressions/expression-r
 import { ExpressionRecommendationDialog } from "@/features/expressions/expression-recommendation-dialog"
 import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import type { ExpressionRecommendation } from "@/lib/expression-recommendations"
-import {
-  type ExpressionStudyMode,
-  type ExpressionStudyScope,
-  expressionStudyModeLabels,
-} from "@/lib/expression-study"
+import type { ExpressionStudyMode, ExpressionStudyScope } from "@/lib/expression-study"
 import type { ExpressionProgressStatus } from "@/lib/memory"
 import { type ExpressionStudyState, getActiveFavorites, getActiveGroups } from "@/lib/memory"
-
-const studyModes: ExpressionStudyMode[] = ["flashcard", "cloze", "dictation"]
-const randomBatchSizes = [5, 10, 20]
 
 export function ExpressionStudyPanel({
   study,
@@ -75,7 +68,7 @@ export function ExpressionStudyPanel({
 }) {
   const [managing, setManaging] = useState(false)
   const [showRecommendations, setShowRecommendations] = useState(false)
-  const [randomCount, setRandomCount] = useState<number | null>(null)
+  const [randomOpen, setRandomOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
 
   const favorites = getActiveFavorites(study)
@@ -146,49 +139,74 @@ export function ExpressionStudyPanel({
               开始学习
               <ChevronDownIcon data-icon="inline-end" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuContent align="end" className="min-w-56">
               <DropdownMenuGroup>
-                <DropdownMenuLabel>选择学习方式</DropdownMenuLabel>
-                {studyModes.map((mode) => (
-                  <DropdownMenuItem
-                    key={mode}
-                    onClick={() => start({ kind: "filtered" }, mode)}
-                  >
-                    {expressionStudyModeLabels[mode]}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>随机与记忆法</DropdownMenuLabel>
-                {randomBatchSizes.map((count) => (
-                  <DropdownMenuItem
-                    key={count}
-                    onClick={() => {
-                      setManaging(false)
-                      setRandomCount(count)
-                    }}
-                  >
-                    <ShuffleIcon data-icon="inline-start" />
-                    随机学 {count} 条
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuItem onClick={() => start({ kind: "ebbinghaus" }, "flashcard")}>
-                  <BrainCircuitIcon data-icon="inline-start" />
-                  艾宾浩斯记忆循环
+                <DropdownMenuLabel>快速开始</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => start({ kind: "filtered" }, "flashcard")}>
+                  <span className="grid gap-0.5">
+                    <span>闪卡自测</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      看表达，先回想再揭答案
+                    </span>
+                  </span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => start({ kind: "review", status: "learning" }, "flashcard")}
-              >
-                继续学习（学习中）
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => start({ kind: "review", status: "mastered" }, "cloze")}
-              >
-                巩固已掌握
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>换种练法</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => start({ kind: "filtered" }, "cloze")}>
+                  <span className="grid gap-0.5">
+                    <span>例句填空</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      看例句，把表达填回去
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => start({ kind: "filtered" }, "dictation")}>
+                  <span className="grid gap-0.5">
+                    <span>跟读听写</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      听发音，复述录音比对
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>按计划学</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => start({ kind: "ebbinghaus" }, "flashcard")}>
+                  <BrainCircuitIcon data-icon="inline-start" />
+                  <span className="grid gap-0.5">
+                    <span>艾宾浩斯记忆循环</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      学习 → 复习 → 再记忆
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => start({ kind: "review", status: "learning" }, "flashcard")}
+                >
+                  继续学习（学习中）
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => start({ kind: "review", status: "mastered" }, "cloze")}
+                >
+                  巩固已掌握
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>随机抽取</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => setRandomOpen(true)}>
+                  <ShuffleIcon data-icon="inline-start" />
+                  <span className="grid gap-0.5">
+                    <span>随机抽一组</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      选条数并固化成分组
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -223,22 +241,15 @@ export function ExpressionStudyPanel({
         onStart={onStartRecommendation}
       />
 
-      {randomCount !== null ? (
-        <ExpressionRandomStudyDialog
-          open
-          onOpenChange={(next) => {
-            if (!next) {
-              setRandomCount(null)
-            }
-          }}
-          count={randomCount}
-          groups={groups}
-          onConfirm={(target) => {
-            onStartRandom(randomCount, target)
-            setRandomCount(null)
-          }}
-        />
-      ) : null}
+      <ExpressionRandomStudyDialog
+        open={randomOpen}
+        onOpenChange={setRandomOpen}
+        groups={groups}
+        onConfirm={(count, target) => {
+          onStartRandom(count, target)
+          setRandomOpen(false)
+        }}
+      />
 
       <Dialog open={managing} onOpenChange={setManaging}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
