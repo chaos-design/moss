@@ -85,6 +85,71 @@ const subjectPronounPattern = "(?:you|we|I|they|he|she)"
 const itObjectPattern = "(?:it|the\\s+[A-Za-z][A-Za-z'’\\-]*(?:\\s+[A-Za-z][A-Za-z'’\\-]*)?)"
 const inflectionSuffix = "(?:s|es|ed|d|ing)?"
 
+// 目标表达作谓语时，例句常把助动词和否定/完成副词一起算进这个表达：
+// is giving up、have never given up。只收窄到这些词，避免吞掉 always、also 等实义修饰语。
+const auxiliaryPattern =
+  "(?:am|is|are|was|were|be|been|being|have|has|had|having|do|does|did|can|could|may|might|must|shall|should|will|would)"
+const verbalAdverbPattern = "(?:not|never|already|just|still|ever)"
+const verbalPrefixPattern = `(?:(?:${auxiliaryPattern}|${verbalAdverbPattern})\\s+){0,3}`
+
+// 只有动词开头的短语才允许把前面的助动词纳入高亮；名词/介词/形容词开头保持原匹配。
+const verbalHeads = new Set([
+  ...Object.keys(irregularHeadForms),
+  "call",
+  "carry",
+  "check",
+  "clean",
+  "cross",
+  "dress",
+  "drop",
+  "dust",
+  "face",
+  "fill",
+  "finish",
+  "fix",
+  "follow",
+  "grow",
+  "hand",
+  "kill",
+  "knock",
+  "look",
+  "mix",
+  "move",
+  "need",
+  "open",
+  "pass",
+  "play",
+  "point",
+  "pull",
+  "push",
+  "raise",
+  "read",
+  "run",
+  "save",
+  "say",
+  "sell",
+  "send",
+  "set",
+  "show",
+  "slow",
+  "speak",
+  "start",
+  "stay",
+  "stop",
+  "study",
+  "talk",
+  "tidy",
+  "turn",
+  "use",
+  "wait",
+  "walk",
+  "want",
+  "warm",
+  "wash",
+  "watch",
+  "work",
+])
+
 // 短语词与词之间有时会被插入一个虚词：need lecture 在例句里写成 need a lecture。
 // 只允许两类常见虚词且最多一个，避免把无关表达误命中；不覆盖代词/副词等高误伤词。
 const insertableFunctionWords = "(?:a|an|the|to|of|for|in|on|at|by|with|and|or)"
@@ -207,6 +272,8 @@ function buildPatterns(phrase: string) {
           [`(?:a|an)(?:\\s+${placeholderPattern})?`]
         : [
             `${escapeApostrophes(head)}${inflectionSuffix}`,
+            // 不发音 e 结尾的动词加 -ing 时去 e（give → giving）。
+            ...(/e$/i.test(head) ? [`${escapeApostrophes(head).slice(0, -1)}ing`] : []),
             // 辅音字母 + y 结尾的动词变过去式时改 y 为 ied（carry → carried）。
             ...(/[^aeiou]y$/i.test(head) ? [`${escapeApostrophes(head).slice(0, -1)}ied`] : []),
             ...(irregularHeadForms[normalizedHead] ?? []).map(escapeApostrophes),
@@ -216,8 +283,18 @@ function buildPatterns(phrase: string) {
   if (normalizedHead === "had" || normalizedHead === "would") {
     headVariants.push(`(?:\\w+['’]d|${escapeApostrophes(head)})`)
   }
-  const patterns = headVariants.map(
-    (headPattern) => new RegExp(`\\b${headPattern}${suffix}\\b`, "gi"),
+  const patterns: RegExp[] = []
+  if (tail.length <= 2 && !headIsPlaceholder && verbalHeads.has(normalizedHead)) {
+    // 优先尝试带助动词的模式，命中 is giving up / have never given up 这类完整谓语。
+    patterns.push(
+      ...headVariants.map(
+        (headPattern) =>
+          new RegExp(`\\b${verbalPrefixPattern}${headPattern}${suffix}\\b`, "gi"),
+      ),
+    )
+  }
+  patterns.push(
+    ...headVariants.map((headPattern) => new RegExp(`\\b${headPattern}${suffix}\\b`, "gi")),
   )
   // 少数例句会换掉动词（pay an arm and a leg），但固定部分仍然可辨认。
   // 只对至少三个词的尾部做兜底，避免 “it a day” 这类片段误伤普通句子。

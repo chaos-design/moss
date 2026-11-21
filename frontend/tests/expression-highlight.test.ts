@@ -45,6 +45,23 @@ describe("expression highlight", () => {
     expect(highlightedText("We scored a few quick wins.", "quick win")).toEqual(["quick wins"])
   })
 
+  it("includes auxiliaries and negative adverbs in verb-phrase highlights", () => {
+    expect(highlightedText("Don't give up! You're almost there.", "give up")).toEqual([
+      "give up",
+    ])
+    expect(highlightedText("He gave up smoking last year.", "give up")).toEqual(["gave up"])
+    expect(highlightedText("He is giving up too soon.", "give up")).toEqual(["is giving up"])
+    expect(highlightedText("I have never given up on my dream.", "give up")).toEqual([
+      "have never given up",
+    ])
+    expect(highlightedText("She has already given up.", "give up")).toEqual([
+      "has already given up",
+    ])
+    expect(highlightedText("They will not give up easily.", "give up")).toEqual([
+      "will not give up",
+    ])
+  })
+
   it("tolerates a function word inserted between phrase words", () => {
     // need lecture 在例句里被插入冠词 a。
     expect(highlightedText("You need a lecture on grammar.", "need lecture")).toEqual([

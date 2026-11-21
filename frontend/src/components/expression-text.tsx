@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 /**
  * 例句正文：把目标表达标出来，其余文字保持原样。
  *
- * 高亮使用 `mark` 的语义，但颜色跟随主题的 primary，避免浏览器默认的黄底在深色主题里刺眼。
+ * 高亮使用 `mark` 的语义，但以主题蓝色加粗呈现，不用浏览器默认的黄底，避免深色主题刺眼。
  */
 export function ExpressionText({
   text,
@@ -22,7 +22,7 @@ export function ExpressionText({
         segment.highlighted ? (
           <mark
             key={`${index}-${segment.text}`}
-            className="rounded-[3px] bg-primary/15 px-0.5 font-semibold text-inherit"
+            className="bg-transparent px-0 font-bold text-chart-4"
           >
             {segment.text}
           </mark>
