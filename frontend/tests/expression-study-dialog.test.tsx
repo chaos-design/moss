@@ -84,6 +84,30 @@ describe("ExpressionStudyWorkspace", () => {
     expect(onStudyMemory).toHaveBeenCalledWith(item)
   })
 
+  it("reveals with Space and rates with 1/2 from the keyboard", () => {
+    const onProgress = vi.fn()
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="flashcard"
+        onExit={vi.fn()}
+        onProgress={onProgress}
+      />,
+    )
+
+    // 空格揭示答案（焦点不在控件上）。
+    fireEvent.keyDown(window, { key: " " })
+    expect(screen.getByText("经验法则")).toBeTruthy()
+    // 揭示后按 2 记为掌握。
+    fireEvent.keyDown(window, { key: "2" })
+    expect(onProgress).toHaveBeenCalledWith(
+      "work:rule of thumb",
+      expect.objectContaining({ status: "mastered" }),
+    )
+  })
+
   it("checks a cloze answer and shows the correct phrase when it is wrong", () => {
     render(
       <ExpressionStudyWorkspace

@@ -1224,3 +1224,18 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
   断言；前端全量用例与 `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以
   `--testTimeout=45000` 复跑）。
 - 视觉验证：菜单多分组文案与默认展开的引导卡在桌面/390px 的观感待人工核对；本次未采集截图。
+
+## 2026-11-21 学习交互与高亮深度优化
+
+- 高亮：补双写辅音词形（run → running、stop → stopped，排除 w/x/y 结尾），延续此前助动词与
+  插入虚词规则，全库 270 条拓展例句守卫保持通过。
+- 引导：`ExpressionStudyGuide` 文案更友好，窄屏挂载后自动折叠（默认展开避免 hydration 不一致，
+  用户切换后不再自动改动）。
+- 学习交互：闪卡/填空/听写支持键盘流（空格/回车揭示、1 再练、2 掌握，焦点在控件上交还原生
+  激活），卡片顶部显示快捷操作与学后去向提示。
+- 分组：名称唯一做成 state 写入不变量（create/rename/add 新建分支经 `isExpressionGroupNameTaken`
+  拒绝重名，大小写/空白不敏感），provider `createGroup` 同名复用已有 id；合并层刻意不按名称去重
+  以保留各组的 `itemIds`。
+- 自动化验证（2026-11-21，本机）：新增双写辅音、键盘流、分组判重用例，前端全量用例与
+  `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以 `--testTimeout=45000` 复跑）。
+- 视觉验证：窄屏引导折叠态与键盘提示条的桌面/390px 观感待人工核对；本次未采集截图。

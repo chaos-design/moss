@@ -38,6 +38,16 @@ describe("expression highlight", () => {
     expect(highlightedText("Don't pull my leg.", "pull someone's leg")).toEqual(["pull my leg"])
   })
 
+  it("matches doubled-consonant verb endings", () => {
+    // 用不带助动词的句子定位词形本身（助动词纳入高亮是另一条已测规则）。
+    expect(highlightedText("We saw him running late.", "run late")).toEqual(["running late"])
+    expect(highlightedText("They stopped the car.", "stop the car")).toEqual([
+      "stopped the car",
+    ])
+    // w/x/y 结尾不双写。
+    expect(highlightedText("We watched her showing off.", "show off")).toEqual(["showing off"])
+  })
+
   it("tolerates inserted adjectives and plural noun endings", () => {
     expect(highlightedText("The tool has a steep learning curve.", "a learning curve")).toEqual(
       ["a steep learning curve"],

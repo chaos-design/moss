@@ -1,7 +1,7 @@
 "use client"
 
 import { BookOpenIcon, ChevronDownIcon, LightbulbIcon, SparklesIcon } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { type ExpressionStudyMode, expressionStudyModeLabels } from "@/lib/expression-study"
 
@@ -52,7 +52,20 @@ const ratings = [
  * 一次讲清楚，默认展开（用户不必去找隐藏的说明书），但可一键折叠给熟练用户让出空间。
  */
 export function ExpressionStudyGuide({ target }: { target: GuideTarget }) {
+  // 服务端与首屏统一默认展开（避免 hydration 不一致），窄屏在挂载后再自动收起让出空间。
   const [expanded, setExpanded] = useState(true)
+  const userToggled = useRef(false)
+  useEffect(() => {
+    if (userToggled.current) {
+      return
+    }
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 640px)").matches
+    ) {
+      setExpanded(false)
+    }
+  }, [])
   const isEbbinghaus = target.kind === "ebbinghaus"
   const intro = target.kind === "mode" ? modeIntro[target.mode] : null
   const title = isEbbinghaus
@@ -65,13 +78,16 @@ export function ExpressionStudyGuide({ target }: { target: GuideTarget }) {
         type="button"
         className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
+        onClick={() => {
+          userToggled.current = true
+          setExpanded((current) => !current)
+        }}
       >
         <span className="flex items-center gap-2 text-sm font-semibold">
           <BookOpenIcon className="size-4 text-primary" aria-hidden="true" />
           {title}
           <span className="text-xs font-normal text-muted-foreground">
-            · 点这里{expanded ? "收起" : "展开"}
+            {expanded ? "· 看完点这里收起" : "· 第一次学？点开看玩法"}
           </span>
         </span>
         <ChevronDownIcon

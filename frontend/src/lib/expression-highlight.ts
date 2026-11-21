@@ -274,6 +274,16 @@ function buildPatterns(phrase: string) {
             `${escapeApostrophes(head)}${inflectionSuffix}`,
             // 不发音 e 结尾的动词加 -ing 时去 e（give → giving）。
             ...(/e$/i.test(head) ? [`${escapeApostrophes(head).slice(0, -1)}ing`] : []),
+            // 辅音 + 元音 + 单辅音结尾的动词加 -ing/-ed 时双写末辅音（run → running、stop → stopped）。
+            // 排除 w/x/y 结尾（show → showing、fix → fixing 不双写）；只给动词头生成，避免误伤名词。
+            ...(verbalHeads.has(normalizedHead)
+              ? (() => {
+                  const match = /[^aeiou][aeiou]([bcdfghjklmnpqrstvz])$/i.exec(head)
+                  return match
+                    ? [`${escapeApostrophes(head)}${escapeApostrophes(match[1])}(?:ing|ed)`]
+                    : []
+                })()
+              : []),
             // 辅音字母 + y 结尾的动词变过去式时改 y 为 ied（carry → carried）。
             ...(/[^aeiou]y$/i.test(head) ? [`${escapeApostrophes(head).slice(0, -1)}ied`] : []),
             ...(irregularHeadForms[normalizedHead] ?? []).map(escapeApostrophes),

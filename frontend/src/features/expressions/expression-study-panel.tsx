@@ -38,7 +38,12 @@ import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import type { ExpressionRecommendation } from "@/lib/expression-recommendations"
 import type { ExpressionStudyMode, ExpressionStudyScope } from "@/lib/expression-study"
 import type { ExpressionProgressStatus } from "@/lib/memory"
-import { type ExpressionStudyState, getActiveFavorites, getActiveGroups } from "@/lib/memory"
+import {
+  type ExpressionStudyState,
+  getActiveFavorites,
+  getActiveGroups,
+  isExpressionGroupNameTaken,
+} from "@/lib/memory"
 
 export function ExpressionStudyPanel({
   study,
@@ -84,7 +89,7 @@ export function ExpressionStudyPanel({
 
   function createGroup() {
     const name = newGroupName.trim()
-    if (!name) {
+    if (!name || isExpressionGroupNameTaken(study, name)) {
       return
     }
     onCreateGroup(name)

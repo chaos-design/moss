@@ -283,6 +283,24 @@ export function toggleExpressionFavorite(
   return withTimestamp({ ...state, favorites: { ...state.favorites, [identity]: entry } }, now)
 }
 
+/** 分组名是否已被占用（大小写/首尾空白不敏感，忽略已删除分组）。excludeId 用于重命名时排除自身。 */
+export function isExpressionGroupNameTaken(
+  state: ExpressionStudyState,
+  name: string,
+  excludeId?: string,
+): boolean {
+  const normalized = name.trim().toLocaleLowerCase()
+  if (!normalized) {
+    return false
+  }
+  return Object.values(state.groups).some(
+    (group) =>
+      !group.deletedAt &&
+      group.id !== excludeId &&
+      group.name.trim().toLocaleLowerCase() === normalized,
+  )
+}
+
 export function createExpressionGroup(
   state: ExpressionStudyState,
   id: string,
@@ -290,7 +308,12 @@ export function createExpressionGroup(
   now = new Date(),
 ): ExpressionStudyState {
   const trimmed = name.trim()
-  if (!id || !trimmed || (state.groups[id] && !state.groups[id].deletedAt)) {
+  if (
+    !id ||
+    !trimmed ||
+    (state.groups[id] && !state.groups[id].deletedAt) ||
+    isExpressionGroupNameTaken(state, trimmed)
+  ) {
     return state
   }
   const iso = now.toISOString()
@@ -318,6 +341,13 @@ export function addExpressionsToGroup(
   }
   const iso = now.toISOString()
   const existing = state.groups[id]
+  // 新建分支用新 id + 用户给出的名字：若名字已被别的组占用则拒绝，避免建出同名组。
+  if (!existing || existing.deletedAt) {
+    const newName = name.trim() || existing?.name || "推荐分组"
+    if (isExpressionGroupNameTaken(state, newName)) {
+      return state
+    }
+  }
   const group: ExpressionGroup =
     existing && !existing.deletedAt
       ? {
@@ -343,7 +373,12 @@ export function renameExpressionGroup(
 ): ExpressionStudyState {
   const existing = state.groups[id]
   const trimmed = name.trim()
-  if (!existing || existing.deletedAt || !trimmed) {
+  if (
+    !existing ||
+    existing.deletedAt ||
+    !trimmed ||
+    isExpressionGroupNameTaken(state, trimmed, id)
+  ) {
     return state
   }
   const group: ExpressionGroup = { ...existing, name: trimmed, updatedAt: now.toISOString() }

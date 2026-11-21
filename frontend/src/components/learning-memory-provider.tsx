@@ -24,6 +24,7 @@ import {
   type ExpressionStudyMemoryInput,
   type ExpressionStudyState,
   forgetConversationTurn,
+  getActiveGroups,
   getLearningMemoryFingerprint,
   type LearnerProfile,
   type LearningMemorySnapshotRow,
@@ -667,6 +668,14 @@ export function LearningMemoryProvider({ children }: { children: ReactNode }) {
 
   const createGroup = useCallback(
     (name: string) => {
+      // 同名分组直接复用其 id：既避免 state 层拒绝后返回一个不存在的 id，
+      // 也让调用方（随机学习固化）把条目追加到已有组而不是另建重名组。
+      const existing = getActiveGroups(stateRef.current.expressionStudy).find(
+        (group) => group.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase(),
+      )
+      if (existing) {
+        return existing.id
+      }
       const id =
         typeof crypto?.randomUUID === "function"
           ? crypto.randomUUID()

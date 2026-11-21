@@ -10,7 +10,7 @@ import {
   Volume2Icon,
   XIcon,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ExpressionText } from "@/components/expression-text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -117,6 +117,54 @@ export function ExpressionStudyWorkspace({
     dictation.reset()
   }
 
+  // 键盘流：空格/回车揭示答案，揭示后 1 = 再练、2 = 掌握。焦点在输入框/按钮上时交还原生激活，
+  // 避免一次按键既揭示又评分；听写录音/识别中不拦截。处理器放 ref 里，每次渲染刷新闭包。
+  const keyboardActionRef = useRef<(event: KeyboardEvent) => void>(() => {})
+  keyboardActionRef.current = (event) => {
+    if (!item || event.isComposing) {
+      return
+    }
+    const target = event.target
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+    ) {
+      return
+    }
+    const onControl =
+      target instanceof HTMLElement && Boolean(target.closest("button, a, [role='button']"))
+    const revealedNow =
+      mode === "flashcard"
+        ? revealed
+        : mode === "cloze"
+          ? clozeResult !== null
+          : dictation.phase === "result"
+    if (!revealedNow && (event.key === " " || event.key === "Enter")) {
+      if (onControl) {
+        return
+      }
+      event.preventDefault()
+      if (mode === "flashcard") {
+        setRevealed(true)
+      } else if (mode === "cloze" && cloze) {
+        setClozeResult(checkClozeAnswer(cloze.answer, clozeAnswer))
+      }
+      return
+    }
+    if (revealedNow && (event.key === "1" || event.key === "2")) {
+      event.preventDefault()
+      complete(event.key === "1" ? "learning" : "mastered")
+    }
+  }
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => keyboardActionRef.current(event)
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
+
+  // 当前条目的即时反馈：自评后写入长期记忆，首次复习约 10 分钟后到期。
+  const afterStudyHint = "自评后写入长期记忆，约 10 分钟后到期；到「智能复习」页找回。"
+
   return (
     <section className="flex min-h-0 w-full max-w-3xl flex-col overflow-hidden rounded-lg border bg-card">
       <header className="shrink-0 border-b px-5 py-4">
@@ -211,6 +259,14 @@ export function ExpressionStudyWorkspace({
                 </Badge>
               ) : null}
             </div>
+
+            <p className="mb-4 rounded-md bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              <span className="font-medium text-foreground">快捷操作</span>
+              {mode === "dictation"
+                ? "：听写用按钮录音；结果出来后按 1 再练、2 掌握。"
+                : "：空格揭示 · 1 再练一次 · 2 掌握了。"}
+              <span className="block">{afterStudyHint}</span>
+            </p>
 
             {mode === "flashcard" ? (
               <Flashcard

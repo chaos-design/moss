@@ -5,9 +5,11 @@ import {
   deleteExpressionGroup,
   getActiveFavorites,
   getActiveGroups,
+  isExpressionGroupNameTaken,
   mergeExpressionStudyState,
   parseExpressionStudyState,
   recordExpressionProgress,
+  renameExpressionGroup,
   saveExpressionFilters,
   toggleExpressionFavorite,
   toggleExpressionGroupItem,
@@ -122,6 +124,35 @@ describe("expression study state", () => {
       t("2026-01-02T00:00:00.000Z"),
     )
     expect(mergeExpressionStudyState(a, b)).toEqual(mergeExpressionStudyState(b, a))
+  })
+
+  it("rejects duplicate group names irrespective of case and whitespace", () => {
+    const base = createEmptyExpressionStudyState(t("2026-01-01T00:00:00.000Z"))
+    const created = createExpressionGroup(base, "g1", "面试表达", t("2026-01-01T00:00:00.000Z"))
+
+    // 大小写/首尾空白不敏感地判重。
+    expect(isExpressionGroupNameTaken(created, "  面试表达  ")).toBe(true)
+    expect(isExpressionGroupNameTaken(created, "面试表达", "g1")).toBe(false)
+    // state 层拒绝建同名组和改同名。
+    expect(
+      createExpressionGroup(created, "g2", "面试表达", t("2026-01-02T00:00:00.000Z")),
+    ).toBe(created)
+    // 重命名为另一个已存在组的名字会被拒绝；重命名为自身名字允许（no-op）。
+    const withSecond = createExpressionGroup(
+      created,
+      "g2",
+      "日常表达",
+      t("2026-01-02T00:00:00.000Z"),
+    )
+    expect(
+      renameExpressionGroup(withSecond, "g1", "日常表达", t("2026-01-03T00:00:00.000Z")),
+    ).toBe(withSecond)
+    expect(
+      renameExpressionGroup(withSecond, "g1", "面试表达", t("2026-01-03T00:00:00.000Z")),
+    ).not.toBe(withSecond)
+    // 删除后名字可复用。
+    const deleted = deleteExpressionGroup(created, "g1", t("2026-01-03T00:00:00.000Z"))
+    expect(isExpressionGroupNameTaken(deleted, "面试表达")).toBe(false)
   })
 
   it("creates, fills and deletes a group with a tombstone", () => {
