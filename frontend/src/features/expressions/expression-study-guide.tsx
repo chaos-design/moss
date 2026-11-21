@@ -1,8 +1,15 @@
 "use client"
 
-import { BookOpenIcon, ChevronDownIcon, LightbulbIcon, SparklesIcon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { BookOpenIcon, LightbulbIcon, SparklesIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { type ExpressionStudyMode, expressionStudyModeLabels } from "@/lib/expression-study"
 
 type GuideTarget = { kind: "mode"; mode: ExpressionStudyMode } | { kind: "ebbinghaus" }
@@ -48,24 +55,10 @@ const ratings = [
 ]
 
 /**
- * 学习页内的「怎么学」引导：把当前玩法的步骤、四档评分的含义、以及学完之后的数据去向
- * 一次讲清楚，默认展开（用户不必去找隐藏的说明书），但可一键折叠给熟练用户让出空间。
+ * 学习卡内的「怎么学」按需提示：一个紧凑按钮，点击后弹出当前玩法的步骤、四档评分含义
+ * 和学完之后的数据去向。默认收起，不占常驻空间；用 Popover 浮层，展开也不挤压学习卡片。
  */
 export function ExpressionStudyGuide({ target }: { target: GuideTarget }) {
-  // 服务端与首屏统一默认展开（避免 hydration 不一致），窄屏在挂载后再自动收起让出空间。
-  const [expanded, setExpanded] = useState(true)
-  const userToggled = useRef(false)
-  useEffect(() => {
-    if (userToggled.current) {
-      return
-    }
-    if (
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(max-width: 640px)").matches
-    ) {
-      setExpanded(false)
-    }
-  }, [])
   const isEbbinghaus = target.kind === "ebbinghaus"
   const intro = target.kind === "mode" ? modeIntro[target.mode] : null
   const title = isEbbinghaus
@@ -73,77 +66,63 @@ export function ExpressionStudyGuide({ target }: { target: GuideTarget }) {
     : `${expressionStudyModeLabels[target.mode]}怎么玩`
 
   return (
-    <section className="rounded-lg border bg-card" aria-label="学习规则说明">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-expanded={expanded}
-        onClick={() => {
-          userToggled.current = true
-          setExpanded((current) => !current)
-        }}
+    <Popover>
+      <PopoverTrigger
+        render={<Button type="button" variant="ghost" size="sm" aria-label="玩法说明" />}
       >
-        <span className="flex items-center gap-2 text-sm font-semibold">
-          <BookOpenIcon className="size-4 text-primary" aria-hidden="true" />
-          {title}
-          <span className="text-xs font-normal text-muted-foreground">
-            {expanded ? "· 看完点这里收起" : "· 第一次学？点开看玩法"}
-          </span>
-        </span>
-        <ChevronDownIcon
-          className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
-          aria-hidden="true"
-        />
-      </button>
+        <BookOpenIcon data-icon="inline-start" />
+        玩法说明
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)]">
+        <PopoverHeader>
+          <PopoverTitle>{title}</PopoverTitle>
+          <PopoverDescription>按需查看，不影响当前学习进度。</PopoverDescription>
+        </PopoverHeader>
+        <div className="grid gap-3 text-xs">
+          {isEbbinghaus ? (
+            <>
+              <p className="font-medium">按三轮走完一条完整记忆链：</p>
+              <ol className="list-inside list-decimal space-y-1.5 text-muted-foreground">
+                <li>学习：先学还没记住的表达，揭示并确认含义后进入下一步。</li>
+                <li>复习：用中文含义回想表达，按找回难度打四档分。</li>
+                <li>再记忆：打分「忘记了 / 有点难」的表达会当场再看一遍，并重新安排复习。</li>
+              </ol>
+              <p className="flex items-start gap-1.5 text-muted-foreground">
+                <LightbulbIcon
+                  className="mt-0.5 size-3.5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                刚学的条目是「即时召回」，真正的间隔复习由复习页在到期后承接。
+              </p>
+            </>
+          ) : intro ? (
+            <>
+              <p className="font-medium">{intro.headline}</p>
+              <ol className="list-inside list-decimal space-y-1.5 text-muted-foreground">
+                {intro.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <p className="flex items-start gap-1.5 text-muted-foreground">
+                <LightbulbIcon
+                  className="mt-0.5 size-3.5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                {intro.tip}
+              </p>
+            </>
+          ) : null}
 
-      {expanded ? (
-        <div className="grid gap-4 border-t px-4 py-4 text-sm md:grid-cols-2">
-          <div className="grid gap-3">
-            {isEbbinghaus ? (
-              <>
-                <p className="font-medium">按三轮走完一条完整记忆链：</p>
-                <ol className="list-inside list-decimal space-y-1.5 text-muted-foreground">
-                  <li>学习：先学还没记住的表达，揭示并确认含义后进入下一步。</li>
-                  <li>复习：用中文含义回想表达，按找回难度打四档分。</li>
-                  <li>再记忆：打分「忘记了 / 有点难」的表达会当场再看一遍，并重新安排复习。</li>
-                </ol>
-                <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                  <LightbulbIcon
-                    className="mt-0.5 size-3.5 shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                  刚学的条目是「即时召回」，真正的间隔复习由复习页在到期后承接。
-                </p>
-              </>
-            ) : intro ? (
-              <>
-                <p className="font-medium">{intro.headline}</p>
-                <ol className="list-inside list-decimal space-y-1.5 text-muted-foreground">
-                  {intro.steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-                <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                  <LightbulbIcon
-                    className="mt-0.5 size-3.5 shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                  {intro.tip}
-                </p>
-              </>
-            ) : null}
-          </div>
-
-          <div className="grid content-start gap-3">
+          <div className="grid gap-2 border-t pt-3">
             <p className="flex items-center gap-1.5 font-medium">
-              <SparklesIcon className="size-4 text-primary" aria-hidden="true" />
+              <SparklesIcon className="size-3.5 text-primary" aria-hidden="true" />
               四档评分决定下次什么时候复习
             </p>
-            <div className="overflow-hidden rounded-md border text-xs">
+            <div className="overflow-hidden rounded-md border">
               {ratings.map((rating) => (
                 <div
                   key={rating.label}
-                  className="grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b px-2.5 py-1.5 last:border-b-0"
+                  className="grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b px-2 py-1.5 last:border-b-0"
                 >
                   <span className="font-medium">{rating.label}</span>
                   <span className="text-muted-foreground">{rating.meaning}</span>
@@ -151,13 +130,13 @@ export function ExpressionStudyGuide({ target }: { target: GuideTarget }) {
                 </div>
               ))}
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">
+            <p className="leading-5 text-muted-foreground">
               学完的表达会写入长期记忆；到点后到「智能复习」页按真实间隔找回。
               强度只由你的自评改变，反复点开不会重复计入。
             </p>
           </div>
         </div>
-      ) : null}
-    </section>
+      </PopoverContent>
+    </Popover>
   )
 }

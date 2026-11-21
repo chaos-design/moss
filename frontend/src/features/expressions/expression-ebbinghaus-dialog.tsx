@@ -14,6 +14,7 @@ import { ExpressionText } from "@/components/expression-text"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { ExpressionStudyGuide } from "@/features/expressions/expression-study-guide"
 import {
   buildEbbinghausLearnQueue,
   buildExpressionCatalogByClientId,
@@ -252,11 +253,14 @@ export function ExpressionEbbinghausWorkspace({
               艾宾浩斯记忆 · {phaseTitle}
             </h1>
           </div>
-          {phase !== "done" && phaseSteps > 0 ? (
-            <span className="text-xs text-muted-foreground">
-              {Math.min(phaseIndex + 1, phaseSteps)} / {phaseSteps}
-            </span>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            <ExpressionStudyGuide target={{ kind: "ebbinghaus" }} />
+            {phase !== "done" && phaseSteps > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                {Math.min(phaseIndex + 1, phaseSteps)} / {phaseSteps}
+              </span>
+            ) : null}
+          </div>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           学习后立刻进入找回与再记忆，间隔与强度由长期记忆算法真实排期。

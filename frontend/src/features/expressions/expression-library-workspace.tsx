@@ -83,7 +83,6 @@ import {
   getRecommendedGroupId,
 } from "@/lib/expression-recommendations"
 import type { ExpressionStudyMode, ExpressionStudyScope } from "@/lib/expression-study"
-import { sampleStudyIdentities } from "@/lib/expression-study"
 import {
   createExpressionMemoryItemId,
   type ExpressionFilters,
@@ -214,33 +213,6 @@ export function ExpressionLibraryWorkspace() {
       )
     },
     [startStudy],
-  )
-
-  // 随机学习固化为分组：先抽样成身份集合，写入已有组或新组，再以 group scope 进入学习页。
-  const startRandom = useCallback(
-    (
-      count: number,
-      target: { kind: "existing"; groupId: string } | { kind: "new"; name: string },
-    ) => {
-      const identities = sampleStudyIdentities(filteredItems, count)
-      let groupId: string
-      let name: string
-      if (target.kind === "new") {
-        groupId = createGroup(target.name)
-        name = target.name
-      } else {
-        groupId = target.groupId
-        name = studyGroups.find((group) => group.id === target.groupId)?.name ?? "随机分组"
-      }
-      if (!groupId) {
-        toast.error("分组创建失败，请重试。")
-        return
-      }
-      addGroupItems(groupId, name, identities)
-      toast.success(`已把 ${identities.length} 条表达放进「${name}」`)
-      startStudy({ kind: "group", groupId }, "flashcard")
-    },
-    [filteredItems, createGroup, addGroupItems, studyGroups, startStudy],
   )
 
   useEffect(() => {
@@ -557,7 +529,6 @@ export function ExpressionLibraryWorkspace() {
         progressByIdentity={progressByIdentity}
         onJoinRecommendation={joinRecommendation}
         onStartRecommendation={startRecommendation}
-        onStartRandom={startRandom}
       />
 
       <ExpressionRows

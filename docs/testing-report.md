@@ -1268,3 +1268,18 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
   400/503 分类用例；前端 104 文件 / 871 用例通过，`pnpm typecheck`/`pnpm lint`/`pnpm build` 通过。
 - 说明：本环境无 Supabase 实例/凭据，未对真实数据库执行写操作；若部署实例另有 schema 问题，
   服务端日志会打印真实 Postgres code，据此定位。
+
+## 2026-11-22 学习页随机简化与引导轻量化
+
+- 随机学习一键化：删除 `ExpressionRandomStudyDialog` 与 `sampleStudyIdentities`（及各自测试），
+  面板「随机抽 10 条」直接以 `random` scope 从当前筛选结果抽词进入学习页；不弹条数/分组、不建组，
+  纯抽词不入持久化状态（刷新重抽）。workspace 移除 `startRandom`/`onStartRandom` 接线。
+- 引导轻量化：`ExpressionStudyGuide` 从学习页顶部常驻独立区块改为学习卡标题栏内的「玩法说明」
+  按需按钮（Popover 浮层，默认收起），闪卡/填空/听写卡与艾宾浩斯卡各自内嵌；展开不挤压卡片。
+- 布局对齐：学习路由加 `PageHeading`（eyebrow/title/description + 范围与玩法徽章），容器有界高度
+  与词库/复习页一致，内容超出只在卡片内滚动；学习页去掉重复的顶层区块。
+- 高亮样式：`ExpressionText` 已是蓝色加粗无底色（`bg-transparent font-bold text-chart-4`），
+  补 2 条守卫用例锁定 mark 样式与周围文本不变。
+- 自动化验证（2026-11-22，本机）：新增/更新随机一键、按需引导、高亮守卫用例；前端全量用例与
+  `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以 `--testTimeout=45000` 复跑）。
+- 视觉验证：Popover 在 jsdom 可展开已由组件测试覆盖；桌面/390px 实际观感待人工核对。

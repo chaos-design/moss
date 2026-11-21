@@ -7,7 +7,6 @@ import {
   parseExpressionStudyMode,
   parseExpressionStudyScope,
   resolveStudyItems,
-  sampleStudyIdentities,
 } from "@/lib/expression-study"
 
 function item(
@@ -99,12 +98,6 @@ describe("expression study logic", () => {
         random: () => 0,
       }),
     ).toHaveLength(filtered.length)
-  })
-
-  it("samples bounded identities for a固化 random study group", () => {
-    const identities = sampleStudyIdentities([a, b, c], 2, () => 0)
-    expect(identities).toEqual(["social:break the ice", "work:keep tabs on"])
-    expect(sampleStudyIdentities([a, b], 99, () => 0)).toHaveLength(2)
   })
 
   it("hands the whole filtered pool to the ebbinghaus flow", () => {

@@ -580,34 +580,25 @@ describe("ExpressionLibraryWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
 
-    expect(await screen.findByRole("menuitem", { name: /随机抽一组/ })).toBeTruthy()
+    expect(await screen.findByRole("menuitem", { name: /随机抽 10 条/ })).toBeTruthy()
     expect(screen.getByRole("menuitem", { name: /艾宾浩斯记忆循环/ })).toBeTruthy()
     // 简化后的四个分组标签都在。
     expect(screen.getByText("快速开始")).toBeTruthy()
     expect(screen.getByText("按计划学")).toBeTruthy()
   })
 
-  it("固化为新分组后以 group scope 进入学习页", async () => {
+  it("一键随机抽词直接进入 random scope，不建分组", async () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
-    fireEvent.click(await screen.findByRole("menuitem", { name: /随机抽一组/ }))
-    // 随机学习先让你选择分组或建新组。
-    fireEvent.click(await screen.findByRole("button", { name: "创建新分组" }))
-    fireEvent.change(screen.getByRole("textbox", { name: "新随机分组名称" }), {
-      target: { value: "随机精读" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "抽取并开始学习" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /随机抽 10 条/ }))
 
-    expect(memoryMocks.createGroup).toHaveBeenCalledWith("随机精读")
-    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
-      "new-group-id",
-      "随机精读",
-      expect.any(Array),
-    )
     expect(routerPush).toHaveBeenCalledWith(
-      "/workspace/expressions/study?scope=group&groupId=new-group-id&mode=flashcard",
+      "/workspace/expressions/study?scope=random&count=10&mode=flashcard",
     )
+    // 纯抽词，不再写分组。
+    expect(memoryMocks.createGroup).not.toHaveBeenCalled()
+    expect(memoryMocks.addGroupItems).not.toHaveBeenCalled()
   })
 
   it("navigates to the ebbinghaus view on the standalone study page", async () => {

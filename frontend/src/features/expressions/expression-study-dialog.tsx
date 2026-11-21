@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ExpressionStudyGuide } from "@/features/expressions/expression-study-guide"
 import { useExpressionDictation } from "@/features/expressions/use-expression-dictation"
 import {
   createExpressionIdentity,
@@ -195,11 +196,14 @@ export function ExpressionStudyWorkspace({
               学习 · {scopeLabel(scope, groups)}
             </h1>
           </div>
-          {total > 0 ? (
-            <span className="text-xs text-muted-foreground">
-              {Math.min(index + 1, total)} / {total}
-            </span>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            <ExpressionStudyGuide target={{ kind: "mode", mode }} />
+            {total > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                {Math.min(index + 1, total)} / {total}
+              </span>
+            ) : null}
+          </div>
         </div>
         {total > 0 ? <Progress value={percent} className="mt-1" /> : null}
       </header>

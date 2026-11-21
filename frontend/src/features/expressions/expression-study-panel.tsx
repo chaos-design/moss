@@ -32,7 +32,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { ExpressionRandomStudyDialog } from "@/features/expressions/expression-random-study-dialog"
 import { ExpressionRecommendationDialog } from "@/features/expressions/expression-recommendation-dialog"
 import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import type { ExpressionRecommendation } from "@/lib/expression-recommendations"
@@ -46,6 +45,9 @@ import {
   isExpressionGroupNameTaken,
 } from "@/lib/memory"
 
+/** 随机学习一键抽词的默认条数。 */
+const randomBatchSize = 10
+
 export function ExpressionStudyPanel({
   study,
   onStart,
@@ -56,7 +58,6 @@ export function ExpressionStudyPanel({
   progressByIdentity,
   onJoinRecommendation,
   onStartRecommendation,
-  onStartRandom,
 }: {
   study: ExpressionStudyState
   onStart: (scope: ExpressionStudyScope, mode: ExpressionStudyMode) => void
@@ -67,14 +68,9 @@ export function ExpressionStudyPanel({
   progressByIdentity: Readonly<Record<string, ExpressionProgressStatus>>
   onJoinRecommendation: (recommendation: ExpressionRecommendation) => void
   onStartRecommendation: (recommendation: ExpressionRecommendation) => void
-  onStartRandom: (
-    count: number,
-    target: { kind: "existing"; groupId: string } | { kind: "new"; name: string },
-  ) => void
 }) {
   const [managing, setManaging] = useState(false)
   const [showRecommendations, setShowRecommendations] = useState(false)
-  const [randomOpen, setRandomOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
 
   const favorites = getActiveFavorites(study)
@@ -204,12 +200,14 @@ export function ExpressionStudyPanel({
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel>随机抽取</DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => setRandomOpen(true)}>
+                <DropdownMenuItem
+                  onClick={() => start({ kind: "random", count: randomBatchSize }, "flashcard")}
+                >
                   <ShuffleIcon data-icon="inline-start" />
                   <span className="grid gap-0.5">
-                    <span>随机抽一组</span>
+                    <span>随机抽 {randomBatchSize} 条</span>
                     <span className="text-[11px] font-normal text-muted-foreground">
-                      选条数并固化成分组
+                      从当前结果里随机练一组
                     </span>
                   </span>
                 </DropdownMenuItem>
@@ -253,16 +251,6 @@ export function ExpressionStudyPanel({
         study={study}
         onJoin={onJoinRecommendation}
         onStart={onStartRecommendation}
-      />
-
-      <ExpressionRandomStudyDialog
-        open={randomOpen}
-        onOpenChange={setRandomOpen}
-        groups={groups}
-        onConfirm={(count, target) => {
-          onStartRandom(count, target)
-          setRandomOpen(false)
-        }}
       />
 
       <Dialog open={managing} onOpenChange={setManaging}>
