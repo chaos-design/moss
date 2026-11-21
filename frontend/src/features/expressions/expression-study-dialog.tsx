@@ -65,7 +65,6 @@ export function ExpressionStudyWorkspace({
   onExit,
   onProgress,
   onStudyMemory,
-  onReshuffle,
 }: {
   items: ExpressionLibraryItem[]
   scope: ExpressionStudyScope
@@ -75,7 +74,6 @@ export function ExpressionStudyWorkspace({
   onProgress: (identity: string, update: ExpressionProgressUpdate) => void
   /** 完成一条时同步写入长期记忆，使词库进度与间隔复习队列成为同一条链路。 */
   onStudyMemory?: (item: ExpressionLibraryItem) => void
-  onReshuffle?: () => void
 }) {
   const [mode, setMode] = useState<ExpressionStudyMode>(initialMode)
   const [index, setIndex] = useState(0)
@@ -169,10 +167,6 @@ export function ExpressionStudyWorkspace({
             <Button
               type="button"
               onClick={() => {
-                if (onReshuffle) {
-                  onReshuffle()
-                  return
-                }
                 setIndex(0)
                 setStats({ mastered: 0, practice: 0 })
                 setRevealed(false)
@@ -181,7 +175,7 @@ export function ExpressionStudyWorkspace({
                 dictation.reset()
               }}
             >
-              {onReshuffle ? "换一组随机学习" : "再学一组"}
+              再学一组
             </Button>
           </div>
         </div>

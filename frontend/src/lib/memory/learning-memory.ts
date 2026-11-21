@@ -201,7 +201,7 @@ export type ExpressionStudyMemoryInput = {
 }
 
 export type LearningPlanStep = {
-  id: "recall" | "conversation" | "shadowing"
+  id: "recall" | "expression" | "conversation" | "shadowing"
   title: string
   description: string
   durationMinutes: number
@@ -1685,6 +1685,14 @@ export function createLearningPlan(
         description: `看到中文情景后说出“${focus.answer}”`,
         durationMinutes: 3,
         href: createMemoryTargetHref("/workspace/review", focus.id),
+        memoryItemId: focus.id,
+      },
+      {
+        id: "expression",
+        title: "在地道表达库再学一轮",
+        description: `用闪卡或填空主动巩固“${focus.answer}”这类表达`,
+        durationMinutes: 5,
+        href: "/workspace/expressions",
         memoryItemId: focus.id,
       },
       {

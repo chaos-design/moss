@@ -199,6 +199,20 @@ export function shuffleStudyItems<T>(
   return result
 }
 
+/**
+ * 抽样并固化成分组时用的纯函数：从给定集合随机取 count 条，返回它们的表达身份，
+ * 供分组写入使用。与 resolveStudyItems 的 random 分支共用洗牌逻辑，保证抽样口径一致。
+ */
+export function sampleStudyIdentities(
+  items: readonly ExpressionLibraryItem[],
+  count: number,
+  random: () => number = Math.random,
+): string[] {
+  return shuffleStudyItems(items, random)
+    .slice(0, Math.max(0, Math.min(Math.floor(count), items.length)))
+    .map(createExpressionIdentity)
+}
+
 export type StudyScopeInput = {
   filteredItems: readonly ExpressionLibraryItem[]
   favoriteIdentities: ReadonlySet<string>

@@ -170,6 +170,11 @@ export async function POST(request: Request) {
   if (identities.size !== validItems.length) {
     return errorResponse("invalid_request", "同一批次包含重复的场景表达。", 400)
   }
+  // client_id 也有唯一约束；同批重复标识重试也救不回来，提前挡成 400。
+  const clientIds = new Set(validItems.map((item) => item.clientId))
+  if (clientIds.size !== validItems.length) {
+    return errorResponse("invalid_request", "同一批次包含重复的表达标识。", 400)
+  }
   if (isDemoMode()) {
     return NextResponse.json({ data: { stored: false } }, { status: 202 })
   }
@@ -184,10 +189,19 @@ export async function POST(request: Request) {
       items: validItems,
     })
     return NextResponse.json({ data: { stored: true, count: items.length } })
-  } catch {
+  } catch (error) {
+    // 唯一约束冲突重试也救不回来，映射成 409 让客户端跳过重试；
+    // 其余（连接抖动、5xx）保留 502，由客户端有界重试。
+    if (isUniqueConstraintError(error)) {
+      return errorResponse(
+        "expression_library_conflict",
+        "部分表达标识与云端冲突，请刷新词库后重试。",
+        409,
+      )
+    }
     return errorResponse(
       "expression_library_write_failed",
-      "表达已保存在本机，但暂时无法同步到云端。",
+      "暂时无法同步到云端，请稍后重试。",
       502,
     )
   }

@@ -18,6 +18,30 @@ type ExpressionLibraryResponse = {
 const storagePrefix = "moss:expression-library:v1"
 const lastScopeKey = "moss:expression-library:last-scope:v1"
 const importBatchSize = 200
+/** 云端读取超过这个时间就判定不可用，回退本机数据，避免页面一直卡在空列表。 */
+const cloudReadTimeoutMs = 8000
+
+/**
+ * 组合外部 signal 与超时。外部中止（组件卸载）与超时都中止请求，但调用方分别处理：
+ * 卸载是取消，不报错；超时是云端不可用，进入降级。
+ */
+function withTimeout(signal?: AbortSignal, timeoutMs = cloudReadTimeoutMs) {
+  const controller = new AbortController()
+  const onAbort = () => controller.abort()
+  if (signal?.aborted) {
+    controller.abort()
+  } else {
+    signal?.addEventListener("abort", onAbort, { once: true })
+  }
+  const timer = setTimeout(() => controller.abort(new Error("cloud read timeout")), timeoutMs)
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timer)
+      signal?.removeEventListener("abort", onAbort)
+    },
+  }
+}
 
 function getStorageKey(scope: string) {
   return `${storagePrefix}:${scope}`
@@ -68,63 +92,109 @@ export function getLastExpressionStorageScope(storage: Storage) {
   return storage.getItem(lastScopeKey)?.trim() || "anonymous"
 }
 
-export async function loadCloudExpressionItems(signal?: AbortSignal) {
+export async function loadCloudExpressionItems(
+  signal?: AbortSignal,
+  timeoutMs = cloudReadTimeoutMs,
+) {
   const items: ExpressionLibraryItem[] = []
   const visitedCursors = new Set<string>()
   let cursor: string | null = null
   let userId: string | null = null
+  const timed = withTimeout(signal, timeoutMs)
 
-  while (true) {
-    const path = cursor
-      ? `/api/expressions?cursor=${encodeURIComponent(cursor)}`
-      : "/api/expressions"
-    const response = await fetch(path, { method: "GET", signal })
-    if (response.status === 401 || response.status === 503) {
-      return null
-    }
-    const payload = await readJson(response)
-    if (!response.ok) {
-      throw new Error(payload.error?.message || "云端表达暂时无法读取。")
-    }
-    const pageItems = payload.data?.items
-    const pageUserId = payload.data?.userId ?? null
-    const nextCursor = payload.data?.nextCursor ?? null
-    if (
-      !Array.isArray(pageItems) ||
-      (pageUserId !== null && typeof pageUserId !== "string") ||
-      (nextCursor !== null && typeof nextCursor !== "string") ||
-      (userId !== null && pageUserId !== userId) ||
-      (nextCursor !== null && visitedCursors.has(nextCursor))
-    ) {
-      throw new Error("云端表达返回了无效分页数据。")
-    }
-    const parsedItems = pageItems.map(parseImportedExpressionItem)
-    if (parsedItems.some((item) => item === null)) {
-      throw new Error("云端表达返回了无效记录。")
-    }
-    userId = pageUserId
-    items.push(...parsedItems.filter((item): item is ExpressionLibraryItem => item !== null))
-    if (nextCursor === null) {
-      return {
-        cloudAvailable: payload.data?.cloudAvailable !== false,
-        items,
-        userId,
+  try {
+    while (true) {
+      const path = cursor
+        ? `/api/expressions?cursor=${encodeURIComponent(cursor)}`
+        : "/api/expressions"
+      const response = await fetch(path, { method: "GET", signal: timed.signal })
+      if (response.status === 401 || response.status === 503) {
+        return null
       }
+      const payload = await readJson(response)
+      if (!response.ok) {
+        throw new Error(payload.error?.message || "云端表达暂时无法读取。")
+      }
+      const pageItems = payload.data?.items
+      const pageUserId = payload.data?.userId ?? null
+      const nextCursor = payload.data?.nextCursor ?? null
+      if (
+        !Array.isArray(pageItems) ||
+        (pageUserId !== null && typeof pageUserId !== "string") ||
+        (nextCursor !== null && typeof nextCursor !== "string") ||
+        (userId !== null && pageUserId !== userId) ||
+        (nextCursor !== null && visitedCursors.has(nextCursor))
+      ) {
+        throw new Error("云端表达返回了无效分页数据。")
+      }
+      // 单条脏数据只跳过，不让整页（乃至整批导入的表达）从列表里消失。
+      const parsedItems = pageItems
+        .map(parseImportedExpressionItem)
+        .filter((item): item is ExpressionLibraryItem => item !== null)
+      userId = pageUserId
+      items.push(...parsedItems)
+      if (nextCursor === null) {
+        return {
+          cloudAvailable: payload.data?.cloudAvailable !== false,
+          items,
+          userId,
+        }
+      }
+      visitedCursors.add(nextCursor)
+      cursor = nextCursor
     }
-    visitedCursors.add(nextCursor)
-    cursor = nextCursor
+  } finally {
+    timed.dispose()
   }
+}
+
+const importRetryAttempts = 3
+const importRetryBaseDelayMs = 400
+
+/** 只有服务端瞬态故障（502/504）和 fetch 网络异常值得重试；其余状态码原样返回。 */
+function isRetryableWriteFailure(response: Response | null): boolean {
+  return response === null || response.status === 502 || response.status === 504
+}
+
+function retryableDelay(attempt: number) {
+  return importRetryBaseDelayMs * 2 ** attempt
+}
+
+/**
+ * 单批写入：502/504 与网络错误做有界指数退避重试；upsert 幂等，重放不会产生重复表达。
+ * 401/503/409/400/413/429 不重试，避免放大限流或掩盖冲突。
+ */
+async function postImportBatch(batch: readonly ExpressionLibraryItem[]) {
+  let lastResponse: Response | null = null
+  for (let attempt = 0; attempt < importRetryAttempts; attempt += 1) {
+    try {
+      const response = await fetch("/api/expressions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: batch }),
+      })
+      if (!isRetryableWriteFailure(response)) {
+        return response
+      }
+      lastResponse = response
+    } catch (error) {
+      if (attempt === importRetryAttempts - 1) {
+        throw error
+      }
+      lastResponse = null
+    }
+    if (attempt < importRetryAttempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, retryableDelay(attempt)))
+    }
+  }
+  return lastResponse as Response
 }
 
 export async function saveCloudExpressionItems(items: readonly ExpressionLibraryItem[]) {
   for (let index = 0; index < items.length; index += importBatchSize) {
     const batch = items.slice(index, index + importBatchSize)
-    const response = await fetch("/api/expressions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: batch }),
-    })
-    if (response.status === 401 || response.status === 503) {
+    const response = await postImportBatch(batch)
+    if (response.status === 401 || response.status === 503 || response.status === 409) {
       return false
     }
     const payload = await readJson(response)

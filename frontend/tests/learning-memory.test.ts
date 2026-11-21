@@ -91,9 +91,15 @@ describe("learning memory", () => {
       sceneTitle: focus.sourceSceneTitle,
     }
     expect(plan.sceneId).toBe(target.sceneId)
-    expect(plan.steps.map((step) => step.id)).toEqual(["recall", "conversation", "shadowing"])
+    expect(plan.steps.map((step) => step.id)).toEqual([
+      "recall",
+      "expression",
+      "conversation",
+      "shadowing",
+    ])
     expect(plan.steps.map((step) => step.href)).toEqual([
       `/workspace/review?memory=${focus.id}`,
+      "/workspace/expressions",
       `/workspace/conversation?scene=${target.sceneId}&memory=${focus.id}`,
       `/workspace/shadowing?memory=${focus.id}`,
     ])

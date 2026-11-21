@@ -622,9 +622,11 @@ toast、对话记录和本机存储，规则如下：
 ## `/api/expressions`
 
 内置 1170 条表达随 Web 构建发布，不经过接口。该接口只同步当前用户通过 CSV 或 JSON
-导入的表达；浏览器先写入版本化 localStorage，再按每批最多 200 条调用 `POST`，因此整份
-文件不会被静默截断。导入字段除必填项外还支持 `exampleTranslation`、`usage`、`memoryTip`
-和 `examples`（每条含 `text` 与可选 `translation`）。
+导入的表达；浏览器按每批最多 200 条调用 `POST`，只有服务端确认 `stored: true` 后才更新
+版本化 localStorage，因此整份文件不会被静默截断，也不会出现「提示成功但数据库没数据」。
+单批遇 `502/504` 或网络异常时限 3 次有界指数退避重试（upsert 幂等，重放安全），其余状态码不重试。
+导入字段除必填项外还支持 `exampleTranslation`、`usage`、`memoryTip` 和 `examples`
+（每条含 `text` 与可选 `translation`）。
 
 `GET` 每页返回最多 200 条，并使用十进制 `cursor` 继续读取：
 
@@ -663,7 +665,9 @@ toast、对话记录和本机存储，规则如下：
 `housing`、`transport`、`work`、`social`、`health`、`services`、`learning` 和
 `emergency`；`context` 只接受 `日常`、`职场`、`通用`；`kind` 只接受 `idiom`、
 `collocation`、`phrasal-verb`、`sentence-pattern`。服务端从 session 写入 `user_id`，
-并按 `(user_id, scene_category, normalized_phrase)` 幂等更新。
+并按 `(user_id, scene_category, normalized_phrase)` 幂等更新。同批重复的规范化表达或 `clientId`
+返回 `400`；数据库唯一约束冲突返回 `409 expression_library_conflict`（不可重试），其余未知写入
+失败返回 `502 expression_library_write_failed`（客户端可重试）。
 
 `PUT` 请求体使用 `{ "item": { ... } }`，按当前用户和稳定 `clientId` 更新单条导入表达。
 字段校验与 `POST` 相同；若修改后的场景和规范化表达与另一条记录冲突，返回 `409`。

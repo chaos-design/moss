@@ -126,7 +126,7 @@ beforeEach(() => {
   memoryMocks.state = createEmptyLearningMemory(new Date("2026-10-05T08:00:00.000Z"))
   memoryMocks.recordExpressionStudy.mockReset()
   memoryMocks.toggleFavorite.mockReset()
-  memoryMocks.createGroup.mockReset()
+  memoryMocks.createGroup.mockReset().mockReturnValue("new-group-id")
   memoryMocks.addGroupItems.mockReset()
   memoryMocks.renameGroup.mockReset()
   memoryMocks.deleteGroup.mockReset()
@@ -223,6 +223,39 @@ describe("ExpressionLibraryWorkspace", () => {
 
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(120))
     expect(screen.getByText("已显示 120 / 1170 条")).toBeTruthy()
+  })
+
+  it("offers a retry when the cloud read fails", async () => {
+    fetchMock.mockImplementation((input, init: RequestInit | undefined) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : (input as Request).url
+      const method = init?.method ?? "GET"
+      if (url.includes("/api/expressions") && method === "GET") {
+        return Promise.reject(new Error("network down"))
+      }
+      return Promise.resolve(new Response(JSON.stringify({ data: { stored: true } })))
+    })
+    render(<ExpressionLibraryWorkspace />)
+
+    expect(await screen.findByRole("status")).toBeTruthy()
+    const retry = screen.getByRole("button", { name: /重试加载/ })
+
+    // 重试后恢复成功，提示消失。
+    fetchMock.mockImplementation((_input, init: RequestInit | undefined) => {
+      const method = init?.method ?? "GET"
+      const data =
+        method === "GET"
+          ? { cloudAvailable: true, items: [], nextCursor: null, userId: "user-1" }
+          : { stored: true }
+      return Promise.resolve(new Response(JSON.stringify({ data })))
+    })
+    fireEvent.click(retry)
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull())
   })
 
   it("imports pasted JSON only after the database confirms storage", async () => {
@@ -551,14 +584,26 @@ describe("ExpressionLibraryWorkspace", () => {
     expect(screen.getByRole("menuitem", { name: "艾宾浩斯记忆循环" })).toBeTruthy()
   })
 
-  it("navigates to the standalone study page with the scope and mode in the URL", async () => {
+  it("固化为新分组后以 group scope 进入学习页", async () => {
     render(<ExpressionLibraryWorkspace />)
 
     fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
     fireEvent.click(await screen.findByRole("menuitem", { name: "随机学 5 条" }))
+    // 随机学习先让你选择分组或建新组。
+    fireEvent.click(await screen.findByRole("button", { name: "创建新分组" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "新随机分组名称" }), {
+      target: { value: "随机精读" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "抽取并开始学习" }))
 
+    expect(memoryMocks.createGroup).toHaveBeenCalledWith("随机精读")
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
+      "new-group-id",
+      "随机精读",
+      expect.any(Array),
+    )
     expect(routerPush).toHaveBeenCalledWith(
-      "/workspace/expressions/study?scope=random&count=5&mode=flashcard",
+      "/workspace/expressions/study?scope=group&groupId=new-group-id&mode=flashcard",
     )
   })
 

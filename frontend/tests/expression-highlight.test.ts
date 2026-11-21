@@ -45,6 +45,20 @@ describe("expression highlight", () => {
     expect(highlightedText("We scored a few quick wins.", "quick win")).toEqual(["quick wins"])
   })
 
+  it("tolerates a function word inserted between phrase words", () => {
+    // need lecture 在例句里被插入冠词 a。
+    expect(highlightedText("You need a lecture on grammar.", "need lecture")).toEqual([
+      "need a lecture",
+    ])
+    expect(highlightedText("We need the lecture to be shorter.", "need lecture")).toEqual([
+      "need the lecture",
+    ])
+    // 只放宽一个虚词，不吞掉实词，避免把无关表达误命中。
+    expect(splitExpressionHighlights("You need extra help today.", "need lecture")).toEqual([
+      { text: "You need extra help today.", highlighted: false },
+    ])
+  })
+
   it("leaves the sentence untouched when the phrase is absent", () => {
     const segments = splitExpressionHighlights("This sentence has no target.", "hit the road")
     expect(segments).toEqual([{ text: "This sentence has no target.", highlighted: false }])

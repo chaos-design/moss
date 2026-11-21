@@ -1190,3 +1190,20 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
   `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（新路由 `/workspace/expressions/study` 进入产物）。
   本机负载仍高，vitest 以本地 `--testTimeout=45000` 复跑。
 - 视觉验证：独立学习页与返回按钮在桌面/390px 的观感待人工核对；本次未采集截图。
+
+## 2026-11-21 加载稳定性、导入重试、高亮容错、随机分组与学习路径
+
+- 加载：`useExpressionLibrarySource` 给云端读取加 8 秒超时、`auth.getUser` 加 5 秒上限，单条脏记录
+  只跳过不整页失败，云端失败不回写空缓存（保留上次成功快照），并在词库页显示「重试加载」入口。
+- 导入重试：`saveCloudExpressionItems` 对 502/504 与网络异常做 3 次有界指数退避重试，400/401/409/
+  413/429/503 不重试；`POST /api/expressions` 把唯一约束冲突映射成 409、未知失败保留 502，
+  同批重复 `clientId` 在入口挡成 400。
+- 高亮：`splitExpressionHighlights` 容忍词间插入一个冠词/虚词（`need lecture`→`need a lecture`），
+  只放宽单个虚词并守住词边界。
+- 随机学习固化为分组：弹窗选择已有组或建新组，建新组做名称重名校验，使用已有组校验组仍存在；
+  抽样写成 group 后进入学习页，去掉「换一组随机学习」。分组可重命名/删除。
+- 学习路径：`LearningPlanStep` 增加 expression 步骤（找回→表达→对话→跟读），dashboard 图标同步。
+- 自动化验证（2026-11-21，本机）：`pnpm typecheck`、`pnpm lint`、`pnpm build` 通过；前端 103 文件 /
+  858 用例全绿（含导入重试/脏数据隔离/高亮虚词/随机分组/学习路径/加载失败重试新用例），后端各
+  套件全绿。本机负载高，vitest 以 `--testTimeout=45000` 复跑。
+- 视觉验证：随机分组弹窗与「重试加载」提示的桌面/390px 观感待人工核对；本次未采集截图。

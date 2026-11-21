@@ -123,6 +123,24 @@ describe("/api/expressions", () => {
     expect(mocks.getSupabaseServerClient).not.toHaveBeenCalled()
   })
 
+  it("maps a unique-constraint write failure to a non-retryable 409", async () => {
+    mocks.upsertExpressionLibraryItems.mockRejectedValueOnce({ code: "23505" })
+
+    const response = await POST(createPostRequest([expression]))
+
+    expect(response.status).toBe(409)
+    expect((await response.json()).error.code).toBe("expression_library_conflict")
+  })
+
+  it("maps an unknown write failure to a retryable 502", async () => {
+    mocks.upsertExpressionLibraryItems.mockRejectedValueOnce(new Error("connection reset"))
+
+    const response = await POST(createPostRequest([expression]))
+
+    expect(response.status).toBe(502)
+    expect((await response.json()).error.code).toBe("expression_library_write_failed")
+  })
+
   it("imports a validated batch for the authenticated user", async () => {
     const response = await POST(createPostRequest([expression]))
 

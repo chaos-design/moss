@@ -122,6 +122,67 @@ describe("expression library client", () => {
     ).toEqual([200, 200, 50])
   })
 
+  it("retries a transient 502 on import and succeeds", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "temporary" } }), { status: 502 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { stored: true } }), { status: 200 }),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(saveCloudExpressionItems([expression])).resolves.toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("gives up after bounded retries on repeated 502", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "down" } }), { status: 502 }),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(saveCloudExpressionItems([expression])).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not retry a non-retryable 409 conflict", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "conflict" } }), { status: 409 }),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(saveCloudExpressionItems([expression])).resolves.toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("skips a dirty cloud record instead of dropping the whole page", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              cloudAvailable: true,
+              items: [expression, { clientId: "broken" }],
+              nextCursor: null,
+              userId: "user-1",
+            },
+          }),
+        ),
+      ),
+    )
+
+    await expect(loadCloudExpressionItems()).resolves.toMatchObject({
+      items: [{ phrase: "keep an eye on" }],
+    })
+  })
+
   it("reports local-only persistence when the server is in demo mode", async () => {
     vi.stubGlobal(
       "fetch",

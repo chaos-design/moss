@@ -85,6 +85,11 @@ const subjectPronounPattern = "(?:you|we|I|they|he|she)"
 const itObjectPattern = "(?:it|the\\s+[A-Za-z][A-Za-z'’\\-]*(?:\\s+[A-Za-z][A-Za-z'’\\-]*)?)"
 const inflectionSuffix = "(?:s|es|ed|d|ing)?"
 
+// 短语词与词之间有时会被插入一个虚词：need lecture 在例句里写成 need a lecture。
+// 只允许两类常见虚词且最多一个，避免把无关表达误命中；不覆盖代词/副词等高误伤词。
+const insertableFunctionWords = "(?:a|an|the|to|of|for|in|on|at|by|with|and|or)"
+const wordGap = `(?:\\s+(?:${insertableFunctionWords})\\s+|\\s+)`
+
 // 短语末尾是虚词时不做词形扩展（keep tabs on 不能匹配 keeps tabs ons）；
 // 名词或形容词结尾则允许复数/比较级等常见词尾（quick win → quick wins）。
 const functionWords = new Set([
@@ -184,8 +189,8 @@ function buildPatterns(phrase: string) {
         ? `${base}${inflectionSuffix}`
         : base
     })
-    .join("\\s+")
-  const suffix = tailPattern ? `\\s+${tailPattern}` : ""
+    .join(wordGap)
+  const suffix = tailPattern ? `${wordGap}${tailPattern}` : ""
   const normalizedHead = head.toLocaleLowerCase()
   const headIsPlaceholder =
     normalizedHead === "someone" ||

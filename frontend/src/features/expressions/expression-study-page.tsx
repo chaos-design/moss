@@ -31,6 +31,7 @@ export function ExpressionStudyPage({
     useLearningMemory()
   const { allItems, filteredItems, favoriteIdentities, studyGroups, progressByIdentity } =
     useExpressionLibrarySource(state.expressionStudy.filters.value)
+  // 随机学习已经固化为分组，这里只保留 group/filtered 等范围；random 仅供历史 URL 兼容。
 
   const sessionItems = useMemo(() => {
     const groupItemIds =
@@ -44,16 +45,9 @@ export function ExpressionStudyPage({
       progressByIdentity,
       scope,
     })
-    // session 变化时重新解析：随机范围会重新洗牌，其他范围结果不变。
   }, [scope, session, filteredItems, favoriteIdentities, studyGroups, progressByIdentity])
 
   const exit = () => router.push("/workspace/expressions")
-
-  const reshuffle = () => {
-    const params = new URLSearchParams(window.location.search)
-    params.set("session", String(session + 1))
-    router.push(`/workspace/expressions/study?${params.toString()}`)
-  }
 
   const studyMemory = useMemo(
     () => (item: ExpressionLibraryItem) =>
@@ -91,7 +85,6 @@ export function ExpressionStudyPage({
           onExit={exit}
           onProgress={recordExpressionProgress}
           onStudyMemory={studyMemory}
-          onReshuffle={scope.kind === "random" ? reshuffle : undefined}
         />
       )}
     </div>

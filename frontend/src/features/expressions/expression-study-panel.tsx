@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { ExpressionRandomStudyDialog } from "@/features/expressions/expression-random-study-dialog"
 import { ExpressionRecommendationDialog } from "@/features/expressions/expression-recommendation-dialog"
 import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import type { ExpressionRecommendation } from "@/lib/expression-recommendations"
@@ -56,6 +57,7 @@ export function ExpressionStudyPanel({
   progressByIdentity,
   onJoinRecommendation,
   onStartRecommendation,
+  onStartRandom,
 }: {
   study: ExpressionStudyState
   onStart: (scope: ExpressionStudyScope, mode: ExpressionStudyMode) => void
@@ -66,9 +68,14 @@ export function ExpressionStudyPanel({
   progressByIdentity: Readonly<Record<string, ExpressionProgressStatus>>
   onJoinRecommendation: (recommendation: ExpressionRecommendation) => void
   onStartRecommendation: (recommendation: ExpressionRecommendation) => void
+  onStartRandom: (
+    count: number,
+    target: { kind: "existing"; groupId: string } | { kind: "new"; name: string },
+  ) => void
 }) {
   const [managing, setManaging] = useState(false)
   const [showRecommendations, setShowRecommendations] = useState(false)
+  const [randomCount, setRandomCount] = useState<number | null>(null)
   const [newGroupName, setNewGroupName] = useState("")
 
   const favorites = getActiveFavorites(study)
@@ -157,7 +164,10 @@ export function ExpressionStudyPanel({
                 {randomBatchSizes.map((count) => (
                   <DropdownMenuItem
                     key={count}
-                    onClick={() => start({ kind: "random", count }, "flashcard")}
+                    onClick={() => {
+                      setManaging(false)
+                      setRandomCount(count)
+                    }}
                   >
                     <ShuffleIcon data-icon="inline-start" />
                     随机学 {count} 条
@@ -212,6 +222,23 @@ export function ExpressionStudyPanel({
         onJoin={onJoinRecommendation}
         onStart={onStartRecommendation}
       />
+
+      {randomCount !== null ? (
+        <ExpressionRandomStudyDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) {
+              setRandomCount(null)
+            }
+          }}
+          count={randomCount}
+          groups={groups}
+          onConfirm={(target) => {
+            onStartRandom(randomCount, target)
+            setRandomCount(null)
+          }}
+        />
+      ) : null}
 
       <Dialog open={managing} onOpenChange={setManaging}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">

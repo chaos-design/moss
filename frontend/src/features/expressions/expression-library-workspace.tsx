@@ -83,6 +83,7 @@ import {
   getRecommendedGroupId,
 } from "@/lib/expression-recommendations"
 import type { ExpressionStudyMode, ExpressionStudyScope } from "@/lib/expression-study"
+import { sampleStudyIdentities } from "@/lib/expression-study"
 import {
   createExpressionMemoryItemId,
   type ExpressionFilters,
@@ -141,6 +142,8 @@ export function ExpressionLibraryWorkspace() {
     cloudAvailable,
     setCloudAvailable,
     loadingCloud,
+    loadFailed,
+    reload,
     allItems,
     filteredItems,
     favoriteIdentities,
@@ -211,6 +214,33 @@ export function ExpressionLibraryWorkspace() {
       )
     },
     [startStudy],
+  )
+
+  // 随机学习固化为分组：先抽样成身份集合，写入已有组或新组，再以 group scope 进入学习页。
+  const startRandom = useCallback(
+    (
+      count: number,
+      target: { kind: "existing"; groupId: string } | { kind: "new"; name: string },
+    ) => {
+      const identities = sampleStudyIdentities(filteredItems, count)
+      let groupId: string
+      let name: string
+      if (target.kind === "new") {
+        groupId = createGroup(target.name)
+        name = target.name
+      } else {
+        groupId = target.groupId
+        name = studyGroups.find((group) => group.id === target.groupId)?.name ?? "随机分组"
+      }
+      if (!groupId) {
+        toast.error("分组创建失败，请重试。")
+        return
+      }
+      addGroupItems(groupId, name, identities)
+      toast.success(`已把 ${identities.length} 条表达放进「${name}」`)
+      startStudy({ kind: "group", groupId }, "flashcard")
+    },
+    [filteredItems, createGroup, addGroupItems, studyGroups, startStudy],
   )
 
   useEffect(() => {
@@ -411,6 +441,26 @@ export function ExpressionLibraryWorkspace() {
         <LibraryStat label="外部导入" value={String(importedItems.length)} />
       </section>
 
+      {loadFailed ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
+          role="status"
+        >
+          <span className="text-muted-foreground">
+            云端表达暂时无法读取，当前只显示本机缓存。你可以重试加载。
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={reload}
+            disabled={loadingCloud}
+          >
+            {loadingCloud ? "正在重试…" : "重试加载"}
+          </Button>
+        </div>
+      ) : null}
+
       <section
         className="sticky top-16 z-30 -mx-4 flex flex-col gap-2 border-b bg-background px-4 py-2 shadow-sm md:-mx-6 md:flex-row md:px-6 lg:-mx-8 lg:px-8"
         aria-label="筛选表达"
@@ -507,6 +557,7 @@ export function ExpressionLibraryWorkspace() {
         progressByIdentity={progressByIdentity}
         onJoinRecommendation={joinRecommendation}
         onStartRecommendation={startRecommendation}
+        onStartRandom={startRandom}
       />
 
       <ExpressionRows
