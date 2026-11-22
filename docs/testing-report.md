@@ -1283,3 +1283,23 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
 - 自动化验证（2026-11-22，本机）：新增/更新随机一键、按需引导、高亮守卫用例；前端全量用例与
   `pnpm typecheck`/`pnpm lint`/`pnpm build` 通过（本机负载高，vitest 以 `--testTimeout=45000` 复跑）。
 - 视觉验证：Popover 在 jsdom 可展开已由组件测试覆盖；桌面/390px 实际观感待人工核对。
+
+## 2026-11-22 学习卡例句统一译文开关与布局聚焦
+
+- 交互：新增 `frontend/src/components/example-translation.tsx`，把「句尾译文开关 + 按需展开译文」
+  收敛为 `ExampleTranslationToggle` / `ExpressionExample` 一处实现（图标、文案与
+  `显示/收起 {phrase} 的例句译文` aria 命名一致）。闪卡、填空、听写结果、造句对照、快速学习
+  全部复用；译例句模式仍以「揭示翻译」为主答案。`exampleTranslation` 为空时不渲染空开关。
+- 布局：例句统一放大为 `font-serif text-xl leading-10`，译文紧跟句尾；填空卡片句子中间的输入框
+  通过 `children` 注入，开关仍在句尾；造句模式提交前展示目标表达与含义、提交后展示标准例句与
+  译文；快速学习从「只有表达」补成表达 + 例句 + 含义。重复的第 1/2 步提示与学后去向提示收敛，
+  卡片顶部只留一行键盘提示，完整说明由「玩法说明」Popover 承担。
+- 自动化验证（2026-11-22，本机）：`expression-study-dialog.test.tsx` 新增 5 例（共享 aria 命名、
+  填空/造句/快速模式译文开关、换条后译文状态复位），13 例全通过；前端全量 105 文件 883 例中
+  882 通过，唯一失败为 `expression-library-workspace` 的 JSON 上传用例在 10s 默认超时下偶发超时
+  （与本次改动无关，单独以 45s 超时复跑 23 例全绿）。`pnpm lint`、`pnpm typecheck`、`pnpm build`
+  通过。
+- 视觉验证（2026-11-22，本次真实执行）：headless Chrome + CDP 对 demo 模式开发服务器在
+  390px 与 1280px 检查 flashcard/cloze/sentence/quick 四种模式，`scrollWidth - clientWidth` 均为 0；
+  闪卡揭示后译文开关出现、点击后切为「收起」，填空与快速模式开关常驻，造句提交后标准例句出现
+  译文开关。真实麦克风与 live provider 未覆盖。

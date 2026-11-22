@@ -220,12 +220,118 @@ describe("ExpressionStudyWorkspace", () => {
       />,
     )
 
-    expect(screen.getByText("rule of thumb")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "rule of thumb" })).toBeTruthy()
     fireEvent.keyDown(window, { key: " " })
     expect(onProgress).toHaveBeenCalledWith(
       "work:rule of thumb",
       expect.objectContaining({ status: "learning", incrementReviews: true }),
     )
     expect(screen.getByText("这一组学完了")).toBeTruthy()
+  })
+
+  it("flashcard example translation uses the shared toggle named after the phrase", () => {
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="flashcard"
+        onExit={vi.fn()}
+        onProgress={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "揭示答案" }))
+    const toggle = screen.getByRole("button", { name: "显示 rule of thumb 的例句译文" })
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(toggle)
+    expect(screen.getByText("按经验法则，简短些。")).toBeTruthy()
+    expect(
+      screen
+        .getByRole("button", { name: "收起 rule of thumb 的例句译文" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true")
+  })
+
+  it("cloze mode opens the example translation without losing the answer input", () => {
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="cloze"
+        onExit={vi.fn()}
+        onProgress={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "显示 rule of thumb 的例句译文" }))
+    expect(screen.getByText("按经验法则，简短些。")).toBeTruthy()
+    expect(screen.getByRole("textbox", { name: "填入缺失的表达" })).toBeTruthy()
+  })
+
+  it("sentence mode shows the target meaning before writing and the example translation after submitting", () => {
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="sentence"
+        onExit={vi.fn()}
+        onProgress={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText("目标表达")).toBeTruthy()
+    expect(screen.getByText("经验法则")).toBeTruthy()
+    fireEvent.change(screen.getByRole("textbox", { name: "造一句句子" }), {
+      target: { value: "A rule of thumb is to keep it short." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "造句" }))
+    fireEvent.click(screen.getByRole("button", { name: "显示 rule of thumb 的例句译文" }))
+    expect(screen.getByText("按经验法则，简短些。")).toBeTruthy()
+  })
+
+  it("quick mode shows the example with a translation toggle", () => {
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="quick"
+        onExit={vi.fn()}
+        onProgress={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "显示 rule of thumb 的例句译文" }))
+    expect(screen.getByText("按经验法则，简短些。")).toBeTruthy()
+  })
+
+  it("resets the example translation when advancing to the next item", () => {
+    const nextItem: ExpressionLibraryItem = {
+      ...item,
+      id: "builtin:b",
+      clientId: "builtin-b",
+      phrase: "piece of cake",
+      example: "That was a piece of cake.",
+      exampleTranslation: "那真是小菜一碟。",
+    }
+    render(
+      <ExpressionStudyWorkspace
+        items={[item, nextItem]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="quick"
+        onExit={vi.fn()}
+        onProgress={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "显示 rule of thumb 的例句译文" }))
+    expect(screen.getByText("按经验法则，简短些。")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }))
+    expect(screen.getByRole("button", { name: "显示 piece of cake 的例句译文" })).toBeTruthy()
+    expect(screen.queryByText("按经验法则，简短些。")).toBeNull()
   })
 })

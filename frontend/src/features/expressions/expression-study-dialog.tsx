@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import { ExpressionExample } from "@/components/example-translation"
 import { ExpressionText } from "@/components/expression-text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -139,6 +140,10 @@ export function ExpressionStudyWorkspace({
     dictation.reset()
   }
 
+  function toggleTranslation() {
+    setTranslationRevealed((current) => !current)
+  }
+
   // 键盘流：空格/回车揭示答案，揭示后 1 = 再练、2 = 掌握。焦点在输入框/按钮上时交还原生激活，
   // 避免一次按键既揭示又评分；听写录音/识别中不拦截。处理器放 ref 里，每次渲染刷新闭包。
   const keyboardActionRef = useRef<(event: KeyboardEvent) => void>(() => {})
@@ -216,8 +221,13 @@ export function ExpressionStudyWorkspace({
     return () => window.removeEventListener("keydown", handler)
   }, [])
 
-  // 当前条目的即时反馈：自评后写入长期记忆，首次复习约 10 分钟后到期。
-  const afterStudyHint = "自评后写入长期记忆，约 10 分钟后到期；到「智能复习」页找回。"
+  // 键盘只留一行提示；四档评分含义与学后去向都由标题栏的「玩法说明」按需展开，避免重复堆叠。
+  const shortcutHint =
+    mode === "dictation"
+      ? "空格 重听 · 1 再练 · 2 掌握"
+      : mode === "quick"
+        ? "空格/回车 下一条"
+        : "空格 揭示 · 1 再练 · 2 掌握"
 
   return (
     <section className="flex min-h-0 w-full flex-col overflow-hidden rounded-lg border bg-card">
@@ -277,6 +287,9 @@ export function ExpressionStudyWorkspace({
                 setRevealed(false)
                 setClozeAnswer("")
                 setClozeResult(null)
+                setTranslationRevealed(false)
+                setSentenceDraft("")
+                setSentenceSubmitted(false)
                 dictation.reset()
               }}
             >
@@ -317,12 +330,8 @@ export function ExpressionStudyWorkspace({
               ) : null}
             </div>
 
-            <p className="mb-4 rounded-md bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
-              <span className="font-medium text-foreground">快捷操作</span>
-              {mode === "dictation"
-                ? "：听写用按钮录音；结果出来后空格重听、1 再练、2 掌握。"
-                : "：空格揭示 · 1 再练一次 · 2 掌握了。"}
-              <span className="block">{afterStudyHint}</span>
+            <p className="mb-4 text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">键盘</span> {shortcutHint}
             </p>
 
             {mode === "flashcard" ? (
@@ -331,7 +340,7 @@ export function ExpressionStudyWorkspace({
                 revealed={revealed}
                 translationRevealed={translationRevealed}
                 onReveal={() => setRevealed(true)}
-                onToggleTranslation={() => setTranslationRevealed((current) => !current)}
+                onToggleTranslation={toggleTranslation}
                 onComplete={complete}
               />
             ) : mode === "cloze" ? (
@@ -340,6 +349,8 @@ export function ExpressionStudyWorkspace({
                 cloze={cloze}
                 answer={clozeAnswer}
                 result={clozeResult}
+                translationRevealed={translationRevealed}
+                onToggleTranslation={toggleTranslation}
                 onAnswer={setClozeAnswer}
                 onCheck={() =>
                   setClozeResult(checkClozeAnswer(cloze?.answer ?? item.phrase, clozeAnswer))
@@ -351,6 +362,8 @@ export function ExpressionStudyWorkspace({
                 item={item}
                 expected={cloze?.answer ?? item.phrase}
                 dictation={dictation}
+                translationRevealed={translationRevealed}
+                onToggleTranslation={toggleTranslation}
                 onComplete={complete}
               />
             ) : mode === "translate" ? (
@@ -366,12 +379,19 @@ export function ExpressionStudyWorkspace({
                 draft={sentenceDraft}
                 onDraft={setSentenceDraft}
                 submitted={sentenceSubmitted}
+                translationRevealed={translationRevealed}
+                onToggleTranslation={toggleTranslation}
                 onSubmit={() => setSentenceSubmitted(true)}
                 onBackToInput={() => setSentenceSubmitted(false)}
                 onComplete={complete}
               />
             ) : (
-              <QuickCard item={item} onAdvance={() => complete("learning")} />
+              <QuickCard
+                item={item}
+                translationRevealed={translationRevealed}
+                onToggleTranslation={toggleTranslation}
+                onAdvance={() => complete("learning")}
+              />
             )}
           </div>
         </>
@@ -433,6 +453,8 @@ function SentenceCard({
   draft,
   onDraft,
   submitted,
+  translationRevealed,
+  onToggleTranslation,
   onSubmit,
   onBackToInput,
   onComplete,
@@ -441,6 +463,8 @@ function SentenceCard({
   draft: string
   onDraft: (value: string) => void
   submitted: boolean
+  translationRevealed: boolean
+  onToggleTranslation: () => void
   onSubmit: () => void
   onBackToInput: () => void
   onComplete: (status: ExpressionProgressStatus) => void
@@ -448,8 +472,13 @@ function SentenceCard({
   if (!submitted) {
     return (
       <div className="grid gap-5">
+        <div>
+          <p className="text-xs font-medium text-foreground">目标表达</p>
+          <p className="mt-1 font-serif text-xl font-semibold leading-9">{item.phrase}</p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.meaning}</p>
+        </div>
         <p className="text-sm text-muted-foreground">
-          先看表达的含义与例句，然后用它造一句话，回车提交。
+          先看表达的含义，然后用它造一句话，回车提交。
         </p>
         <Input
           value={draft}
@@ -484,10 +513,12 @@ function SentenceCard({
         ) : null}
       </div>
       <div>
-        <p className="text-xs font-medium text-foreground">标准例句</p>
-        <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-lg leading-9">
-          <ExpressionText text={item.example} phrase={item.phrase} />
-        </blockquote>
+        <p className="mb-1 text-xs font-medium text-foreground">标准例句</p>
+        <ExpressionExample
+          item={item}
+          revealed={translationRevealed}
+          onToggleTranslation={onToggleTranslation}
+        />
       </div>
       <div className="flex flex-wrap gap-2 border-t pt-3">
         <Button type="button" variant="outline" onClick={onBackToInput}>
@@ -505,19 +536,29 @@ function SentenceCard({
   )
 }
 
-/** 快速学习模式：点下一条即推进，记为学习。 */
+/** 快速学习模式：表达 + 例句一起看，可展开译文，点下一条即推进并记为学习。 */
 function QuickCard({
   item,
+  translationRevealed,
+  onToggleTranslation,
   onAdvance,
 }: {
   item: ExpressionLibraryItem
+  translationRevealed: boolean
+  onToggleTranslation: () => void
   onAdvance: () => void
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <h3 className="break-words font-serif text-2xl font-semibold leading-snug">
         {item.phrase}
       </h3>
+      <ExpressionExample
+        item={item}
+        revealed={translationRevealed}
+        onToggleTranslation={onToggleTranslation}
+      />
+      <p className="text-sm leading-6 text-muted-foreground">{item.meaning}</p>
       <div className="flex flex-wrap gap-2 border-t pt-4">
         <Button type="button" onClick={onAdvance}>
           <ArrowRightIcon data-icon="inline-end" />
@@ -571,26 +612,11 @@ function Flashcard({
             <p className="text-xs font-medium text-foreground">为什么这样表达</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.why}</p>
           </div>
-          <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-sm leading-7">
-            <ExpressionText text={item.example} phrase={item.phrase} />
-            {item.exampleTranslation ? (
-              <>
-                <button
-                  type="button"
-                  className="ml-2 inline-flex items-center gap-1 rounded-sm text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-expanded={translationRevealed}
-                  onClick={onToggleTranslation}
-                >
-                  {translationRevealed ? "收起译文" : "译文"}
-                </button>
-                {translationRevealed ? (
-                  <span className="mt-1 block font-sans text-xs text-muted-foreground">
-                    {item.exampleTranslation}
-                  </span>
-                ) : null}
-              </>
-            ) : null}
-          </blockquote>
+          <ExpressionExample
+            item={item}
+            revealed={translationRevealed}
+            onToggleTranslation={onToggleTranslation}
+          />
           <div className="flex flex-wrap gap-2 border-t pt-4">
             <Button type="button" variant="outline" onClick={() => onComplete("learning")}>
               再练一次
@@ -611,6 +637,8 @@ function ClozeCard({
   cloze,
   answer,
   result,
+  translationRevealed,
+  onToggleTranslation,
   onAnswer,
   onCheck,
   onComplete,
@@ -619,6 +647,8 @@ function ClozeCard({
   cloze: ReturnType<typeof buildCloze>
   answer: string
   result: boolean | null
+  translationRevealed: boolean
+  onToggleTranslation: () => void
   onAnswer: (value: string) => void
   onCheck: () => void
   onComplete: (status: ExpressionProgressStatus) => void
@@ -626,12 +656,13 @@ function ClozeCard({
   return (
     <div className="grid gap-5">
       <p className="text-sm text-muted-foreground">
-        第 1 步：读例句，根据语境在空格里填入目标表达（大小写、时态、复数都算对）。
+        读例句，在空格里填入目标表达（大小写、时态、复数都算对），再点「检查答案」核对。
       </p>
-      <p className="text-xs text-muted-foreground">
-        第 2 步：点「检查答案」核对，再自评是否掌握。
-      </p>
-      <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-lg leading-9">
+      <ExpressionExample
+        item={item}
+        revealed={translationRevealed}
+        onToggleTranslation={onToggleTranslation}
+      >
         {cloze ? (
           <span>
             {cloze.before}
@@ -659,7 +690,7 @@ function ClozeCard({
             </span>
           </span>
         )}
-      </blockquote>
+      </ExpressionExample>
 
       {result !== null ? (
         <div
@@ -699,18 +730,21 @@ function DictationCard({
   item,
   expected,
   dictation,
+  translationRevealed,
+  onToggleTranslation,
   onComplete,
 }: {
   item: ExpressionLibraryItem
   expected: string
   dictation: ReturnType<typeof useExpressionDictation>
+  translationRevealed: boolean
+  onToggleTranslation: () => void
   onComplete: (status: ExpressionProgressStatus) => void
 }) {
   return (
     <div className="grid gap-5">
       <p className="text-sm text-muted-foreground">
-        第 1 步：点「听例句」听发音。第 2 步：点「开始录音」复述，说完点「停止并识别」。
-        识别结果会与目标表达做容错比对；不想开口时可切换到闪卡或填空。
+        点「听例句」听发音，再点「开始录音」复述，说完点「停止并识别」。不想开口时可切换到闪卡或填空。
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -769,6 +803,12 @@ function DictationCard({
             目标表达：<span className="font-serif">{expected}</span> · 相似度{" "}
             {Math.round(dictation.verdict.similarity * 100)}%
           </p>
+          <ExpressionExample
+            item={item}
+            revealed={translationRevealed}
+            onToggleTranslation={onToggleTranslation}
+            className="mt-1"
+          />
           <div className="flex flex-wrap gap-2 border-t pt-3">
             <Button type="button" variant="outline" onClick={dictation.reset}>
               重录
