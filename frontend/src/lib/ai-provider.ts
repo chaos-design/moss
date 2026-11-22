@@ -1,3 +1,5 @@
+import { isValidModelEndpoint } from "@/lib/model-config"
+
 export type AiProviderApiType = "anthropic-messages" | "chat-completions" | "custom"
 
 export type AiProviderConfig = {
@@ -6,6 +8,15 @@ export type AiProviderConfig = {
   model: string
   apiType: AiProviderApiType
   embeddingModel?: string
+}
+
+/** AI_MODEL_SERVICES 条目类型：Vercel 配置多服务，AI_DEFAULT_MODEL_SERVICE 指定默认。 */
+export type AiModelService = {
+  name: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  apiType?: AiProviderApiType
 }
 
 export type AiChatMessage = {
@@ -19,16 +30,89 @@ function normalizeEnvironmentValue(value: string | undefined) {
 }
 
 function parseAiProviderApiType(value: string | undefined, baseUrl: string): AiProviderApiType {
-  if (value === "anthropic-messages") {
-    return "anthropic-messages"
-  }
-  if (value === "chat-completions") {
-    return "chat-completions"
+  if (value === "anthropic-messages" || value === "chat-completions" || value === "custom") {
+    return value
   }
   return /anthropic\.com/i.test(baseUrl) ? "anthropic-messages" : "chat-completions"
 }
 
+function isAiModelService(value: unknown): value is AiModelService {
+  if (!value || typeof value !== "object") {
+    return false
+  }
+  const service = value as Partial<AiModelService>
+  return (
+    typeof service.name === "string" &&
+    service.name.trim().length > 0 &&
+    service.name.length <= 64 &&
+    typeof service.baseUrl === "string" &&
+    isValidModelEndpoint(service.baseUrl) &&
+    typeof service.apiKey === "string" &&
+    service.apiKey.trim().length > 0 &&
+    service.apiKey.length <= 400 &&
+    typeof service.model === "string" &&
+    service.model.trim().length > 0 &&
+    service.model.length <= 200 &&
+    (service.apiType === undefined ||
+      service.apiType === "anthropic-messages" ||
+      service.apiType === "chat-completions" ||
+      service.apiType === "custom")
+  )
+}
+
+/** 解析 `AI_MODEL_SERVICES`（Vercel JSON 数组），非法条目静默丢弃。 */
+export function parseAiModelServices(): AiModelService[] {
+  const raw = normalizeEnvironmentValue(process.env.AI_MODEL_SERVICES)
+  if (!raw) {
+    return []
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) {
+    return []
+  }
+  return parsed.filter(isAiModelService).map((service) => ({
+    name: service.name.trim(),
+    baseUrl: service.baseUrl,
+    apiKey: service.apiKey.trim(),
+    model: service.model.trim(),
+    ...(service.apiType ? { apiType: service.apiType } : {}),
+  }))
+}
+
+/**
+ * `AI_DEFAULT_MODEL_SERVICE` 按 name 选择默认服务；未设置或名字不存在时取第一个。
+ * 配置了服务列表但 AI_BASE_URL 等旧变量同时存在时，服务列表优先。
+ */
+export function getDefaultAiModelService(): AiModelService | null {
+  const services = parseAiModelServices()
+  if (services.length === 0) {
+    return null
+  }
+  const requested = normalizeEnvironmentValue(process.env.AI_DEFAULT_MODEL_SERVICE)
+  if (requested) {
+    const matched = services.find((service) => service.name === requested)
+    if (matched) {
+      return matched
+    }
+  }
+  return services[0]
+}
+
 export function getAiProviderConfig(): AiProviderConfig | null {
+  const service = getDefaultAiModelService()
+  if (service) {
+    return {
+      apiKey: service.apiKey,
+      baseUrl: service.baseUrl,
+      model: service.model,
+      apiType: service.apiType ?? parseAiProviderApiType(undefined, service.baseUrl),
+    }
+  }
   const apiKey = normalizeEnvironmentValue(process.env.AI_API_KEY)
   const baseUrl = normalizeEnvironmentValue(process.env.AI_BASE_URL)
   const model =

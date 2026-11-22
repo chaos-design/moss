@@ -4,6 +4,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
+  EditIcon,
   EyeIcon,
   MicIcon,
   SquareIcon,
@@ -32,6 +33,7 @@ import {
   type ExpressionStudyMode,
   type ExpressionStudyScope,
   expressionStudyModeLabels,
+  sentenceContainsPhrase,
 } from "@/lib/expression-study"
 import {
   type ExpressionProgressStatus,
@@ -40,7 +42,14 @@ import {
   getExpressionProgress,
 } from "@/lib/memory"
 
-const modes: ExpressionStudyMode[] = ["flashcard", "cloze", "dictation"]
+const modes: ExpressionStudyMode[] = [
+  "flashcard",
+  "cloze",
+  "dictation",
+  "sentence",
+  "translate",
+  "quick",
+]
 
 function scopeLabel(scope: ExpressionStudyScope, groups: { id: string; name: string }[]) {
   switch (scope.kind) {
@@ -83,6 +92,8 @@ export function ExpressionStudyWorkspace({
   const [clozeAnswer, setClozeAnswer] = useState("")
   const [clozeResult, setClozeResult] = useState<boolean | null>(null)
   const [translationRevealed, setTranslationRevealed] = useState(false)
+  const [sentenceDraft, setSentenceDraft] = useState("")
+  const [sentenceSubmitted, setSentenceSubmitted] = useState(false)
   const [stats, setStats] = useState({ mastered: 0, practice: 0 })
   const dictation = useExpressionDictation()
 
@@ -112,6 +123,8 @@ export function ExpressionStudyWorkspace({
     setClozeAnswer("")
     setClozeResult(null)
     setTranslationRevealed(false)
+    setSentenceDraft("")
+    setSentenceSubmitted(false)
     dictation.reset()
   }
 
@@ -121,6 +134,8 @@ export function ExpressionStudyWorkspace({
     setClozeAnswer("")
     setClozeResult(null)
     setTranslationRevealed(false)
+    setSentenceDraft("")
+    setSentenceSubmitted(false)
     dictation.reset()
   }
 
@@ -141,21 +156,47 @@ export function ExpressionStudyWorkspace({
     const onControl =
       target instanceof HTMLElement && Boolean(target.closest("button, a, [role='button']"))
     const revealedNow =
-      mode === "flashcard"
+      mode === "flashcard" || mode === "translate"
         ? revealed
         : mode === "cloze"
           ? clozeResult !== null
-          : dictation.phase === "result"
+          : mode === "sentence"
+            ? sentenceSubmitted
+            : mode === "dictation"
+              ? dictation.phase === "result"
+              : true // quick 模式不需要揭示，直接推进
     if (!revealedNow && (event.key === " " || event.key === "Enter")) {
       if (onControl) {
         return
       }
       event.preventDefault()
-      if (mode === "flashcard") {
+      if (mode === "flashcard" || mode === "translate") {
         setRevealed(true)
       } else if (mode === "cloze" && cloze) {
         setClozeResult(checkClozeAnswer(cloze.answer, clozeAnswer))
       }
+      return
+    }
+    // 快速模式：空格/回车直接推进，记为学习。
+    if (mode === "quick" && (event.key === " " || event.key === "Enter")) {
+      if (onControl) {
+        return
+      }
+      event.preventDefault()
+      complete("learning")
+      return
+    }
+    // 造句已提交后空格/回车推进；1/2 评分走下方通用分支。
+    if (
+      mode === "sentence" &&
+      sentenceSubmitted &&
+      (event.key === " " || event.key === "Enter")
+    ) {
+      if (onControl) {
+        return
+      }
+      event.preventDefault()
+      complete("learning")
       return
     }
     // 听写出结果后空格重听例句，配合 1/2 评分形成纯键盘闭环。
@@ -179,7 +220,7 @@ export function ExpressionStudyWorkspace({
   const afterStudyHint = "自评后写入长期记忆，约 10 分钟后到期；到「智能复习」页找回。"
 
   return (
-    <section className="flex min-h-0 w-full max-w-3xl flex-col overflow-hidden rounded-lg border bg-card">
+    <section className="flex min-h-0 w-full flex-col overflow-hidden rounded-lg border bg-card">
       <header className="shrink-0 border-b px-5 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -250,7 +291,7 @@ export function ExpressionStudyWorkspace({
               value={mode}
               onValueChange={(value) => switchMode(value as ExpressionStudyMode)}
             >
-              <TabsList className="w-full">
+              <TabsList className="w-full flex-wrap">
                 {modes.map((value) => (
                   <TabsTrigger key={value} value={value} className="flex-1">
                     {expressionStudyModeLabels[value]}
@@ -305,18 +346,185 @@ export function ExpressionStudyWorkspace({
                 }
                 onComplete={complete}
               />
-            ) : (
+            ) : mode === "dictation" ? (
               <DictationCard
                 item={item}
                 expected={cloze?.answer ?? item.phrase}
                 dictation={dictation}
                 onComplete={complete}
               />
+            ) : mode === "translate" ? (
+              <TranslateCard
+                item={item}
+                revealed={revealed}
+                onReveal={() => setRevealed(true)}
+                onComplete={complete}
+              />
+            ) : mode === "sentence" ? (
+              <SentenceCard
+                item={item}
+                draft={sentenceDraft}
+                onDraft={setSentenceDraft}
+                submitted={sentenceSubmitted}
+                onSubmit={() => setSentenceSubmitted(true)}
+                onBackToInput={() => setSentenceSubmitted(false)}
+                onComplete={complete}
+              />
+            ) : (
+              <QuickCard item={item} onAdvance={() => complete("learning")} />
             )}
           </div>
         </>
       )}
     </section>
+  )
+}
+
+/** 译例句模式：先看英文例句，回忆中文意思，揭示答案后评分。 */
+function TranslateCard({
+  item,
+  revealed,
+  onReveal,
+  onComplete,
+}: {
+  item: ExpressionLibraryItem
+  revealed: boolean
+  onReveal: () => void
+  onComplete: (status: ExpressionProgressStatus) => void
+}) {
+  const reference = item.exampleTranslation || item.meaning
+  return (
+    <div className="grid gap-4">
+      <p className="text-sm text-muted-foreground">
+        第 1 步：阅读英文例句，在脑子里回忆它的中文意思。
+      </p>
+      <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-lg leading-9">
+        <ExpressionText text={item.example} phrase={item.phrase} />
+      </blockquote>
+      {!revealed ? (
+        <Button type="button" onClick={onReveal}>
+          <EyeIcon data-icon="inline-start" />
+          揭示翻译
+        </Button>
+      ) : (
+        <div className="grid gap-4">
+          <div>
+            <p className="text-xs font-medium text-foreground">中文意思</p>
+            <p className="mt-1 leading-7">{reference}</p>
+          </div>
+          <div className="flex flex-wrap gap-2 border-t pt-4">
+            <Button type="button" variant="outline" onClick={() => onComplete("learning")}>
+              再练一次
+            </Button>
+            <Button type="button" onClick={() => onComplete("mastered")}>
+              <CheckIcon data-icon="inline-start" />
+              掌握了
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 造句模式：用表达造一句话，对照标准例句核对，再自评。 */
+function SentenceCard({
+  item,
+  draft,
+  onDraft,
+  submitted,
+  onSubmit,
+  onBackToInput,
+  onComplete,
+}: {
+  item: ExpressionLibraryItem
+  draft: string
+  onDraft: (value: string) => void
+  submitted: boolean
+  onSubmit: () => void
+  onBackToInput: () => void
+  onComplete: (status: ExpressionProgressStatus) => void
+}) {
+  if (!submitted) {
+    return (
+      <div className="grid gap-5">
+        <p className="text-sm text-muted-foreground">
+          先看表达的含义与例句，然后用它造一句话，回车提交。
+        </p>
+        <Input
+          value={draft}
+          onChange={(event) => onDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && draft.trim()) {
+              event.preventDefault()
+              onSubmit()
+            }
+          }}
+          placeholder="比如：我们在正式场合可以用……"
+          aria-label="造一句句子"
+          autoFocus
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={onSubmit} disabled={!draft.trim()}>
+            <EditIcon data-icon="inline-start" />
+            造句
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  const containsPhrase = sentenceContainsPhrase(draft, item.phrase)
+  return (
+    <div className="grid gap-5">
+      <div>
+        <p className="text-xs font-medium text-foreground">你的句子</p>
+        <p className="mt-1 font-serif text-sm leading-7">{draft}</p>
+        {containsPhrase ? (
+          <p className="mt-1 text-xs text-[var(--success)]">句子里含有目标表达。</p>
+        ) : null}
+      </div>
+      <div>
+        <p className="text-xs font-medium text-foreground">标准例句</p>
+        <blockquote className="border-l-2 border-primary/35 pl-3 font-serif text-lg leading-9">
+          <ExpressionText text={item.example} phrase={item.phrase} />
+        </blockquote>
+      </div>
+      <div className="flex flex-wrap gap-2 border-t pt-3">
+        <Button type="button" variant="outline" onClick={onBackToInput}>
+          再练一次
+        </Button>
+        <Button type="button" onClick={() => onComplete("learning")}>
+          记住了，下一条
+        </Button>
+        <Button type="button" onClick={() => onComplete("mastered")}>
+          <CheckIcon data-icon="inline-start" />
+          掌握了
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** 快速学习模式：点下一条即推进，记为学习。 */
+function QuickCard({
+  item,
+  onAdvance,
+}: {
+  item: ExpressionLibraryItem
+  onAdvance: () => void
+}) {
+  return (
+    <div className="grid gap-4">
+      <h3 className="break-words font-serif text-2xl font-semibold leading-snug">
+        {item.phrase}
+      </h3>
+      <div className="flex flex-wrap gap-2 border-t pt-4">
+        <Button type="button" onClick={onAdvance}>
+          <ArrowRightIcon data-icon="inline-end" />
+          下一条
+        </Button>
+      </div>
+    </div>
   )
 }
 

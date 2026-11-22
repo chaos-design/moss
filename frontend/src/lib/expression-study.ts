@@ -11,12 +11,21 @@ import type { ExpressionProgressStatus } from "./memory/expression-study-state"
  * 这里不依赖 React，便于独立测试判定标准。
  */
 
-export type ExpressionStudyMode = "flashcard" | "cloze" | "dictation"
+export type ExpressionStudyMode =
+  | "flashcard"
+  | "cloze"
+  | "dictation"
+  | "translate"
+  | "sentence"
+  | "quick"
 
 export const expressionStudyModeLabels: Record<ExpressionStudyMode, string> = {
   flashcard: "闪卡自测",
   cloze: "例句填空",
   dictation: "跟读听写",
+  translate: "译例句",
+  sentence: "造句",
+  quick: "快速学习",
 }
 
 export type ExpressionStudyScope =
@@ -67,7 +76,17 @@ export function parseExpressionStudyScope(input: {
 }
 
 export function parseExpressionStudyMode(value?: string): ExpressionStudyMode {
-  return value === "cloze" || value === "dictation" ? value : "flashcard"
+  return value === "cloze" || value === "dictation"
+    ? value
+    : value === "translate" || value === "sentence" || value === "quick"
+      ? value
+      : "flashcard"
+}
+
+/** 造句模式：用户句子里是否包含目标表达（归一化后宽松包含判定）。 */
+export function sentenceContainsPhrase(sentence: string, phrase: string): boolean {
+  const target = normalizeExpressionText(phrase)
+  return target.length > 0 && normalizeExpressionText(sentence).includes(target)
 }
 
 export type Cloze = {

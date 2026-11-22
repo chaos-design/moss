@@ -4,12 +4,14 @@ import {
   BrainCircuitIcon,
   ChevronDownIcon,
   FolderPlusIcon,
+  LanguagesIcon,
   LayersIcon,
   PencilIcon,
   ShuffleIcon,
   SparklesIcon,
   StarIcon,
   Trash2Icon,
+  ZapIcon,
 } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
@@ -170,6 +172,33 @@ export function ExpressionStudyPanel({
                     <span>跟读听写</span>
                     <span className="text-[11px] font-normal text-muted-foreground">
                       听发音，复述录音比对
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => start({ kind: "filtered" }, "translate")}>
+                  <LanguagesIcon data-icon="inline-start" />
+                  <span className="grid gap-0.5">
+                    <span>译例句</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      读英文例句，回忆中文意思
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => start({ kind: "filtered" }, "sentence")}>
+                  <PencilIcon data-icon="inline-start" />
+                  <span className="grid gap-0.5">
+                    <span>造句</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      用表达造一句话，对照标准例句核对
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => start({ kind: "filtered" }, "quick")}>
+                  <ZapIcon data-icon="inline-start" />
+                  <span className="grid gap-0.5">
+                    <span>快速学习</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      点下一条，快速推进
                     </span>
                   </span>
                 </DropdownMenuItem>

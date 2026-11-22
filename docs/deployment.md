@@ -344,6 +344,15 @@ AI_ALLOWED_BROWSER_MODEL_HOSTS=models.example.com
 AI_EMBEDDING_MODEL=...
 ```
 
+可选：通过 `AI_MODEL_SERVICES` 配置多个服务端模型服务（JSON 数组，配置后优先于
+`AI_BASE_URL` 等旧变量），`AI_DEFAULT_MODEL_SERVICE` 按 name 选择默认服务（未设置或
+名字不存在时取第一个）：
+
+```bash
+AI_MODEL_SERVICES='[{"name":"primary","baseUrl":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-chat","apiType":"chat-completions"},{"name":"backup","baseUrl":"https://open.bigmodel.cn/api/paas/v4","apiKey":"...","model":"glm-4.5","apiType":"chat-completions"}]'
+AI_DEFAULT_MODEL_SERVICE=backup
+```
+
 `AI_API_TYPE` 支持 `chat-completions` 和 `anthropic-messages`；不配置时会根据
 `AI_BASE_URL` 自动推断 Anthropic 官方地址，其他地址默认使用 OpenAI 兼容协议。
 浏览器自带模型在生产环境按精确主机名白名单校验，默认已内置主流公共推理主机
@@ -569,7 +578,8 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 | `NEXT_PUBLIC_ASR_LOCAL_API_URL`、`NEXT_PUBLIC_ASR_LOCAL_API_MODEL`、`NEXT_PUBLIC_TTS_LOCAL_API_URL`、`NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | 构建期内联 | 使用本机 local 接口预设时可选，缺省回落到 `127.0.0.1:5583/v1` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_MODEL` | 构建期内联 | 仅旧部署兼容 |
 | `SUPABASE_SERVICE_ROLE_KEY`、`ACCOUNT_DELETION_AUDIT_SECRET` | 运行时服务端 | 账户删除与导出必需 |
-| `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` | 运行时服务端 | 非演示模式必需 |
+| `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` | 运行时服务端 | 非演示模式必需（已配置 `AI_MODEL_SERVICES` 时不再生效） |
+| `AI_MODEL_SERVICES`、`AI_DEFAULT_MODEL_SERVICE` | 运行时服务端 | 可选：多服务配置与默认服务选择 |
 | `AI_EMBEDDING_MODEL`、`AI_ALLOWED_BROWSER_MODEL_HOSTS` | 运行时服务端 | 可选 |
 | `AI_ALLOWED_BROWSER_SPEECH_HOSTS` | 运行时服务端 | 生产环境使用远程语音接口时必需 |
 | `MODEL_CONFIG_PRIVATE_KEY_BASE64` | 运行时服务端 | 生产多实例必需 |

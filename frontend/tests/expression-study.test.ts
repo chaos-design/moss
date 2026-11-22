@@ -7,6 +7,7 @@ import {
   parseExpressionStudyMode,
   parseExpressionStudyScope,
   resolveStudyItems,
+  sentenceContainsPhrase,
 } from "@/lib/expression-study"
 
 function item(
@@ -130,7 +131,20 @@ describe("expression study logic", () => {
       count: 10,
     })
     expect(parseExpressionStudyMode("cloze")).toBe("cloze")
+    expect(parseExpressionStudyMode("dictation")).toBe("dictation")
+    expect(parseExpressionStudyMode("translate")).toBe("translate")
+    expect(parseExpressionStudyMode("sentence")).toBe("sentence")
+    expect(parseExpressionStudyMode("quick")).toBe("quick")
     expect(parseExpressionStudyMode("bogus")).toBe("flashcard")
+  })
+
+  it("checks whether a learner sentence contains the target expression", () => {
+    expect(sentenceContainsPhrase("You can keep tabs on the delivery.", "keep tabs on")).toBe(
+      true,
+    )
+    expect(sentenceContainsPhrase("A rule of thumb is to be kind.", "rule of thumb")).toBe(true)
+    expect(sentenceContainsPhrase("I hate it.", "keep tabs on")).toBe(false)
+    expect(sentenceContainsPhrase("We can do it.", "")).toBe(false)
   })
 
   it("resolves favorites, groups and progress scopes by expression identity", () => {

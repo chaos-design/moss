@@ -138,4 +138,94 @@ describe("ExpressionStudyWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "检查答案" }))
     expect(screen.getByText("填对了")).toBeTruthy()
   })
+
+  it("translate mode reveals the Chinese translation and rates like flashcard", () => {
+    const onProgress = vi.fn()
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="translate"
+        onExit={vi.fn()}
+        onProgress={onProgress}
+      />,
+    )
+
+    expect(screen.getByText("rule of thumb")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "揭示翻译" }))
+    expect(screen.getByText("按经验法则，简短些。")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "掌握了" }))
+    expect(onProgress).toHaveBeenCalledWith(
+      "work:rule of thumb",
+      expect.objectContaining({ status: "mastered" }),
+    )
+  })
+
+  it("sentence mode lets the learner type a sentence and checks the reference", () => {
+    const onProgress = vi.fn()
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="sentence"
+        onExit={vi.fn()}
+        onProgress={onProgress}
+      />,
+    )
+
+    const input = screen.getByRole("textbox", { name: "造一句句子" })
+    fireEvent.change(input, { target: { value: "A rule of thumb is to keep it short." } })
+    fireEvent.click(screen.getByRole("button", { name: "造句" }))
+    expect(screen.getByText("你的句子")).toBeTruthy()
+    expect(screen.getByText("句子里含有目标表达。")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "掌握了" }))
+    expect(onProgress).toHaveBeenCalledWith(
+      "work:rule of thumb",
+      expect.objectContaining({ status: "mastered" }),
+    )
+  })
+
+  it("sentence mode re-edits after 再练一次", () => {
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="sentence"
+        onExit={vi.fn()}
+        onProgress={vi.fn()}
+      />,
+    )
+
+    fireEvent.change(screen.getByRole("textbox", { name: "造一句句子" }), {
+      target: { value: "A rule of thumb is to keep it short." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "造句" }))
+    fireEvent.click(screen.getByRole("button", { name: "再练一次" }))
+    expect(screen.getByRole("textbox", { name: "造一句句子" })).toBeTruthy()
+  })
+
+  it("quick mode advances to the next item without rating", () => {
+    const onProgress = vi.fn()
+    render(
+      <ExpressionStudyWorkspace
+        items={[item]}
+        scope={{ kind: "filtered" }}
+        study={createEmptyExpressionStudyState()}
+        initialMode="quick"
+        onExit={vi.fn()}
+        onProgress={onProgress}
+      />,
+    )
+
+    expect(screen.getByText("rule of thumb")).toBeTruthy()
+    fireEvent.keyDown(window, { key: " " })
+    expect(onProgress).toHaveBeenCalledWith(
+      "work:rule of thumb",
+      expect.objectContaining({ status: "learning", incrementReviews: true }),
+    )
+    expect(screen.getByText("这一组学完了")).toBeTruthy()
+  })
 })
