@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils"
 /**
  * 例句正文：把目标表达标出来，其余文字保持原样。
  *
- * 高亮使用 `mark` 的语义，但以主题蓝色加粗呈现，不用浏览器默认的黄底，避免深色主题刺眼。
+ * 参考样式：目标表达用主题蓝色加粗，并衬一层很淡的蓝色圆角底（`chart-4` 的 15% 透明度），
+ * 让它在句子里一眼可辨；不用浏览器默认的黄底，浅色/深色主题都不刺眼。
  */
 export function ExpressionText({
   text,
@@ -22,7 +23,7 @@ export function ExpressionText({
         segment.highlighted ? (
           <mark
             key={`${index}-${segment.text}`}
-            className="bg-transparent px-0 font-bold text-chart-4"
+            className="rounded-sm bg-chart-4/15 px-0.5 font-bold text-chart-4"
           >
             {segment.text}
           </mark>
