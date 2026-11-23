@@ -377,6 +377,8 @@ Next.js 服务的内网出口。
 
 三个服务端变量共同构成浏览器自带模型的安全边界与账户删除审计：`AI_ALLOWED_BROWSER_MODEL_HOSTS`（生产 BYOK 主机白名单）、`MODEL_CONFIG_PRIVATE_KEY_BASE64`（BYOK 信封解密私钥）、`ACCOUNT_DELETION_AUDIT_SECRET`（删除审计指纹盐）。以下为每个变量的含义、格式、生成与轮换方法。
 
+**配置来源优先级**：推理配置默认取服务端 `AI_*` 环境变量（`AI_MODEL_SERVICES` / `AI_DEFAULT_MODEL_SERVICE` 优先，其次 `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL_NAME`）；只有服务端未配置时才回退到浏览器 BYOK 信封。鉴权与限流按实际使用的来源判定：服务端配置生效时，即使请求附带 BYOK 信封也仍需登录与共享限流。
+
 #### AI_ALLOWED_BROWSER_MODEL_HOSTS
 
 **作用**：浏览器自带模型请求在生产环境（`NODE_ENV=production`）强制校验 baseUrl 的主机名，只有出现在该白名单中的主机才被接受。代码默认内置主流公共推理主机（见下方参考表中标注『默认已允许』的行）；默认之外的供应商才需要配置本变量。本地开发与 Vercel Preview 不启用该限制（`NODE_ENV !== "production"` 直接放行合规 https 地址），因此**漏配通常只在生产暴露**：解密成功但主机不在白名单时返回 `400 invalid_model_config`。

@@ -1,4 +1,4 @@
-import type { AiProviderConfig } from "@/lib/ai-provider"
+import { type AiProviderConfig, getAiProviderConfig } from "@/lib/ai-provider"
 import { isValidModelEndpoint } from "@/lib/model-config"
 import type { ModelConfigEnvelope } from "@/lib/model-config-envelope"
 
@@ -113,5 +113,24 @@ export function toProviderConfig(modelConfig: BrowserModelConfig): AiProviderCon
     baseUrl: modelConfig.baseUrl,
     model: modelConfig.model,
     apiType: modelConfig.apiType,
+  }
+}
+
+/**
+ * 推理配置的唯一解析入口：服务端 AI_* 环境变量是默认来源，浏览器 BYOK 配置只在服务端
+ * 未配置时回退。`usingClientConfig` 表示实际使用的来源，供鉴权与限流判定，避免客户端带了
+ * 配置就绕过门槛、实际却仍走服务端配置。
+ */
+export function resolveProviderConfig(clientModelConfig?: BrowserModelConfig): {
+  providerConfig: AiProviderConfig | null
+  usingClientConfig: boolean
+} {
+  const serverConfig = getAiProviderConfig()
+  if (serverConfig) {
+    return { providerConfig: serverConfig, usingClientConfig: false }
+  }
+  return {
+    providerConfig: clientModelConfig ? toProviderConfig(clientModelConfig) : null,
+    usingClientConfig: Boolean(clientModelConfig),
   }
 }

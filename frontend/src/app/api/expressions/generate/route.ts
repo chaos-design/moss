@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { AiProviderStatusError, getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
+import { AiProviderStatusError, requestAiText } from "@/lib/ai-provider"
 import {
   createExpressionGenerationMessages,
   expressionGenerationPhraseLimit,
@@ -17,7 +17,7 @@ import {
   type BrowserModelConfig,
   isValidBrowserModelConfig,
   isValidModelConfigEnvelope,
-  toProviderConfig,
+  resolveProviderConfig,
 } from "@/lib/server/browser-model-config"
 import { isRateLimited } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
@@ -136,23 +136,27 @@ export async function POST(request: Request) {
     }
     clientModelConfig = decrypted
   }
+  const { providerConfig, usingClientConfig } = resolveProviderConfig(clientModelConfig)
 
   const supabase = await getSupabaseServerClient()
-  if (!supabase && !clientModelConfig) {
+  if (!supabase && !usingClientConfig) {
     return NextResponse.json(
       { error: { code: "service_not_configured", message: "服务端认证尚未配置。" } },
       { status: 503 },
     )
   }
   const sessionUser = supabase ? await resolveSessionUser(supabase) : null
-  if (!sessionUser && !clientModelConfig) {
+  if (!sessionUser && !usingClientConfig) {
     return NextResponse.json(
       { error: { code: "unauthorized", message: "请先登录后再生成表达数据。" } },
       { status: 401 },
     )
   }
 
-  const clientKey = sessionUser?.id ?? clientModelConfig?.baseUrl ?? "anonymous"
+  const clientKey =
+    sessionUser?.id ??
+    (usingClientConfig ? clientModelConfig?.baseUrl : undefined) ??
+    "anonymous"
   if (
     isRateLimited({
       key: `expression-generate:${clientKey}`,
@@ -166,9 +170,6 @@ export async function POST(request: Request) {
     )
   }
 
-  const providerConfig = clientModelConfig
-    ? toProviderConfig(clientModelConfig)
-    : getAiProviderConfig()
   if (!providerConfig) {
     return NextResponse.json(
       { error: { code: "service_not_configured", message: "AI 服务尚未配置。" } },

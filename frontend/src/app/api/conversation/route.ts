@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server"
-import {
-  type AiProviderConfig,
-  AiProviderStatusError,
-  getAiProviderConfig,
-  requestAiText,
-} from "@/lib/ai-provider"
+import { type AiProviderConfig, AiProviderStatusError, requestAiText } from "@/lib/ai-provider"
 import {
   applyTutorModeToConversation,
   type ConversationResponseData,
@@ -35,6 +30,7 @@ import {
   type BrowserModelConfig,
   isValidBrowserModelConfig,
   isValidModelConfigEnvelope,
+  resolveProviderConfig,
   toProviderConfig,
 } from "@/lib/server/browser-model-config"
 import { consumeSharedRateLimit, isRateLimited } from "@/lib/server/rate-limit"
@@ -374,7 +370,7 @@ export async function POST(request: Request) {
     }
     clientModelConfig = decrypted
   }
-  const usingClientConfig = Boolean(clientModelConfig)
+  const { providerConfig, usingClientConfig } = resolveProviderConfig(clientModelConfig)
 
   let clientKey = "demo"
   let userId = ""
@@ -477,9 +473,6 @@ export async function POST(request: Request) {
     })
   }
 
-  const providerConfig = clientModelConfig
-    ? toProviderConfig(clientModelConfig)
-    : getAiProviderConfig()
   if (!providerConfig) {
     return NextResponse.json(
       {

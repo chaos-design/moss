@@ -939,6 +939,92 @@ describe("POST /api/conversation authentication", () => {
     expect(providerRequest.model).toBe("byo-model")
   })
 
+  it("uses the server provider even when the client sends a BYOK config", async () => {
+    vi.stubEnv("AI_API_KEY", "server-secret")
+    vi.stubEnv("AI_BASE_URL", "https://server.example.com/v1")
+    vi.stubEnv("AI_MODEL_NAME", "server-model")
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  reply: "Sure. What size would you like?",
+                  translation: "好的。要多大杯？",
+                  validation: {
+                    status: "accurate",
+                    corrected: "A latte, please.",
+                    explanation: "表达自然。",
+                  },
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(
+      new Request("https://moss.local/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: "coffee",
+          language: "auto",
+          messages: [{ role: "user", content: "A latte, please." }],
+          modelConfigEnvelope: await encryptModelConfig({
+            apiKey: "browser-secret",
+            baseUrl: "https://byo.example.com/v1",
+            model: "byo-model",
+            apiType: "chat-completions",
+          }),
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://server.example.com/v1/chat/completions",
+      expect.anything(),
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: "Bearer server-secret",
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).model).toBe("server-model")
+  })
+
+  it("does not bypass auth with a BYOK config while the server config is active", async () => {
+    vi.stubEnv("AI_API_KEY", "server-secret")
+    vi.stubEnv("AI_BASE_URL", "https://server.example.com/v1")
+    vi.stubEnv("AI_MODEL_NAME", "server-model")
+    getSupabaseServerClient.mockResolvedValue(null)
+
+    const response = await POST(
+      new Request("https://moss.local/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: "coffee",
+          language: "auto",
+          messages: [{ role: "user", content: "A latte, please." }],
+          modelConfigEnvelope: await encryptModelConfig({
+            apiKey: "browser-secret",
+            baseUrl: "https://byo.example.com/v1",
+            model: "byo-model",
+            apiType: "chat-completions",
+          }),
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: "service_not_configured" } })
+  })
+
   it("keeps authenticated BYOK available when the shared limiter is unavailable", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: null,

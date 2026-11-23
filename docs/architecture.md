@@ -281,7 +281,8 @@ flowchart LR
 - 账户导出使用当前用户 session 与 RLS；账户删除的 Admin API 仅在邮箱二次确认后调用，
   删除后必须逐表验证残留。service-role key 和审计 HMAC 密钥只存在服务端。
 - 浏览器可保存多个模型配置，但仅当前启用项使用 RSA-OAEP + AES-256-GCM 信封传输；
-  服务端只在当前请求内解密。
+  服务端只在当前请求内解密。推理配置由 `resolveProviderConfig` 单点解析：服务端 `AI_*`
+  环境变量优先，浏览器 BYOK 信封只在服务端未配置时回退；鉴权与限流按实际使用的来源判定。
 - 推理 URL 只允许公网 HTTPS，开发环境额外允许 loopback；生产环境的浏览器自带模型主机
   受显式白名单约束，且 Provider 请求不跟随重定向。
 - `/api/speech/asr` 与 `/api/speech/tts` 沿用同一端点策略，生产环境额外受
@@ -297,7 +298,8 @@ flowchart LR
   `/v1/audio/speech/test` 只回传诊断，不回传音频本体。
 - 认证 API 通过 Supabase `check_rate_limit` 按 `auth.uid()` 和固定 bucket 执行跨实例原子
   限流；额度与窗口由数据库决定，底层表不授予应用用户权限。RPC 不可用时，公共服务端
-  模型请求拒绝继续；演示模式与携带加密 BYOK 配置的推理请求使用容量有界的进程内限流。
+  模型请求拒绝继续；演示模式与真正使用加密 BYOK 配置的推理请求（即服务端 `AI_*` 未配置时）
+  使用容量有界的进程内限流。
 - Provider 原始错误只用于服务端诊断，不返回客户端。
 - ASR/TTS 默认绑定 loopback，并限制 Origin、连接数、消息大小或文本长度。
 

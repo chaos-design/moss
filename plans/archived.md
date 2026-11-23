@@ -43,6 +43,11 @@
   单独复跑也通过，默认 10s 下的「文件上传」用例仍偶发超时并污染后续用例，属已知环境问题），
   `pnpm lint`（仅 2 条既有 warning）、`pnpm typecheck`、`pnpm build` 通过；弹窗限高与批量区
   在 390px 的实际观感待人工核对。
+- T-346（P1）：推理配置默认取服务端 `AI_*` 环境变量，浏览器 BYOK 信封只在服务端未配置时
+  回退；`resolveProviderConfig`（`lib/server/browser-model-config.ts`）单点解析并给出
+  `usingClientConfig`，对话/翻译/表达生成三路由的鉴权与限流据此判定，避免客户端带信封绕过
+  门槛却仍走服务端配置。新增 5 条用例（配置优先级/回退/空配置 + 路由级来源断言与鉴权不绕过），
+  api/architecture/deployment/detailed-design 同步；验证见下方测试报告。
 
 ## 语音系统
 

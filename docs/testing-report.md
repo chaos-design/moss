@@ -1325,3 +1325,20 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
 - 环境说明：默认 10s 超时下 `expression-library-workspace` 的「文件上传」用例仍偶发超时，
   并会让紧随其后的用例因残留 modal 出现级联失败；两个新增组件用例单独复跑均通过，与实现无关。
 - 视觉验证：推荐弹窗限高与批量导入区的桌面/390px 实际观感未在本环境用浏览器人工核对。
+
+## 2026-11-23 服务端 AI 配置优先于浏览器 BYOK
+
+- `lib/server/browser-model-config.ts` 新增 `resolveProviderConfig`：服务端 `AI_*`（`AI_MODEL_SERVICES`
+  / `AI_DEFAULT_MODEL_SERVICE` 优先，其次 `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL_NAME`）为默认来源；
+  只有服务端未配置时才回退到浏览器加密信封。返回值同时给出 `usingClientConfig` 表示实际使用的来源。
+- `/api/conversation`、`/api/translation`、`/api/expressions/generate` 统一改用该解析器，
+  鉴权门槛（无 Supabase / 未登录）与共享限流不可用时的放行条件都基于实际来源；服务端配置生效时，
+  即使请求附带 BYOK 信封也仍需登录与共享限流，消除「带信封绕过门槛却走服务端配置」的漏洞。
+  对话的 BYOK 验证端点仍只验证客户端送来的配置，不受此优先级影响。
+- 自动化验证（2026-11-23，本机）：新增 `browser-model-config.test.ts` 3 例（环境变量优先、
+  无服务端配置时回退、两者都空）、`conversation-route.test.ts` 2 例（服务端配置存在时实际请求走
+  服务端 URL/密钥/模型；服务端配置存在时带信封仍需登录，返回 503）；前端全量 107 文件 / 894 用例
+  在 `--testTimeout=60000` 下全绿（Vitest worker 报 1 条 `onTaskUpdate` 超时，属本机负载下的
+  进程间通信问题，非用例失败），`pnpm typecheck`/`pnpm lint`（2 条既有 warning）/`pnpm build` 通过。
+- 文档：`docs/api.md`（对话、表达生成、限流回退）、`docs/architecture.md`、
+  `docs/deployment.md` BYOK 章节、`docs/detailed-design.md` 同步配置来源优先级。

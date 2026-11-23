@@ -518,10 +518,11 @@ final 文本也在服务端发送前移除 emoji。
 一起直接展示。完整流程与字段定义见
 [`bilingual-conversation-design.md`](bilingual-conversation-design.md)。
 
-附带有效 `modelConfigEnvelope` 的自带密钥请求无需登录即可推理。未附带时，正常模式要求有效
-的 Supabase 用户 session。只有显式设置 `NEXT_PUBLIC_DEMO_MODE=true` 时接口才返回
-`source: "demo"`，且演示模式不会调用外部 AI provider。旧变量 `AI_MODEL` 仍可作为模型名称
-的兼容配置。
+推理配置优先取服务端 `AI_*` 环境变量；仅当服务端未配置时，`modelConfigEnvelope` 中的自带密钥
+才会生效，此时无需登录即可推理。服务端配置已存在时，携带自带密钥仍要求有效的 Supabase 用户
+session，鉴权与限流按实际使用的配置来源判定。只有显式设置 `NEXT_PUBLIC_DEMO_MODE=true` 时接口
+才返回 `source: "demo"`，且演示模式不会调用外部 AI provider。旧变量 `AI_MODEL` 仍可作为模型
+名称的兼容配置。
 
 ### 错误
 
@@ -684,8 +685,8 @@ toast、对话记录和本机存储，规则如下：
 ## `/api/expressions/generate`
 
 `POST` 请求体为 `{ "phrases": ["keep an eye on"], "modelConfigEnvelope"? }`，一次最多
-10 个短语，每个不超过 120 字符。认证请求复用 Supabase session；携带加密浏览器模型配置时
-可直接调用自带模型，明文配置会被拒绝。服务端要求模型只返回 JSON 数组，并按导入契约校验
+10 个短语，每个不超过 120 字符。认证请求复用 Supabase session；仅当服务端 `AI_*` 未配置时，
+携带加密浏览器模型配置才可直接调用自带模型，明文配置会被拒绝。服务端要求模型只返回 JSON 数组，并按导入契约校验
 每条记录，失败时不把 Provider 错误透出客户端。
 
 成功响应：
@@ -840,8 +841,8 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
 
 函数使用 `auth.uid()` 作为所有者，通过原子 upsert 更新 `rate_limit_buckets`。
 `anon` 无执行权限，认证用户不能直接读取或修改底层表。RPC 调用失败时 HTTP API 返回
-`503 rate_limit_unavailable`；携带有效加密 BYOK 配置的推理和翻译请求可回退到容量
-有界的单实例计数。
+`503 rate_limit_unavailable`；仅在服务端 `AI_*` 未配置且携带有效加密 BYOK 配置时，
+推理和翻译请求才回退到容量有界的单实例计数。
 
 跟读完成后先将声学评分写入本地学习记忆，再由快照同步。登录用户同时向
 `shadowing_attempts` 写入清晰度、连贯度、节奏、综合分和录音时长；`audio_path` 保持为空，
