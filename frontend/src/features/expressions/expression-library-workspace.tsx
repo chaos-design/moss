@@ -62,7 +62,10 @@ import { ExpressionStudyPanel } from "@/features/expressions/expression-study-pa
 import { useExpressionLibrarySource } from "@/features/expressions/use-expression-library-source"
 import { getLocalOnlySuffix } from "@/lib/auth-status"
 import type { SceneCategory } from "@/lib/demo-data"
-import type { ExpressionImportResult } from "@/lib/expression-import"
+import {
+  type ExpressionImportResult,
+  indexExistingExpressionsByPhrase,
+} from "@/lib/expression-import"
 import {
   createExpressionIdentity,
   type ExpressionLibraryItem,
@@ -165,10 +168,7 @@ export function ExpressionLibraryWorkspace() {
     setVisibleCount(initialVisibleCount)
   }, [hydrated, state.expressionStudy.filters.value])
 
-  const existingIdentities = useMemo(
-    () => new Set(allItems.map((item) => createExpressionIdentity(item))),
-    [allItems],
-  )
+  const existingByPhrase = useMemo(() => indexExistingExpressionsByPhrase(allItems), [allItems])
   const visibleItems = useMemo(
     () => filteredItems.slice(0, visibleCount),
     [filteredItems, visibleCount],
@@ -518,7 +518,7 @@ export function ExpressionLibraryWorkspace() {
           <ExpressionImportDialog
             cloudAvailable={cloudAvailable}
             loadingCloud={loadingCloud}
-            existingIdentities={existingIdentities}
+            existingByPhrase={existingByPhrase}
             onImport={handleImport}
           />
         </div>

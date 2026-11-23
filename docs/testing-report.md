@@ -1306,10 +1306,11 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
 
 ## 2026-11-23 导入重复提示、分组批量导入、推荐弹窗限高与学习路径图
 
-- 导入：新增 `countExistingExpressionDuplicates` / `applyExpressionImportDuplicateStrategy`（`lib/expression-import.ts`），
-  弹窗按「场景 + 表达」身份检测与已有词库冲突，给出「跳过重复（默认）/覆盖已有」显式选择；
-  全部重复时提交按钮禁用并标注「全部重复，跳过导入」。「跳过」在入库前过滤冲突条目，
-  「覆盖」保留整批交给云端 upsert（新 `updatedAt` 在合并时胜出）。
+- 导入：新增 `indexExistingExpressionsByPhrase` / `countExistingExpressionDuplicates` /
+  `applyExpressionImportDuplicateStrategy`（`lib/expression-import.ts`），判重口径为归一化表达文本，
+  同一个词跨场景也算相同；弹窗给出「跳过重复（默认）/覆盖已有」显式选择，全部重复时提交按钮禁用并
+  标注「全部重复，跳过导入」。批内去重同样按表达文本。「跳过」在入库前过滤同词条目；「覆盖」把
+  场景对齐到词库中已有的同词条目，使本地按身份合并只显示一条、云端 upsert 也落在同一条记录上。
 - 分组：新增 `parseExpressionPhraseBatch` / `resolvePhrasesToIdentities`（`lib/expression-library-schema.ts`），
   管理分组弹窗新增「批量导入表达到分组」：按词库身份解析粘贴的短语，一次 memory 写入，
   同名分组复用已有 id，未匹配短语单独提示；解析与分组构建都是 Set 去重，不设业务上限。

@@ -1,6 +1,5 @@
 import type { ParseError } from "papaparse"
 import {
-  createExpressionIdentity,
   createImportedExpressionItem,
   type ExpressionImportItem,
   type ExpressionKind,
@@ -8,6 +7,7 @@ import {
   expressionKindLabels,
   expressionSceneCategories,
   normalizeExpressionExamples,
+  normalizeExpressionPhrase,
 } from "@/lib/expression-library-schema"
 
 export type ExpressionImportIssue = {
@@ -24,37 +24,58 @@ export type ExpressionImportResult = {
 /** 与词库已有表达冲突时的处理方式：默认跳过，由学习者显式选择才覆盖。 */
 export type ExpressionImportDuplicateStrategy = "skip" | "overwrite"
 
-/** 与词库已有表达冲突的条目数（按「场景 + 表达」身份判定，与入库去重口径一致）。 */
+/**
+ * 按归一化表达文本建立词库索引：同一个词无论出现在哪个场景都算同一个条目。
+ * 同名时优先保留导入条目，覆盖时可把新数据对齐到数据库里真实存在的那条记录。
+ */
+export function indexExistingExpressionsByPhrase(
+  items: readonly ExpressionLibraryItem[],
+): Map<string, ExpressionLibraryItem> {
+  const byPhrase = new Map<string, ExpressionLibraryItem>()
+  for (const item of items) {
+    const phrase = normalizeExpressionPhrase(item.phrase)
+    const current = byPhrase.get(phrase)
+    if (!current || (item.source === "imported" && current.source !== "imported")) {
+      byPhrase.set(phrase, item)
+    }
+  }
+  return byPhrase
+}
+
+/** 与词库已有的同一个词冲突的条目数（跨场景同样算冲突）。 */
 export function countExistingExpressionDuplicates(
   result: ExpressionImportResult,
-  existingIdentities: ReadonlySet<string>,
+  existing: ReadonlyMap<string, ExpressionLibraryItem>,
 ) {
-  if (existingIdentities.size === 0) {
-    return 0
-  }
   return result.items.reduce(
-    (count, item) => count + (existingIdentities.has(createExpressionIdentity(item)) ? 1 : 0),
+    (count, item) => count + (existing.has(normalizeExpressionPhrase(item.phrase)) ? 1 : 0),
     0,
   )
 }
 
 /**
- * 「覆盖」保留整批交给云端 upsert（新条目 `updatedAt` 更新，合并时自然胜出）；
- * 「跳过」在入库前把冲突条目挡掉，让词库里已有的条目保持原样。
+ * 「跳过」在入库前把同词条目挡掉，让词库里已有的表达保持原样；
+ * 「覆盖」把场景对齐到已有条目，使本地按身份合并只显示一条，云端 upsert 也落在同一条记录上。
  */
 export function applyExpressionImportDuplicateStrategy(
   result: ExpressionImportResult,
-  existingIdentities: ReadonlySet<string>,
+  existing: ReadonlyMap<string, ExpressionLibraryItem>,
   strategy: ExpressionImportDuplicateStrategy,
 ): ExpressionImportResult {
-  if (strategy === "overwrite" || existingIdentities.size === 0) {
-    return result
+  if (strategy === "skip") {
+    return {
+      ...result,
+      items: result.items.filter(
+        (item) => !existing.has(normalizeExpressionPhrase(item.phrase)),
+      ),
+    }
   }
   return {
     ...result,
-    items: result.items.filter(
-      (item) => !existingIdentities.has(createExpressionIdentity(item)),
-    ),
+    items: result.items.map((item) => {
+      const match = existing.get(normalizeExpressionPhrase(item.phrase))
+      return match ? { ...item, sceneCategory: match.sceneCategory } : item
+    }),
   }
 }
 
@@ -267,18 +288,18 @@ export function parseExpressionImportRows(
 ): ExpressionImportResult {
   const items: ExpressionLibraryItem[] = []
   const issues: ExpressionImportIssue[] = []
-  const identities = new Set<string>()
+  const phrases = new Set<string>()
   let duplicateCount = 0
 
   for (const [index, row] of rows.entries()) {
     try {
       const item = parseRecord(row)
-      const identity = createExpressionIdentity(item)
-      if (identities.has(identity)) {
+      const phrase = normalizeExpressionPhrase(item.phrase)
+      if (phrases.has(phrase)) {
         duplicateCount += 1
         continue
       }
-      identities.add(identity)
+      phrases.add(phrase)
       items.push(item)
     } catch (error) {
       issues.push({

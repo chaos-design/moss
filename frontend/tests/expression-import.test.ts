@@ -3,6 +3,7 @@ import {
   applyExpressionImportDuplicateStrategy,
   countExistingExpressionDuplicates,
   createExpressionImportTemplate,
+  indexExistingExpressionsByPhrase,
   parseExpressionImport,
   parseExpressionJsonImport,
 } from "@/lib/expression-import"
@@ -19,9 +20,9 @@ const validExpression = {
 }
 
 describe("expression import", () => {
-  it("parses JSON arrays and removes same-scene duplicates", async () => {
+  it("removes duplicate expressions by phrase even across scenes", async () => {
     const result = await parseExpressionImport(
-      JSON.stringify([validExpression, validExpression]),
+      JSON.stringify([validExpression, { ...validExpression, sceneCategory: "health" }]),
       "expressions.json",
     )
 
@@ -119,18 +120,26 @@ describe("expression import", () => {
     expect(result.items[0]?.examples).toHaveLength(1)
   })
 
-  it("counts duplicates against the existing library and skips them unless overwrite is chosen", () => {
+  it("treats the same phrase in another scene as a duplicate and aligns the scene on overwrite", () => {
     const result = parseExpressionJsonImport(JSON.stringify([validExpression]))
-    const existing = new Set(["social:keep an eye on"])
-
-    expect(countExistingExpressionDuplicates(result, existing)).toBe(1)
-    expect(countExistingExpressionDuplicates(result, new Set())).toBe(0)
-    expect(applyExpressionImportDuplicateStrategy(result, existing, "skip").items).toHaveLength(
-      0,
+    const existingHealth = indexExistingExpressionsByPhrase(
+      parseExpressionJsonImport(
+        JSON.stringify([{ ...validExpression, sceneCategory: "health" }]),
+      ).items,
     )
+
+    expect(countExistingExpressionDuplicates(result, existingHealth)).toBe(1)
+    expect(countExistingExpressionDuplicates(result, new Map())).toBe(0)
     expect(
-      applyExpressionImportDuplicateStrategy(result, existing, "overwrite").items,
-    ).toHaveLength(1)
+      applyExpressionImportDuplicateStrategy(result, existingHealth, "skip").items,
+    ).toHaveLength(0)
+    const overwritten = applyExpressionImportDuplicateStrategy(
+      result,
+      existingHealth,
+      "overwrite",
+    ).items
+    expect(overwritten).toHaveLength(1)
+    expect(overwritten[0]?.sceneCategory).toBe("health")
   })
 
   it("accepts expression rows from a Moss account export", async () => {

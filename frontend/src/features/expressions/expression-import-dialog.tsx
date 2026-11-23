@@ -40,6 +40,7 @@ import {
   parseExpressionImport,
   parseExpressionJsonImport,
 } from "@/lib/expression-import"
+import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 
 type ImportMode = "json" | "file" | "ai"
 
@@ -100,12 +101,12 @@ function downloadImportTemplate() {
 export function ExpressionImportDialog({
   cloudAvailable,
   loadingCloud,
-  existingIdentities,
+  existingByPhrase,
   onImport,
 }: {
   cloudAvailable: boolean
   loadingCloud: boolean
-  existingIdentities: ReadonlySet<string>
+  existingByPhrase: ReadonlyMap<string, ExpressionLibraryItem>
   onImport: (result: ExpressionImportResult) => Promise<boolean>
 }) {
   const [open, setOpen] = useState(false)
@@ -149,18 +150,18 @@ export function ExpressionImportDialog({
         : null
   const activePending = mode === "json" && jsonPending
   const existingDuplicateCount = activeResult
-    ? countExistingExpressionDuplicates(activeResult, existingIdentities)
+    ? countExistingExpressionDuplicates(activeResult, existingByPhrase)
     : 0
   const finalItems = useMemo(
     () =>
       activeResult
         ? applyExpressionImportDuplicateStrategy(
             activeResult,
-            existingIdentities,
+            existingByPhrase,
             duplicateStrategy,
           ).items
         : [],
-    [activeResult, duplicateStrategy, existingIdentities],
+    [activeResult, duplicateStrategy, existingByPhrase],
   )
   const validCount = finalItems.length
 
@@ -517,7 +518,7 @@ function DuplicateStrategyPrompt({
       aria-label="重复表达处理"
     >
       <p className="font-medium text-foreground">
-        检测到 {count} 条与词库已有表达相同（同一场景 + 表达）。
+        检测到 {count} 条与词库已有表达相同（同一个词，跨场景也算）。
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button
@@ -540,8 +541,8 @@ function DuplicateStrategyPrompt({
         </Button>
         <span className="text-muted-foreground">
           {strategy === "skip"
-            ? `重复条目保持原样，本次将导入 ${finalCount} 条。`
-            : `用新数据覆盖这 ${count} 条，本次将导入 ${finalCount} 条。`}
+            ? `已有表达保持原样，本次将导入 ${finalCount} 条。`
+            : `用新数据替换同词条目并对齐其场景，本次将导入 ${finalCount} 条。`}
         </span>
       </div>
     </section>

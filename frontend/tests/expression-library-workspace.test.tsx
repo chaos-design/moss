@@ -28,11 +28,11 @@ const importedExpression = {
 } as const
 const validImportContent = JSON.stringify([
   {
-    phrase: "keep an eye on",
-    meaning: "留意；照看",
-    why: "eye 代表观察，keep 表示持续维持注意。",
-    origin: "由视觉动作形成的常用表达。",
-    example: "Could you keep an eye on my bag?",
+    phrase: "moss import fixture phrase",
+    meaning: "用于测试导入的含义",
+    why: "用于测试导入的解释。",
+    origin: "由测试代码构造。",
+    example: "This is a moss import fixture phrase.",
     sceneCategory: "social",
     context: "通用",
     kind: "idiom",
@@ -335,7 +335,7 @@ describe("ExpressionLibraryWorkspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "导入" }))
     fireEvent.click(screen.getByRole("tab", { name: /AI 生成/ }))
     fireEvent.change(screen.getByRole("textbox", { name: "英文短语" }), {
-      target: { value: "keep an eye on" },
+      target: { value: "moss import fixture phrase" },
     })
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "生成导入数据" }))
@@ -665,7 +665,12 @@ describe("ExpressionLibraryWorkspace", () => {
     render(<ExpressionLibraryWorkspace />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
 
-    const duplicate = { ...JSON.parse(validImportContent)[0], sceneCategory: "health" }
+    // 词库内置的 keep an eye on 在 health 场景；这里用 social 导入，验证跨场景同词也算重复。
+    const duplicate = {
+      ...JSON.parse(validImportContent)[0],
+      phrase: "keep an eye on",
+      sceneCategory: "social",
+    }
     fireEvent.click(await screen.findByRole("button", { name: "导入" }))
     fireEvent.change(screen.getByRole("textbox", { name: "JSON 数据" }), {
       target: { value: JSON.stringify([duplicate]) },
@@ -690,6 +695,7 @@ describe("ExpressionLibraryWorkspace", () => {
     }
     const body = JSON.parse((importCall[1] as RequestInit).body as string)
     expect(body.items).toHaveLength(1)
+    expect(body.items[0].sceneCategory).toBe("health")
   })
 
   it("batch adds pasted phrases to a study group in one memory write", async () => {
