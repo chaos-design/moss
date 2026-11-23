@@ -165,6 +165,10 @@ export function ExpressionLibraryWorkspace() {
     setVisibleCount(initialVisibleCount)
   }, [hydrated, state.expressionStudy.filters.value])
 
+  const existingIdentities = useMemo(
+    () => new Set(allItems.map((item) => createExpressionIdentity(item))),
+    [allItems],
+  )
   const visibleItems = useMemo(
     () => filteredItems.slice(0, visibleCount),
     [filteredItems, visibleCount],
@@ -514,6 +518,7 @@ export function ExpressionLibraryWorkspace() {
           <ExpressionImportDialog
             cloudAvailable={cloudAvailable}
             loadingCloud={loadingCloud}
+            existingIdentities={existingIdentities}
             onImport={handleImport}
           />
         </div>
@@ -523,6 +528,7 @@ export function ExpressionLibraryWorkspace() {
         study={expressionStudy}
         onStart={startStudy}
         onCreateGroup={createGroup}
+        onAddGroupItems={addGroupItems}
         onRenameGroup={renameGroup}
         onDeleteGroup={deleteGroup}
         items={allItems}

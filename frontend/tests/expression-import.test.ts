@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
+  applyExpressionImportDuplicateStrategy,
+  countExistingExpressionDuplicates,
   createExpressionImportTemplate,
   parseExpressionImport,
   parseExpressionJsonImport,
@@ -115,6 +117,20 @@ describe("expression import", () => {
       memoryTip: expect.any(String),
     })
     expect(result.items[0]?.examples).toHaveLength(1)
+  })
+
+  it("counts duplicates against the existing library and skips them unless overwrite is chosen", () => {
+    const result = parseExpressionJsonImport(JSON.stringify([validExpression]))
+    const existing = new Set(["social:keep an eye on"])
+
+    expect(countExistingExpressionDuplicates(result, existing)).toBe(1)
+    expect(countExistingExpressionDuplicates(result, new Set())).toBe(0)
+    expect(applyExpressionImportDuplicateStrategy(result, existing, "skip").items).toHaveLength(
+      0,
+    )
+    expect(
+      applyExpressionImportDuplicateStrategy(result, existing, "overwrite").items,
+    ).toHaveLength(1)
   })
 
   it("accepts expression rows from a Moss account export", async () => {

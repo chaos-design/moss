@@ -203,6 +203,64 @@ Moss 的核心不是提供更多练习入口，而是让用户把学过的表达
 `reviews` 在跨设备合并时取两侧最大值，避免重试重复计数；收藏与分组删除写墓碑，保证取消收藏
 能传播到其他设备。
 
+### 4.5 从选词到学习模式的路径
+
+词库到学习页的路径固定为「选词 →选模式 →推进与自评 →记账与去向」四步，避免把范围、玩法和
+数据去向混在同一层菜单里。下图是唯一权威流程；菜单文案只是它的入口标签。
+
+```mermaid
+flowchart TD
+    A[词库研选表达] --> B{如何选词}
+    B -->|当前筛选结果| C[filtered]
+    B -->|我的收藏| D[favorites]
+    B -->|学习分组或推荐分组| E[group]
+    B -->|按进度复习| F[review]
+    B -->|随机抽 10 条| G[random]
+    B -->|艾宾浩斯循环| H[ebbinghaus]
+
+    C --> I{选学习模式}
+    D --> I
+    E --> I
+    F --> I
+    G --> I
+    I -->|闪卡自测| J[flashcard]
+    I -->|例句填空| K[cloze]
+    I -->|跟读听写| L[dictation]
+    I -->|译例句| M[translate]
+    I -->|造句| N[sentence]
+    I -->|快速学习| O[quick]
+
+    H --> P[学习 → 复习 → 再记忆]
+    J --> Q[逐条推进并自评]
+    K --> Q
+    L --> Q
+    M --> Q
+    N --> Q
+    O --> Q
+    P --> Q
+    Q --> R[写 progress 与长期记忆]
+    R --> S{是否到期}
+    S -->|是| T[智能复习页间隔找回]
+    S -->|否| U[留在记忆中等待到期]
+
+    classDef pick fill:#E8F3F1,stroke:#258A72,color:#123F35;
+    classDef mode fill:#EEF2FF,stroke:#5267B2,color:#202A55;
+    classDef result fill:#FFF3E8,stroke:#C65D3B,color:#3A2118;
+    class A,B,C,D,E,F,G,H pick;
+    class I,J,K,L,M,N,O,P mode;
+    class Q,R,S,T,U result;
+```
+
+约束：
+
+- 选词范围经 URL 的 `scope`（及其 `groupId`/`status`/`count`）传给独立学习页；筛选条件只留在
+  学习记忆快照里，由词库页与学习页共用 `useExpressionLibrarySource` 读取。
+- 艾宾浩斯是范围而非玩法：它自带「学习 → 复习 → 再记忆」三段，固定以闪卡模式进入，不重复出现在
+  模式选择里。
+- 自评只来自四档评分；快速学习推进记为「再练」，反复翻开或重试不额外改变强度与计数。
+- 完成一条同时写 `expressionStudy.progress` 与长期记忆，首次复习排到约 10 分钟后；到期后由
+  智能复习页承接真实间隔找回。
+
 ## 5. AI 对话
 
 ### 5.1 布局

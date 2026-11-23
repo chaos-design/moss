@@ -1303,3 +1303,24 @@ marquee 流畅度均待人工验证（本机无浏览器/麦克风环境）。�
   390px 与 1280px 检查 flashcard/cloze/sentence/quick 四种模式，`scrollWidth - clientWidth` 均为 0；
   闪卡揭示后译文开关出现、点击后切为「收起」，填空与快速模式开关常驻，造句提交后标准例句出现
   译文开关。真实麦克风与 live provider 未覆盖。
+
+## 2026-11-23 导入重复提示、分组批量导入、推荐弹窗限高与学习路径图
+
+- 导入：新增 `countExistingExpressionDuplicates` / `applyExpressionImportDuplicateStrategy`（`lib/expression-import.ts`），
+  弹窗按「场景 + 表达」身份检测与已有词库冲突，给出「跳过重复（默认）/覆盖已有」显式选择；
+  全部重复时提交按钮禁用并标注「全部重复，跳过导入」。「跳过」在入库前过滤冲突条目，
+  「覆盖」保留整批交给云端 upsert（新 `updatedAt` 在合并时胜出）。
+- 分组：新增 `parseExpressionPhraseBatch` / `resolvePhrasesToIdentities`（`lib/expression-library-schema.ts`），
+  管理分组弹窗新增「批量导入表达到分组」：按词库身份解析粘贴的短语，一次 memory 写入，
+  同名分组复用已有 id，未匹配短语单独提示；解析与分组构建都是 Set 去重，不设业务上限。
+- 推荐分组弹窗最大高度由 `85vh` 收敛为 `min(70vh,34rem)`，列表区域仍独立滚动。
+- 文档：`docs/detailed-design.md` 新增 §4.5「从选词到学习模式的路径」Mermaid 流程图，把
+  选词范围（filtered/favorites/group/review/random/ebbinghaus）、六种学习模式、自评记账与
+  到期去向收敛到一张权威流程图；`README.md` 与 `docs/architecture.md` 的边界和端口未变，不重复改动。
+- 自动化验证（2026-11-23，本机）：新增 `expression-group-batch.test.ts` 3 例、导入重复策略
+  1 例、工作区组件 2 例（含重复提示的选择与批量入组的一次写入），共 12 条新增/更新用例；
+  前端全量 106 文件 / 889 用例在 `--testTimeout=60000` 下全绿；`pnpm lint` 退出码 0
+  （仅 2 条与本改动无关的既有 `noNonNullAssertion` warning）、`pnpm typecheck`、`pnpm build` 通过。
+- 环境说明：默认 10s 超时下 `expression-library-workspace` 的「文件上传」用例仍偶发超时，
+  并会让紧随其后的用例因残留 modal 出现级联失败；两个新增组件用例单独复跑均通过，与实现无关。
+- 视觉验证：推荐弹窗限高与批量导入区的桌面/390px 实际观感未在本环境用浏览器人工核对。

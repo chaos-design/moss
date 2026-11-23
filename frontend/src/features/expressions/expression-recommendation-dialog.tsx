@@ -58,7 +58,7 @@ export function ExpressionRecommendationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="flex max-h-[min(70vh,34rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b px-5 py-4">
           <DialogTitle className="flex items-center gap-2 pr-6 text-base">
             <SparklesIcon className="size-4 text-primary" aria-hidden="true" />

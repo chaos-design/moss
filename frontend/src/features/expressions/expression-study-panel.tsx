@@ -34,8 +34,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { ExpressionRecommendationDialog } from "@/features/expressions/expression-recommendation-dialog"
-import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
+import {
+  type ExpressionLibraryItem,
+  parseExpressionPhraseBatch,
+  resolvePhrasesToIdentities,
+} from "@/lib/expression-library-schema"
 import type { ExpressionRecommendation } from "@/lib/expression-recommendations"
 import type { ExpressionStudyMode, ExpressionStudyScope } from "@/lib/expression-study"
 import type { ExpressionProgressStatus } from "@/lib/memory"
@@ -54,6 +59,7 @@ export function ExpressionStudyPanel({
   study,
   onStart,
   onCreateGroup,
+  onAddGroupItems,
   onRenameGroup,
   onDeleteGroup,
   items,
@@ -63,7 +69,8 @@ export function ExpressionStudyPanel({
 }: {
   study: ExpressionStudyState
   onStart: (scope: ExpressionStudyScope, mode: ExpressionStudyMode) => void
-  onCreateGroup: (name: string) => void
+  onCreateGroup: (name: string) => string
+  onAddGroupItems: (groupId: string, name: string, identities: readonly string[]) => void
   onRenameGroup: (groupId: string, name: string) => void
   onDeleteGroup: (groupId: string) => void
   items: readonly ExpressionLibraryItem[]
@@ -74,6 +81,9 @@ export function ExpressionStudyPanel({
   const [managing, setManaging] = useState(false)
   const [showRecommendations, setShowRecommendations] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
+  const [batchGroupName, setBatchGroupName] = useState("")
+  const [batchPhrases, setBatchPhrases] = useState("")
+  const [batchStatus, setBatchStatus] = useState("")
 
   const favorites = getActiveFavorites(study)
   const groups = getActiveGroups(study)
@@ -94,6 +104,32 @@ export function ExpressionStudyPanel({
     }
     onCreateGroup(name)
     setNewGroupName("")
+  }
+
+  function batchAddToGroup() {
+    const name = batchGroupName.trim()
+    const phrases = parseExpressionPhraseBatch(batchPhrases)
+    if (!name || phrases.length === 0) {
+      setBatchStatus("请填写分组名称，并输入至少一个英文表达。")
+      return
+    }
+    const { identities, unmatched } = resolvePhrasesToIdentities(items, phrases)
+    if (identities.length === 0) {
+      setBatchStatus("没有匹配到词库表达，请检查拼写或先在词库中导入这些表达。")
+      return
+    }
+    // createGroup 同名时复用已有 id，批量加入只会补齐缺失条目，不会建出重名分组。
+    const groupId = onCreateGroup(name)
+    onAddGroupItems(groupId, name, identities)
+    setBatchStatus(
+      `已把 ${identities.length} 条表达加入「${name}」。` +
+        (unmatched.length > 0
+          ? `另有 ${unmatched.length} 条未匹配：${unmatched.slice(0, 5).join("、")}${
+              unmatched.length > 5 ? "…" : ""
+            }`
+          : ""),
+    )
+    setBatchPhrases("")
   }
 
   return (
@@ -308,6 +344,43 @@ export function ExpressionStudyPanel({
               新建
             </Button>
           </div>
+
+          <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
+            <p className="text-xs font-medium">批量导入表达到分组</p>
+            <datalist id="moss-expression-group-names">
+              {groups.map((group) => (
+                <option key={group.id} value={group.name} />
+              ))}
+            </datalist>
+            <div className="flex gap-2">
+              <Input
+                value={batchGroupName}
+                onChange={(event) => setBatchGroupName(event.target.value)}
+                placeholder="分组名称，填写已有名称则追加"
+                list="moss-expression-group-names"
+                aria-label="批量目标分组"
+              />
+              <Button type="button" onClick={batchAddToGroup}>
+                批量加入
+              </Button>
+            </div>
+            <Textarea
+              value={batchPhrases}
+              onChange={(event) => setBatchPhrases(event.target.value)}
+              placeholder={"keep an eye on\nrule of thumb\ncall it a day"}
+              aria-label="批量表达短语"
+              rows={4}
+            />
+            <p className="text-[11px] leading-4 text-muted-foreground">
+              每行一条，也支持逗号或分号分隔；按词库中的表达匹配后一次性加入，条数不设上限。
+            </p>
+            {batchStatus ? (
+              <p className="text-xs text-muted-foreground" role="status">
+                {batchStatus}
+              </p>
+            ) : null}
+          </div>
+
           <div className="flex flex-col gap-1">
             {groups.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">还没有分组。</p>

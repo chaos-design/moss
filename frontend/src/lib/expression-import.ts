@@ -21,6 +21,43 @@ export type ExpressionImportResult = {
   duplicateCount: number
 }
 
+/** 与词库已有表达冲突时的处理方式：默认跳过，由学习者显式选择才覆盖。 */
+export type ExpressionImportDuplicateStrategy = "skip" | "overwrite"
+
+/** 与词库已有表达冲突的条目数（按「场景 + 表达」身份判定，与入库去重口径一致）。 */
+export function countExistingExpressionDuplicates(
+  result: ExpressionImportResult,
+  existingIdentities: ReadonlySet<string>,
+) {
+  if (existingIdentities.size === 0) {
+    return 0
+  }
+  return result.items.reduce(
+    (count, item) => count + (existingIdentities.has(createExpressionIdentity(item)) ? 1 : 0),
+    0,
+  )
+}
+
+/**
+ * 「覆盖」保留整批交给云端 upsert（新条目 `updatedAt` 更新，合并时自然胜出）；
+ * 「跳过」在入库前把冲突条目挡掉，让词库里已有的条目保持原样。
+ */
+export function applyExpressionImportDuplicateStrategy(
+  result: ExpressionImportResult,
+  existingIdentities: ReadonlySet<string>,
+  strategy: ExpressionImportDuplicateStrategy,
+): ExpressionImportResult {
+  if (strategy === "overwrite" || existingIdentities.size === 0) {
+    return result
+  }
+  return {
+    ...result,
+    items: result.items.filter(
+      (item) => !existingIdentities.has(createExpressionIdentity(item)),
+    ),
+  }
+}
+
 type ImportRecord = Record<string, unknown>
 
 const contextValues = new Set(["日常", "职场", "通用"])

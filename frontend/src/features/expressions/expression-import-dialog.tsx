@@ -32,7 +32,10 @@ import { requestGeneratedExpressions } from "@/features/expressions/expression-g
 import { ExpressionJsonEditor } from "@/features/expressions/expression-json-editor"
 import { expressionGenerationPhraseLimit } from "@/lib/expression-generation"
 import {
+  applyExpressionImportDuplicateStrategy,
+  countExistingExpressionDuplicates,
   createExpressionImportTemplate,
+  type ExpressionImportDuplicateStrategy,
   type ExpressionImportResult,
   parseExpressionImport,
   parseExpressionJsonImport,
@@ -97,10 +100,12 @@ function downloadImportTemplate() {
 export function ExpressionImportDialog({
   cloudAvailable,
   loadingCloud,
+  existingIdentities,
   onImport,
 }: {
   cloudAvailable: boolean
   loadingCloud: boolean
+  existingIdentities: ReadonlySet<string>
   onImport: (result: ExpressionImportResult) => Promise<boolean>
 }) {
   const [open, setOpen] = useState(false)
@@ -113,6 +118,8 @@ export function ExpressionImportDialog({
   const [generating, setGenerating] = useState(false)
   const [generationError, setGenerationError] = useState("")
   const [generationSummary, setGenerationSummary] = useState("")
+  const [duplicateStrategy, setDuplicateStrategy] =
+    useState<ExpressionImportDuplicateStrategy>("skip")
   const [importing, setImporting] = useState(false)
   const deferredJsonContent = useDeferredValue(jsonContent)
   const jsonPending = deferredJsonContent !== jsonContent
@@ -140,8 +147,22 @@ export function ExpressionImportDialog({
       : mode === "file"
         ? fileResult
         : null
-  const validCount = activeResult?.items.length ?? 0
   const activePending = mode === "json" && jsonPending
+  const existingDuplicateCount = activeResult
+    ? countExistingExpressionDuplicates(activeResult, existingIdentities)
+    : 0
+  const finalItems = useMemo(
+    () =>
+      activeResult
+        ? applyExpressionImportDuplicateStrategy(
+            activeResult,
+            existingIdentities,
+            duplicateStrategy,
+          ).items
+        : [],
+    [activeResult, duplicateStrategy, existingIdentities],
+  )
+  const validCount = finalItems.length
 
   function reset() {
     setMode("json")
@@ -152,6 +173,7 @@ export function ExpressionImportDialog({
     setPhraseInput("")
     setGenerationError("")
     setGenerationSummary("")
+    setDuplicateStrategy("skip")
   }
 
   async function handleFile(file: File | undefined) {
@@ -202,12 +224,12 @@ export function ExpressionImportDialog({
   }
 
   async function handleSubmit() {
-    if (!activeResult?.items.length || importing) {
+    if (!activeResult || finalItems.length === 0 || importing) {
       return
     }
     setImporting(true)
     try {
-      if (await onImport(activeResult)) {
+      if (await onImport({ ...activeResult, items: finalItems })) {
         setOpen(false)
         reset()
       }
@@ -383,6 +405,14 @@ export function ExpressionImportDialog({
               {jsonPreview.result && !jsonPending ? (
                 <ImportSummary result={jsonPreview.result} />
               ) : null}
+              {jsonPreview.result && !jsonPending && existingDuplicateCount > 0 ? (
+                <DuplicateStrategyPrompt
+                  count={existingDuplicateCount}
+                  finalCount={finalItems.length}
+                  strategy={duplicateStrategy}
+                  onChange={setDuplicateStrategy}
+                />
+              ) : null}
             </div>
           </TabsContent>
 
@@ -411,6 +441,14 @@ export function ExpressionImportDialog({
               </Field>
 
               {fileResult ? <ImportSummary result={fileResult} /> : null}
+              {fileResult && existingDuplicateCount > 0 ? (
+                <DuplicateStrategyPrompt
+                  count={existingDuplicateCount}
+                  finalCount={finalItems.length}
+                  strategy={duplicateStrategy}
+                  onChange={setDuplicateStrategy}
+                />
+              ) : null}
               {fileName ? <p className="sr-only">已选择 {fileName}</p> : null}
             </div>
           </TabsContent>
@@ -447,11 +485,66 @@ export function ExpressionImportDialog({
             ) : (
               <FileUpIcon data-icon="inline-start" />
             )}
-            {importing ? "正在导入" : activePending ? "正在校验" : `导入 ${validCount} 条`}
+            {importing
+              ? "正在导入"
+              : activePending
+                ? "正在校验"
+                : existingDuplicateCount > 0 && validCount === 0
+                  ? "全部重复，跳过导入"
+                  : `导入 ${validCount} 条`}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function DuplicateStrategyPrompt({
+  count,
+  finalCount,
+  strategy,
+  onChange,
+}: {
+  count: number
+  finalCount: number
+  strategy: ExpressionImportDuplicateStrategy
+  onChange: (strategy: ExpressionImportDuplicateStrategy) => void
+}) {
+  return (
+    <section
+      className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs"
+      role="status"
+      aria-label="重复表达处理"
+    >
+      <p className="font-medium text-foreground">
+        检测到 {count} 条与词库已有表达相同（同一场景 + 表达）。
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={strategy === "skip" ? "default" : "outline"}
+          aria-pressed={strategy === "skip"}
+          onClick={() => onChange("skip")}
+        >
+          跳过重复
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={strategy === "overwrite" ? "default" : "outline"}
+          aria-pressed={strategy === "overwrite"}
+          onClick={() => onChange("overwrite")}
+        >
+          覆盖已有
+        </Button>
+        <span className="text-muted-foreground">
+          {strategy === "skip"
+            ? `重复条目保持原样，本次将导入 ${finalCount} 条。`
+            : `用新数据覆盖这 ${count} 条，本次将导入 ${finalCount} 条。`}
+        </span>
+      </div>
+    </section>
   )
 }
 

@@ -660,4 +660,57 @@ describe("ExpressionLibraryWorkspace", () => {
       "/workspace/expressions/study?scope=group&groupId=recommended%3Alevel-A2&mode=flashcard",
     )
   })
+
+  it("prompts on duplicate expressions and only overwrites after an explicit choice", async () => {
+    render(<ExpressionLibraryWorkspace />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    const duplicate = { ...JSON.parse(validImportContent)[0], sceneCategory: "health" }
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "JSON 数据" }), {
+      target: { value: JSON.stringify([duplicate]) },
+    })
+
+    expect(await screen.findByRole("status", { name: "重复表达处理" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "跳过重复" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    expect(
+      (screen.getByRole("button", { name: "全部重复，跳过导入" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+
+    fireEvent.click(screen.getByRole("button", { name: "覆盖已有" }))
+    fireEvent.click(screen.getByRole("button", { name: "导入 1 条" }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const importCall = fetchMock.mock.calls[1]
+    if (!importCall) {
+      throw new Error("缺少导入请求")
+    }
+    const body = JSON.parse((importCall[1] as RequestInit).body as string)
+    expect(body.items).toHaveLength(1)
+  })
+
+  it("batch adds pasted phrases to a study group in one memory write", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: "管理分组" }))
+    fireEvent.change(await screen.findByRole("combobox", { name: "批量目标分组" }), {
+      target: { value: "常用表达" },
+    })
+    fireEvent.change(screen.getByRole("textbox", { name: "批量表达短语" }), {
+      target: { value: "rule of thumb\nkeep an eye on\nnot in library" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "批量加入" }))
+
+    expect(memoryMocks.createGroup).toHaveBeenCalledWith("常用表达")
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledTimes(1)
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
+      "new-group-id",
+      "常用表达",
+      expect.arrayContaining(["health:keep an eye on"]),
+    )
+    expect(screen.getByText(/未匹配/)).toBeTruthy()
+  })
 })

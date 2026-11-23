@@ -122,3 +122,54 @@ export function createImportedExpressionItem(
     source: "imported",
   }
 }
+
+/** 把粘贴的短语拆成唯一表达文本，兼容换行、逗号、分号与顿号（中英文）。不设业务上限。 */
+export function parseExpressionPhraseBatch(input: string): string[] {
+  const seen = new Set<string>()
+  const phrases: string[] = []
+  for (const raw of input.split(/[\n,，;；、]+/)) {
+    const phrase = raw.trim()
+    if (!phrase) {
+      continue
+    }
+    const key = normalizeExpressionPhrase(phrase)
+    if (!key || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    phrases.push(phrase)
+  }
+  return phrases
+}
+
+/**
+ * 按表达文本反查分组可写入的身份。同一表达出现在多个场景时整组加入，保证「越多越好」的
+ * 批量导入不会因为场景歧义漏掉条目。
+ */
+export function resolvePhrasesToIdentities(
+  items: readonly Pick<ExpressionLibraryItem, "phrase" | "sceneCategory">[],
+  phrases: readonly string[],
+) {
+  const byPhrase = new Map<string, Set<string>>()
+  for (const item of items) {
+    const key = normalizeExpressionPhrase(item.phrase)
+    const identities = byPhrase.get(key) ?? new Set<string>()
+    identities.add(createExpressionIdentity(item))
+    byPhrase.set(key, identities)
+  }
+  const identities = new Set<string>()
+  const matched: string[] = []
+  const unmatched: string[] = []
+  for (const phrase of phrases) {
+    const found = byPhrase.get(normalizeExpressionPhrase(phrase))
+    if (found && found.size > 0) {
+      for (const identity of found) {
+        identities.add(identity)
+      }
+      matched.push(phrase)
+    } else {
+      unmatched.push(phrase)
+    }
+  }
+  return { identities: [...identities], matched, unmatched }
+}
