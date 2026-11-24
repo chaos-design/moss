@@ -7,7 +7,7 @@ import { ExpressionText } from "@/components/expression-text"
 afterEach(cleanup)
 
 describe("ExpressionText", () => {
-  it("renders the target phrase as bold blue text with a subtle blue pill", () => {
+  it("renders the target phrase as bold blue text on a highlighted blue pill", () => {
     const { container } = render(
       <ExpressionText text="As a rule of thumb, keep it short." phrase="rule of thumb" />,
     )
@@ -15,10 +15,10 @@ describe("ExpressionText", () => {
     const mark = container.querySelector("mark")
     expect(mark).not.toBeNull()
     expect(mark?.textContent).toBe("rule of thumb")
-    // 参考样式：蓝色加粗文字 + 一层很淡的圆角蓝色底（chart-4 @15%），不用浏览器默认黄底。
+    // 参考样式：蓝色加粗文字 + 一层更醒目的圆角蓝色底（chart-4 @40%），不用浏览器默认黄底。
     expect(mark?.className).toContain("font-bold")
     expect(mark?.className).toContain("text-chart-4")
-    expect(mark?.className).toContain("bg-chart-4/15")
+    expect(mark?.className).toContain("bg-chart-4/40")
     expect(mark?.className).toContain("rounded-sm")
     expect(mark?.className).not.toMatch(/bg-(primary|yellow)/)
   })
