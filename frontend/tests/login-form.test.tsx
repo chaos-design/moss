@@ -61,8 +61,16 @@ afterEach(() => {
 })
 
 describe("login form", () => {
+  function consentCheckbox() {
+    return screen.getByRole("checkbox", { name: "同意服务条款与隐私政策" })
+  }
+
+  function isConsentChecked() {
+    return consentCheckbox().getAttribute("aria-checked") === "true"
+  }
+
   function agreeToTerms() {
-    fireEvent.click(screen.getByRole("checkbox", { name: "同意服务条款与隐私政策" }))
+    fireEvent.click(consentCheckbox())
   }
 
   function fillCredentials() {
@@ -226,32 +234,80 @@ describe("login form", () => {
     expect(screen.getByRole("link", { name: "隐私政策" }).getAttribute("href")).toBe("/privacy")
   })
 
-  it("keeps login and register disabled until the terms are accepted", () => {
+  it("opens a consent dialog instead of disabling login before the terms are accepted", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1" } } },
+      error: null,
+    })
     render(<LoginForm nextPath="/workspace" />)
+    fillCredentials()
 
     const loginButton = screen.getByRole("button", { name: "进入学习空间" })
-    expect((loginButton as HTMLButtonElement).disabled).toBe(true)
+    // 按钮不再禁用：点击后用弹窗请求确认，而不是直接阻止交互。
+    expect((loginButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(loginButton)
 
-    fireEvent.click(screen.getByRole("tab", { name: "创建账户" }))
-    const registerButton = screen.getByRole("button", { name: "创建账户" })
-    expect((registerButton as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole("alertdialog")).toBeTruthy()
+    expect(screen.getByText("先同意服务条款与隐私政策")).toBeTruthy()
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
 
-    agreeToTerms()
-    expect(
-      (screen.getByRole("button", { name: "创建账户" }) as HTMLButtonElement).disabled,
-    ).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: "取消" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).toBeNull()
+    })
+    expect(isConsentChecked()).toBe(false)
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled()
   })
 
-  it("keeps Google login disabled until the terms are accepted", () => {
+  it("checks the agreement and signs in directly after confirming the consent dialog", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1" } } },
+      error: null,
+    })
+    render(<LoginForm nextPath="/workspace" />)
+    fillCredentials()
+
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+    fireEvent.click(screen.getByRole("button", { name: "同意并登录" }))
+
+    await waitFor(() => {
+      expect(mocks.replace).toHaveBeenCalledWith("/workspace")
+    })
+    expect(isConsentChecked()).toBe(true)
+    expect(screen.queryByRole("alertdialog")).toBeNull()
+  })
+
+  it("opens the consent dialog before Google login and continues after confirming", async () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED", "true")
+    mocks.signInWithOAuth.mockResolvedValue({ error: null })
     render(<LoginForm nextPath="/workspace" />)
 
     const googleButton = screen.getByRole("button", { name: /使用 Google 继续/ })
-    expect((googleButton as HTMLButtonElement).disabled).toBe(true)
+    expect((googleButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(googleButton)
 
-    agreeToTerms()
-    expect(
-      (screen.getByRole("button", { name: /使用 Google 继续/ }) as HTMLButtonElement).disabled,
-    ).toBe(false)
+    expect(screen.getByRole("alertdialog")).toBeTruthy()
+    expect(mocks.signInWithOAuth).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "同意并登录" }))
+
+    await waitFor(() => {
+      expect(mocks.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        options: {
+          redirectTo: "http://localhost:3000/auth/callback?next=%2Fworkspace",
+        },
+      })
+    })
+    expect(isConsentChecked()).toBe(true)
+  })
+
+  it("uses register wording in the consent dialog on the create-account tab", () => {
+    render(<LoginForm nextPath="/workspace" />)
+    fireEvent.click(screen.getByRole("tab", { name: "创建账户" }))
+    fillCredentials()
+    fireEvent.click(screen.getByRole("button", { name: "创建账户" }))
+    expect(screen.getByRole("button", { name: "同意并注册" })).toBeTruthy()
   })
 })
