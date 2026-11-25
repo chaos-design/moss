@@ -1,12 +1,13 @@
 import type { ParseError } from "papaparse"
 import {
-  createExpressionIdentity,
   createImportedExpressionItem,
   type ExpressionImportItem,
   type ExpressionKind,
   type ExpressionLibraryItem,
   expressionKindLabels,
   expressionSceneCategories,
+  normalizeExpressionExamples,
+  normalizeExpressionPhrase,
 } from "@/lib/expression-library-schema"
 
 export type ExpressionImportIssue = {
@@ -18,6 +19,64 @@ export type ExpressionImportResult = {
   items: ExpressionLibraryItem[]
   issues: ExpressionImportIssue[]
   duplicateCount: number
+}
+
+/** 与词库已有表达冲突时的处理方式：默认跳过，由学习者显式选择才覆盖。 */
+export type ExpressionImportDuplicateStrategy = "skip" | "overwrite"
+
+/**
+ * 按归一化表达文本建立词库索引：同一个词无论出现在哪个场景都算同一个条目。
+ * 同名时优先保留导入条目，覆盖时可把新数据对齐到数据库里真实存在的那条记录。
+ */
+export function indexExistingExpressionsByPhrase(
+  items: readonly ExpressionLibraryItem[],
+): Map<string, ExpressionLibraryItem> {
+  const byPhrase = new Map<string, ExpressionLibraryItem>()
+  for (const item of items) {
+    const phrase = normalizeExpressionPhrase(item.phrase)
+    const current = byPhrase.get(phrase)
+    if (!current || (item.source === "imported" && current.source !== "imported")) {
+      byPhrase.set(phrase, item)
+    }
+  }
+  return byPhrase
+}
+
+/** 与词库已有的同一个词冲突的条目数（跨场景同样算冲突）。 */
+export function countExistingExpressionDuplicates(
+  result: ExpressionImportResult,
+  existing: ReadonlyMap<string, ExpressionLibraryItem>,
+) {
+  return result.items.reduce(
+    (count, item) => count + (existing.has(normalizeExpressionPhrase(item.phrase)) ? 1 : 0),
+    0,
+  )
+}
+
+/**
+ * 「跳过」在入库前把同词条目挡掉，让词库里已有的表达保持原样；
+ * 「覆盖」把场景对齐到已有条目，使本地按身份合并只显示一条，云端 upsert 也落在同一条记录上。
+ */
+export function applyExpressionImportDuplicateStrategy(
+  result: ExpressionImportResult,
+  existing: ReadonlyMap<string, ExpressionLibraryItem>,
+  strategy: ExpressionImportDuplicateStrategy,
+): ExpressionImportResult {
+  if (strategy === "skip") {
+    return {
+      ...result,
+      items: result.items.filter(
+        (item) => !existing.has(normalizeExpressionPhrase(item.phrase)),
+      ),
+    }
+  }
+  return {
+    ...result,
+    items: result.items.map((item) => {
+      const match = existing.get(normalizeExpressionPhrase(item.phrase))
+      return match ? { ...item, sceneCategory: match.sceneCategory } : item
+    }),
+  }
 }
 
 type ImportRecord = Record<string, unknown>
@@ -45,11 +104,15 @@ const categoryAliases = new Map(
 const fieldAliases = {
   context: ["context", "语境"],
   example: ["example", "例句"],
+  exampleTranslation: ["exampletranslation", "example_translation", "例句译文", "例句翻译"],
+  examples: ["examples", "extraexamples", "extra_examples", "拓展例句"],
   kind: ["kind", "type", "类型"],
   meaning: ["meaning", "含义", "中文含义"],
+  memoryTip: ["memorytip", "memory_tip", "记忆提示"],
   origin: ["origin", "origin_note", "来源", "词源"],
   phrase: ["phrase", "expression", "表达", "词组"],
   sceneCategory: ["scenecategory", "scene_category", "category", "场景分类", "场景"],
+  usage: ["usage", "usagenote", "usage_note", "用法", "用法说明"],
   why: ["why", "reasoning", "解释", "为什么"],
 } as const
 
@@ -58,13 +121,18 @@ function normalizeHeader(value: string) {
 }
 
 function getField(record: ImportRecord, aliases: readonly string[]) {
+  const value = getRawField(record, aliases)
+  return value === undefined ? "" : String(value).trim()
+}
+
+function getRawField(record: ImportRecord, aliases: readonly string[]) {
   for (const alias of aliases) {
     const value = record[alias]
     if (value !== undefined && value !== null) {
-      return String(value).trim()
+      return value
     }
   }
-  return ""
+  return undefined
 }
 
 function assertField(value: string, label: string, maximumLength: number) {
@@ -96,6 +164,11 @@ function parseRecord(value: unknown): ExpressionLibraryItem {
   const why = assertField(getField(record, fieldAliases.why), "含义解释", 1_000)
   const origin = assertField(getField(record, fieldAliases.origin), "来源说明", 1_000)
   const example = assertField(getField(record, fieldAliases.example), "英文例句", 500)
+  // 例句译文是可选的：有译文时词库才显示展开按钮，没有译文不影响导入。
+  const exampleTranslation = getField(record, fieldAliases.exampleTranslation)
+  if (exampleTranslation.length > 500) {
+    throw new Error("例句译文超过 500 个字符")
+  }
   const rawCategory = getField(record, fieldAliases.sceneCategory).toLocaleLowerCase()
   const sceneCategory = categoryAliases.get(rawCategory)
   if (!sceneCategory) {
@@ -110,6 +183,22 @@ function parseRecord(value: unknown): ExpressionLibraryItem {
   if (!kind) {
     throw new Error(`类型只能是${Object.values(expressionKindLabels).join("、")}`)
   }
+  const usage = getField(record, fieldAliases.usage)
+  if (usage.length > 1_000) {
+    throw new Error("用法说明超过 1000 个字符")
+  }
+  const memoryTip = getField(record, fieldAliases.memoryTip)
+  if (memoryTip.length > 500) {
+    throw new Error("记忆提示超过 500 个字符")
+  }
+  const rawExamples = getRawField(record, fieldAliases.examples)
+  const examples =
+    rawExamples === undefined || rawExamples === null || rawExamples === ""
+      ? undefined
+      : normalizeExpressionExamples(rawExamples)
+  if (rawExamples !== undefined && rawExamples !== null && rawExamples !== "" && !examples) {
+    throw new Error("拓展例句格式无效")
+  }
 
   const item: Omit<ExpressionImportItem, "clientId"> = {
     phrase,
@@ -117,6 +206,10 @@ function parseRecord(value: unknown): ExpressionLibraryItem {
     why,
     origin,
     example,
+    ...(exampleTranslation ? { exampleTranslation } : {}),
+    ...(usage ? { usage } : {}),
+    ...(memoryTip ? { memoryTip } : {}),
+    ...(examples && examples.length > 0 ? { examples } : {}),
     context: rawContext as ExpressionImportItem["context"],
     kind,
     sceneCategory,
@@ -195,18 +288,18 @@ export function parseExpressionImportRows(
 ): ExpressionImportResult {
   const items: ExpressionLibraryItem[] = []
   const issues: ExpressionImportIssue[] = []
-  const identities = new Set<string>()
+  const phrases = new Set<string>()
   let duplicateCount = 0
 
   for (const [index, row] of rows.entries()) {
     try {
       const item = parseRecord(row)
-      const identity = createExpressionIdentity(item)
-      if (identities.has(identity)) {
+      const phrase = normalizeExpressionPhrase(item.phrase)
+      if (phrases.has(phrase)) {
         duplicateCount += 1
         continue
       }
-      identities.add(identity)
+      phrases.add(phrase)
       items.push(item)
     } catch (error) {
       issues.push({
@@ -225,9 +318,13 @@ export function createExpressionImportTemplate() {
     "why",
     "origin",
     "example",
+    "exampleTranslation",
     "sceneCategory",
     "context",
     "kind",
+    "usage",
+    "memoryTip",
+    "examples",
   ]
   const row = [
     "keep an eye on",
@@ -235,9 +332,15 @@ export function createExpressionImportTemplate() {
     "eye 代表持续观察，keep 强调让注意力维持在目标上。",
     "由 keep 与 eye 的视觉动作构成，现代英语中常用于提醒持续关注。",
     "Could you keep an eye on my bag for a minute?",
+    "能帮我看一下包吗？",
     "social",
     "通用",
     "idiom",
+    "常接宾语，也可接 over 引出照看范围。",
+    "想象眼睛持续停在目标上。",
+    JSON.stringify([
+      { text: "Keep an eye on the kids while I cook.", translation: "我做饭时照看一下孩子。" },
+    ]),
   ]
   return `${headers.join(",")}\n${row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")}\n`
 }

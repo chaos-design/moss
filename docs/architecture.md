@@ -21,6 +21,10 @@ flowchart LR
     Learner[学习者] -->|HTTPS| Moss[Moss Web 应用]
     Moss -->|Auth, RPC, Realtime| Supabase[(Supabase)]
     Moss -->|HTTPS, 服务端调用| AI[AI Provider]
+    Moss -->|loopback, HTTP API 接入| ElevenLabs[ElevenLabs Adapter :5583]
+    ElevenLabs -->|HTTPS| ElevenLabsApi[ElevenLabs API]
+    Moss -->|loopback, HTTP API 接入| FishAudio[Fish Audio Adapter :5584]
+    FishAudio -->|HTTPS| FishAudioApi[Fish Audio API]
     Learner -->|PCM over WebSocket| ASR[本地 ASR 服务]
     Learner -->|HTTP audio/wav| TTS[本地 TTS 网关]
     TTS --> Kokoro[Kokoro]
@@ -72,6 +76,8 @@ flowchart TB
         Gateway[TTS Gateway :5578]
         Audio8[Audio8 :5582]
         CosyVoice[CosyVoice :5581]
+        ElevenLabs[ElevenLabs Adapter :5583]
+        FishAudio[Fish Audio Adapter :5584]
         Gateway --> Audio8
         Gateway --> CosyVoice
     end
@@ -84,6 +90,10 @@ flowchart TB
     MemoryFacade --> Vector
     Routes -->|推理| AI[AI Provider]
     Routes -->|语音转发| VoiceAPI[OpenAI 兼容语音接口]
+    Routes -->|可选语音转发| ElevenLabs
+    ElevenLabs -->|HTTPS| ElevenLabsApi[ElevenLabs API]
+    Routes -->|可选语音转发| FishAudio
+    FishAudio -->|HTTPS| FishAudioApi[Fish Audio API]
     Speech -->|WebSocket| ASR
     Speech -->|HTTP| Gateway
     Speech -->|浏览器引擎| WebSpeech[系统 SpeechRecognition / speechSynthesis]
@@ -100,6 +110,8 @@ flowchart TB
 | Speech Gateway Facade | 校验语音端点、构造上游请求、归一化错误 | 学习状态、音频保存 |
 | ASR | PCM 分段和中英识别 | 对话推理、音频保存 |
 | TTS Gateway | 统一合成协议、缓存、引擎路由 | 学习状态 |
+| ElevenLabs Adapter | OpenAI 兼容语音契约到 ElevenLabs 的翻译、密钥隔离 | 默认启动、学习状态、音频保存 |
+| Fish Audio Adapter | OpenAI 兼容语音契约到 Fish Audio 的翻译、密钥隔离 | 默认启动、学习状态、音频保存 |
 
 ## 4. 代码依赖方向
 
@@ -233,20 +245,25 @@ flowchart LR
 
 | 数据 | 主副本 | 同步/传输 | 保留规则 |
 | --- | --- | --- | --- |
-| 内置场景与表达内容 | `demo-data.ts`、`conversation-scenes.ts`、`idiomatic-expressions.ts`、`expression-library.generated.json`、`shadowing-dialogues.ts` | 随 Web 构建发布，不写入用户快照 | 场景 ID 稳定；1000 条表达按 10 类场景归档；词源有争议时明确标注 |
-| 用户导入表达 | `moss:expression-library:v1:<userId>` | 本机先写，通过 `/api/expressions` 分批同步 `expression_library_items` | RLS 用户隔离；同一用户、场景和规范化表达幂等更新 |
+| 内置场景与表达内容 | `demo-data.ts`、`conversation-scenes.ts`、`idiomatic-expressions.ts`、`expression-library.generated.json`、`shadowing-dialogues.ts` | 随 Web 构建发布，不写入用户快照 | 场景 ID 稳定；内置词库 1170 条（270 审校 + 900 场景补充）按 10 类场景归档；词源有争议时明确标注 |
+| 用户导入表达 | 云端 `expression_library_items` 表为准，本机 `moss:expression-library:v1:<userId>` 为离线缓存 | 先经 `/api/expressions` 分批写入并确认 `stored`，成功后才更新本机；失败/未登录/演示模式报错且不改本机 | RLS 用户隔离；同一用户、场景和规范化表达幂等更新；译文、用法、记忆提示随行持久化，拓展例句以原生数组写入 jsonb 列 |
 | 学习记忆快照 | `moss:learning-memory:v1:<userId>` | Supabase 快照与 Realtime | 本地优先，按身份隔离 |
 | 学习进度与问题分析 | 学习记忆中的 `sceneProgress`、`items` 和 `events` | 随学习记忆快照同步 | 事件按 ID 合并并完整保留；地图、场景库和分析页只派生真实记录，空数据展示空状态 |
-| 表达学习记忆 | 学习记忆中的 `items` 与 `expression` 事件 | 随学习记忆快照同步，并经 `/api/memory-documents` 写向量记忆 | `sceneId` 使用词库分类而非场景 ID，因此不写入 `sceneProgress`，不影响场景完成度 |
+| 表达学习记忆 | 学习记忆中的 `items` 与 `expression`/`review` 事件 | 随学习记忆快照同步，并经 `/api/memory-documents` 写向量记忆 | `sceneId` 使用词库分类而非场景 ID，因此不写入 `sceneProgress`，不影响场景完成度；词库学习完成一条（含闪卡/填空/听写）与艾宾浩斯循环都经 `recordExpressionStudy`/`rateReview` 写入这里，`expressionStudy.progress` 只保留词库内的轻量状态，不再需要手动「加入长期记忆」才能进复习队列；随机抽样不落盘 |
+| 地道表达学习组织 | 学习记忆快照的 `expressionStudy`（收藏、分组、逐条进度、筛选位置） | 随学习记忆快照经 `sync_learning_memory` 跨设备同步；不写入向量记忆 | 按表达身份（`sceneCategory:规范化短语`）记账；收藏/分组用「按 key LWW + 墓碑」合并，取消收藏能跨设备传播；进度 `reviews` 取两侧最大值，避免重试重复计数；推荐分组只由词库和进度派生，加入后写成普通分组 |
 | 回想尝试 | 学习记忆中的 `recall` 事件 | 仅随学习记忆快照同步，不写向量记忆 | 记录线索到揭示答案的实际时长；刻意不判定成败，也不改写强度与间隔，因此不计入薄弱点 |
 | 对话回合身份 | 学习记忆事件中的 `conversation.turnId` | 随学习记忆快照同步 | 回合以学习者消息 ID 为主键：重试改写同一回合而不是追加新回合，删除回合按事件记录的增量精确回滚，因此重试不会被计成两次练习 |
 | 学习提醒与句子列表 | 学习记忆中的 `items` | 不单独同步，按 `nextReviewAt`、类型和来源派生 | 展示完整本地记录；不创建通知或句子副本 |
 | 匿名学习记忆 | `moss:learning-memory:v1` | 不同步 | 登录迁移后删除匿名键 |
 | 对话历史 | `moss:conversation-history:v1` | 当前不上传 | 本地会话恢复 |
 | 对话交互偏好 | `moss:conversation-prefs:v1` | 不同步；仅导师模式枚举随推理请求发送 | 导师模式、布局、快捷键、续接与合并/判句时限 |
+| 对话上次场景 | `moss:conversation-scene:v1` | 不同步 | 无 `?scene=` 进入对话页时恢复上次场景（回退到最近会话的场景，再回退默认场景）；切换场景时写回；失效 ID 走既有回退链 |
 | 模型配置集合与当前启用项 | `moss:model-config:v1` | 仅当前启用配置以加密信封进入同源推理 API | 禁止写入数据库和日志 |
 | ASR/TTS 偏好 | 版本化 localStorage key | 不同步 | 设备级偏好 |
-| 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase |
+| 语音接入配置 | `moss:speech-config:v1` | 不同步；`api` 接入的地址、模型与密钥仅随请求进入同源 `/api/speech/*` | 设备级接入方式，禁止写入学习记忆、日志或 Supabase；本机接口预设的地址与模型来自构建期内联的 `NEXT_PUBLIC_*_LOCAL_API_*`，不含密钥 |
+| 本机服务引擎/音色映射 | `moss:speech-local-config:v1` | 不同步；仅由设置页读写，切换服务时同步当前生效值到 `moss:asr-config:v1`、`moss:tts-config:v2` | 按服务 ID 分别保存识别引擎与音色，切换本机服务不沿用其他服务的取值；只存枚举与音色标识，不含密钥 |
+| ElevenLabs 请求内容 | 仅本机适配器进程内存 | 发送到 ElevenLabs API | 不落盘；文本、录音与保留策略由上游账户决定 |
+| Fish Audio 请求内容 | 仅本机适配器进程内存 | 发送到 Fish Audio API | 不落盘；文本、录音与保留策略由上游账户决定 |
 | 跟读评分 | 学习记忆事件 | Supabase 快照与 `shadowing_attempts` | 保存声学分数，不保存录音 |
 | 长期向量记忆 | Supabase `learning_memory_documents` | 对话、复习、跟读、表达学习经服务端写入；旧快照由管理员 CLI 幂等回填；RPC 召回 | RLS 用户隔离；`source_type` 是本地 `LearningActivityType` 的真子集，回想尝试无可检索内容故不入库 |
 | 账户删除审计 | Supabase `account_deletion_audits` | 仅 server-only 管理员客户端写入 | 只保留 HMAC 用户指纹和聚合计数，不保留邮箱或学习内容 |
@@ -255,20 +272,34 @@ flowchart LR
 
 ## 7. 安全与资源边界
 
-- `/workspace/**` 在非演示模式下由 `proxy.ts` 刷新并验证 Supabase session。
+- `/workspace/**` 在非演示模式下由 `proxy.ts` 刷新并验证 Supabase session；登录页的服务端
+  已登录态判定复用同一 `hasUsableSession()`。正常情况用联网的 `getUser()` 严格校验，
+  仅当服务端连不上 Supabase Auth（如本机代理环境下 Node fetch 不走代理）时，才降级为只读
+  会话 cookie 的 `getSession()`，避免把已登录用户 307 弹回 `/login` 造成跳转空转；
+  无会话（400）和凭证无效（401）仍一律按未登录处理。
 - 用户表和向量表启用 RLS；RPC 使用 `auth.uid()`，调用者不能指定其他用户。
 - 账户导出使用当前用户 session 与 RLS；账户删除的 Admin API 仅在邮箱二次确认后调用，
   删除后必须逐表验证残留。service-role key 和审计 HMAC 密钥只存在服务端。
 - 浏览器可保存多个模型配置，但仅当前启用项使用 RSA-OAEP + AES-256-GCM 信封传输；
-  服务端只在当前请求内解密。
+  服务端只在当前请求内解密。推理配置由 `resolveProviderConfig` 单点解析：服务端 `AI_*`
+  环境变量优先，浏览器 BYOK 信封只在服务端未配置时回退；鉴权与限流按实际使用的来源判定。
 - 推理 URL 只允许公网 HTTPS，开发环境额外允许 loopback；生产环境的浏览器自带模型主机
   受显式白名单约束，且 Provider 请求不跟随重定向。
 - `/api/speech/asr` 与 `/api/speech/tts` 沿用同一端点策略，生产环境额外受
-  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单约束；浏览器传入的语音密钥只在当次转发中使用，
-  不落盘、不记录、不返回客户端。上游请求 30 秒超时且不跟随重定向。
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单约束；回环主机 `localhost`、`127.0.0.1`、
+  `::1` 内置允许但仅限规则表语音端口（5578/5580/5583/5584），且生产构建要求已登录会话
+  （无认证服务的自托管可用 `MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true` 显式开启匿名），
+  用于本机 local 接口（应用与语音服务同机的自托管场景），非回环私网仍拒绝。
+  限流键跟随请求者（用户 ID 或来源 IP），不取请求体 endpoint。浏览器传入的语音密钥只在
+  当次转发中使用，不落盘、不记录、不返回客户端。上游请求 30 秒超时且不跟随重定向。
+- 语音链路的端口、本地模型、音色别名、格式映射、长度/超时限制与测试合成默认值统一由
+  `frontend/src/lib/speech-rules.json` 提供，前端规则封装与本机适配器启动脚本共用；
+  规则归纳与消费方见 `docs/speech-rules.md`。`/api/speech/tts/test` 与本机适配器
+  `/v1/audio/speech/test` 只回传诊断，不回传音频本体。
 - 认证 API 通过 Supabase `check_rate_limit` 按 `auth.uid()` 和固定 bucket 执行跨实例原子
   限流；额度与窗口由数据库决定，底层表不授予应用用户权限。RPC 不可用时，公共服务端
-  模型请求拒绝继续；演示模式与携带加密 BYOK 配置的推理请求使用容量有界的进程内限流。
+  模型请求拒绝继续；演示模式与真正使用加密 BYOK 配置的推理请求（即服务端 `AI_*` 未配置时）
+  使用容量有界的进程内限流。
 - Provider 原始错误只用于服务端诊断，不返回客户端。
 - ASR/TTS 默认绑定 loopback，并限制 Origin、连接数、消息大小或文本长度。
 
@@ -283,6 +314,8 @@ flowchart LR
 | ASR 不可用或授权拒绝 | 会话内自动回退浏览器语音识别；浏览器不支持时保持文字模式 |
 | TTS 网关或 API 不可达 | 回退浏览器 `speechSynthesis` |
 | 可选 TTS sidecar 缺失 | 其他已安装引擎继续工作 |
+| 可选 ElevenLabs 适配器缺失或未配置密钥 | 保持当前接入方式失败并提示；不影响 `5578`/`5580` 与浏览器语音 |
+| 可选 Fish Audio 适配器缺失或未配置密钥 | 保持当前接入方式失败并提示；不影响 `5578`/`5580` 与浏览器语音 |
 
 ## 9. 部署拓扑
 

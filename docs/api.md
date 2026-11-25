@@ -16,15 +16,21 @@
 | `GET /api/expressions` | Supabase session | 120 次/分钟/用户 | 当前用户导入的表达 |
 | `POST /api/expressions` | Supabase session | 120 次/分钟/用户 | 分批导入或更新表达 |
 | `DELETE /api/expressions` | Supabase session | 120 次/分钟/用户 | 删除一条导入表达 |
+| `POST /api/expressions/generate` | Supabase session 或加密自带配置 | 12 次/分钟/主体（单进程） | 按短语生成导入字段 |
 | `GET /api/account` | Supabase session | 10 次/小时/用户 | 导出当前用户全部云端数据 |
 | `DELETE /api/account` | Supabase session + 邮箱确认 | 5 次/小时/用户 | 删除账户并审计残留 |
 | `POST /api/memory-documents` | Supabase session | 60 次/分钟/用户 | 复习、跟读与表达学习向量记忆 |
 | `POST /api/translation` | Supabase session 或加密自带配置 | 30 次/分钟/主体 | 单条翻译 |
 | `POST /api/speech/asr` | 无（请求自带端点配置） | 120 次/分钟/endpoint | 单段语音转写 |
 | `POST /api/speech/tts` | 无（请求自带端点配置） | 240 次/分钟/endpoint | 文本转音频 |
+| `GET /api/speech/services` | 无 | 无 | 探测本机语音服务是否在线 |
 | `WS /v1/asr/stream` | 可选部署 token | 连接数与消息大小限制 | PCM 与转写 |
 | FunASR 2-pass WebSocket | 由本地服务决定 | 由本地服务决定 | PCM 与转写 |
 | `POST /v1/tts/synthesize` | loopback + Origin | 文本长度与服务资源限制 | 文本与 WAV |
+| `POST http://127.0.0.1:5583/v1/audio/speech` | 可选本机 Bearer token | 2000 字符、上游配额 | 文本与音频 |
+| `POST http://127.0.0.1:5583/v1/audio/transcriptions` | 可选本机 Bearer token | 8 MB、上游配额 | 音频与转写 |
+| `POST http://127.0.0.1:5584/v1/audio/speech` | 可选本机 Bearer token | 2000 字符、上游配额 | 文本与音频 |
+| `POST http://127.0.0.1:5584/v1/audio/transcriptions` | 可选本机 Bearer token | 8 MB、上游配额 | 音频与转写 |
 
 Next.js API 成功响应使用 `{ "data": ... }`，失败响应使用
 `{ "error": { "code": "...", "message": "..." } }`。Provider 原始错误、响应正文和凭据
@@ -79,6 +85,12 @@ OpenAI 兼容模型若因推理过程耗尽输出预算而返回 `finish_reason=
 因此单连接支持多次发言。`stop` 提交后关闭，`ping` 返回 `pong`。完整协议、错误码和部署参数见
 [`backend/services/asr/README.md`](../backend/services/asr/README.md)。
 
+各识别通道返回的转写里可能混入方括号系非语音标注（whisper 类模型的 `[background noise]`、
+`[pause]`、`[unknow]`，中文引擎的 `[噪音]`、`[嗯]`、`[咳]` 等，以及 `[xxx...]`、`[xXx]`
+这类大小写不敏感、带尾随句读的占位符）。客户端在语音转写入口统一剥离这些已知产物标注；
+整段只剩标注时不作为消息提交。文字输入不经过该剥离，用户手打的括号内容（如 `[注意]`）
+与单字符 `[x]` 保留原样。
+
 ## FunASR 2-pass WebSocket
 
 对话设置中的 `FunASR` 选项直接连接标准 FunASR WebSocket 服务，默认地址为
@@ -132,16 +144,132 @@ ASR 与 TTS 各有三种接入方式，由浏览器本地配置 `moss:speech-con
 | `api` | `/api/speech/asr` → OpenAI 兼容 `/audio/transcriptions` | `/api/speech/tts` → OpenAI 兼容 `/audio/speech` |
 | `browser` | 浏览器 `SpeechRecognition` | 浏览器 `speechSynthesis` |
 
-`local` 接入地址可在设置中覆盖，留空时使用 `NEXT_PUBLIC_ASR_SERVICE_URL` 与
-`NEXT_PUBLIC_TTS_SERVICE_URL`。`local` 连接失败时，前端在当前会话内自动回退到浏览器引擎并提示
-一次，不改写用户已保存的接入方式。`api` 接入的默认根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与
-`NEXT_PUBLIC_TTS_API_URL`，模型来自 `NEXT_PUBLIC_ASR_API_MODEL` 与
-`NEXT_PUBLIC_TTS_API_MODEL`；`tts.voice` 留空时使用 `alloy`。
+`local` 接入的本机服务由设置中的下拉输入选择决定，选项与通用规则配置 `speech-rules.json`
+的 MOSS 本机服务可用项一致，触发器和选项同时展示服务地址，不再接受手填地址；留空时使用
+`NEXT_PUBLIC_ASR_SERVICE_URL` 与 `NEXT_PUBLIC_TTS_SERVICE_URL`。识别引擎与本机语音音色按
+所选本机服务独立匹配并分别持久化，不沿用其他本机服务的取值。`local` 连接失败时，前端在
+当前会话内自动回退到浏览器引擎并提示一次，不改写用户已保存的接入方式。`api` 接入的默认
+根地址来自 `NEXT_PUBLIC_ASR_API_URL` 与 `NEXT_PUBLIC_TTS_API_URL`，模型来自
+`NEXT_PUBLIC_ASR_API_MODEL` 与 `NEXT_PUBLIC_TTS_API_MODEL`；环境模型未设置时模型字段保持
+为空，由服务端默认模型接管；对话等播放链路的 `tts.voice` 始终发送同一个具体音色（未配置时
+客户端固定使用 `alloy`），保证配置未变时逐句音色一致；`/api/speech/tts` 路由本身仍按字段
+策略转发——测试入口空音色省略字段，交由服务端默认音色接管。
+
+设置卡片为 ASR 与 TTS 各提供一个独立的「测试识别接口」「测试合成接口」按钮，分别验证本服务
+已配置地址与对应服务是否正常；两个按钮的结果、测试中状态与异常状态互不覆盖。本机服务下拉、
+引擎与音色的匹配约束及完整需求见
+[Moss 详细设计](detailed-design.md#55-语音服务接入设置)。
+
+### 本机 local 接口
+
+`api` 接入也可以指向运行在本机的 OpenAI 兼容语音服务。设置卡片为 ASR 与 TTS 各提供
+“使用本机接口”（5583）与“使用 Fish Audio”（5584）一键填入，根地址与模型来自：
+
+| 变量 | 默认值 |
+| --- | --- |
+| `NEXT_PUBLIC_ASR_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
+| `NEXT_PUBLIC_ASR_LOCAL_API_MODEL` | `scribe_v2` |
+| `NEXT_PUBLIC_TTS_LOCAL_API_URL` | `http://127.0.0.1:5583/v1` |
+| `NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | `eleven_flash_v2_5` |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL` | `transcribe-1-pro` |
+| `NEXT_PUBLIC_TTS_FISH_AUDIO_URL` | `http://127.0.0.1:5584/v1` |
+| `NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL` | `s2.1-pro-free` |
+
+这些值在构建期内联，只含公开地址与模型名，不含密钥。所有跨服务默认值（端口、本地模型、
+音色、格式、限制、测试合成参数）统一登记在 `frontend/src/lib/speech-rules.json`，归纳说明见
+[语音服务通用规则配置](./speech-rules.md)。若本机服务配置了访问令牌（例如
+`MOSS_ELEVENLABS_ACCESS_TOKEN`），把同一个值填进设置的“API 密钥”，代理会以
+`Authorization: Bearer ...` 转发。请求始终经同源 `/api/speech/asr` 与 `/api/speech/tts`
+转发，浏览器不直连本机端口；根地址会自动追加 `/audio/transcriptions` 或 `/audio/speech`。
+
+回环主机（`localhost`、`127.0.0.1`、`::1`）在所有构建环境下都允许，但生产构建（`pnpm
+build && pnpm start`）只放行规则表中的语音服务端口（5578/5580/5583/5584），且要求已登录
+会话——回环代理背后是部署主机自己的端口与适配器配额，不向匿名访客开放。未配置认证服务
+的自托管部署可以设置 `MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true` 显式开启匿名回环访问
+（默认关闭，失败关闭）。开发环境（`pnpm dev`）不要求登录、不限端口，便于本地调试。
+非回环私网主机仍被拒绝，`local` 接入的 WebSocket/HTTP sidecar 地址也仍只允许回环。
+Vercel 等无本机服务的运行环境无法使用该链路，应使用白名单内的远程语音端点。
+
+`/api/speech/*` 的限流键跟随请求者而不是请求体里的 endpoint：登录用户按用户 ID 分桶，
+匿名请求按来源 IP（`x-forwarded-for` / `x-real-ip`）分桶。换端口或在地址里加路径段都
+不能绕过限流。
 
 `api` 识别按段上传：接口没有中间结果和语音起点信号，因此该接入方式不提供实时字幕，也不支持用
 说话打断 AI 播报，需要打断时使用文字输入。`browser` 识别由浏览器实现决定行为，静默一段时间后
 浏览器会结束一次会话，前端会自动重新开始监听。识别引擎选择器（SenseVoice、Qwen3-ASR、
 FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控件。
+
+### 可选：ElevenLabs 本机适配服务
+
+`backend/services/elevenlabs` 是一个独立的本机适配器，把 ElevenLabs 的 TTS 与 ASR 翻译为
+OpenAI 兼容的 `/audio/speech` 与 `/audio/transcriptions`。它监听 `127.0.0.1:5583`，
+不修改 `5578`、`5580` 或默认接入方式；只有把两种语音来源都切到 `api` 并填写
+`http://127.0.0.1:5583/v1` 时才生效。
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+```
+
+默认模型为 `eleven_flash_v2_5`（TTS，免费层可用的最低成本档）与 `scribe_v2`（ASR），默认音色为快速入门使用的 George
+`JBFqnCBsd6RMkjVDRZzb`。协议、音色别名、隐私边界和全部环境变量见
+[适配服务 README](../backend/services/elevenlabs/README.md)。
+
+把两种语音来源都切到 `api` 后，可直接用设置的“使用本机接口”一键填入（默认值即
+`http://127.0.0.1:5583/v1`、`scribe_v2`、`eleven_flash_v2_5`）。`/api/speech/*` 允许规则表端口的
+回环地址，因此本机开发与同机自托管的生产构建都可用（生产构建要求登录会话）；Vercel 等
+无本机服务的运行环境仍无法访问该端口。
+选择该接入后，文本与录音会发送到 ElevenLabs，适用其账户的日志、保留和计费策略。
+
+### 可选：Fish Audio 本机适配服务
+
+`backend/services/fishaudio` 是与 ElevenLabs 适配器同构的本机适配器，把 Fish Audio 的
+TTS 与 ASR 翻译为 OpenAI 兼容的 `/audio/speech` 与 `/audio/transcriptions`。它监听
+`127.0.0.1:5584`，不修改 `5577`–`5583` 或默认接入方式；只有把两种语音来源都切到 `api`
+并填写 `http://127.0.0.1:5584/v1`（或直接点“使用 Fish Audio”）时才生效。
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+```
+
+默认模型为 `s2.1-pro-free`（TTS，免费开发者档）与 `transcribe-1-pro`（ASR）。音色为
+Fish Audio voice model ID（reference_id），可留空使用内置默认音色；`alloy` 等六个 OpenAI
+别名统一映射为内置默认音色。`speed` 直接转发（上游接受 `0.5`–`2`），实时性档位默认
+`balanced`。付费模型在账户未充值时上游返回 402，适配器归一化为
+`fishaudio_payment_required` 并提示改用免费模型。协议、隐私边界和全部环境变量见
+[适配服务 README](../backend/services/fishaudio/README.md)。
+
+把两种语音来源都切到 `api` 后，可直接用设置的“使用 Fish Audio”一键填入（默认值即
+`http://127.0.0.1:5584/v1`、`transcribe-1-pro`、`s2.1-pro-free`）。选择该接入后，文本与
+录音会发送到 Fish Audio，适用其账户的日志、保留和计费策略。
+
+## GET `/api/speech/services`
+
+返回四个本机回环语音服务的探活结果，供设置页显示「在线 / 已启动·缺密钥 / 未启动」并驱动
+一键接入。地址固定来自 `speech-rules.json`，不接受任何请求参数，因此不会被用作任意地址探测。
+
+```json
+{
+  "data": {
+    "checkedAt": 1763035200000,
+    "services": [
+      { "id": "moss-tts", "label": "本机 TTS 网关", "kinds": ["tts"], "ready": true, "state": "ready", "latencyMs": 3 },
+      { "id": "moss-asr", "label": "本机 ASR 服务", "kinds": ["asr"], "ready": false, "state": "down", "latencyMs": 1 },
+      { "id": "local-api", "label": "ElevenLabs 适配器", "kinds": ["asr", "tts"], "ready": true, "state": "ready", "latencyMs": 2 },
+      { "id": "fish-audio", "label": "Fish Audio 适配器", "kinds": ["asr", "tts"], "ready": false, "state": "unconfigured", "latencyMs": 1 }
+    ]
+  }
+}
+```
+
+- 单次探活超时 900ms，四个服务并行。
+- `state` 三态：`ready`（2xx）；`unconfigured`（收到响应但非 2xx，且 body 带
+  `configured: false`，即适配器在线但缺上游密钥）；`down`（探活失败或其余非 2xx）。
+  二值 `ready` 字段保留兼容，仅当 `state === "ready"` 时为 `true`。
+- 设置页首屏由服务端渲染时直接调用同一探测函数并注入结果；本接口供「重新检测」按钮
+  强制刷新，响应 `Cache-Control: no-store`。
 
 ## POST `/api/speech/asr`
 
@@ -169,15 +297,25 @@ FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控�
 
 约束与错误：
 
-- `endpoint` 必须通过与推理端点相同的策略：生产环境仅允许 HTTPS 公网主机，且主机名需在
-  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、`api.anthropic.com`）；
-  非生产环境额外允许回环地址。URL 不得携带用户名或密码。
+- `endpoint` 沿用推理端点策略：远程主机必须是 HTTPS 公网地址，且生产环境的主机名需在
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS` 白名单内（默认包含 `api.openai.com`、
+  `api.anthropic.com`）；回环主机 `localhost`、`127.0.0.1`、`::1` 内置允许，用于本机 local
+  接口，生产构建同样可用，但仅限规则表语音端口（5578/5580/5583/5584）且要求已登录会话。
+  非回环私网主机、URL 内嵌用户名或密码一律拒绝。
 - 解码后的音频不超过 8 MB，请求体不超过 12 MB，`language` 可省略。
-- 上游使用 `multipart/form-data`：`file`、`model`、`response_format=json`、可选 `language`。
+- 上游使用 `multipart/form-data`：`file`、`model`（配置为空时省略，由服务端默认模型接管）、
+  `response_format=json`、可选 `language`。
 - 上游 30 秒未响应视为不可用。错误码：`invalid_json`、`invalid_request`、
   `invalid_speech_endpoint`、`invalid_audio`、`request_too_large`、`rate_limited`、
-  `speech_endpoint_unreachable`、`speech_upstream_error`、`speech_invalid_response`、`asr_failed`。
+  `speech_endpoint_unreachable`、`speech_request_rejected`（400）、`speech_credentials_invalid`
+  （401）、`speech_payment_required`（402）、`speech_rate_limited`（429）、
+  `speech_unavailable` / `speech_not_configured`（503）、`speech_timeout`（504）、
+  `speech_upstream_error`（502）、`speech_invalid_response`、`asr_failed`。
+- 上游状态不再一律折算成 502：本机 5583/5584 适配器会把凭据、余额、限流与超时都包成 502，
+  网关按上游状态码与错误码还原成上表的状态，设置页据此提示「改密钥 / 充值 / 稍后重试」。
+  浏览器侧仍把 401、402 与 5xx 视为「该链路当前不可用」，当次会话回退系统语音或浏览器识别。
 - 服务端只返回规范化文案，不回传上游响应正文；密钥仅用于当次转发，不落盘、不记录。
+- 设置页「测试识别接口」用内置 0.2 秒 WAV 测试音走同一链路，可在开始语音对话前验证配置。
 
 ## POST `/api/speech/tts`
 
@@ -197,10 +335,52 @@ FunASR）只在 `local` 接入下有意义，其他接入方式不显示该控�
 }
 ```
 
-- `text` 去除首尾空白后长度为 1–2000 字符，`voice` 必填且不超过 120 字符，`speed` 收敛到
+- `text` 去除首尾空白后长度为 1–2000 字符，`voice` 可选且不超过 120 字符，`speed` 收敛到
   `0.5`–`2`，`format` 取 `mp3`、`opus`、`aac`、`flac`、`wav`、`pcm` 之一，默认 `mp3`。
+- 模型与音色是否必填由服务端决定：空值按契约省略字段转发，本机适配器与自建网关使用自己的
+  默认模型/音色；强制要求模型的云端服务会返回明确的上游错误。字段规范见
+  [语音服务通用规则配置](./speech-rules.md#配置字段规范)。
 - 端点策略、限流（240 次/分钟/endpoint）与错误码语义同 `/api/speech/asr`。
 - 上游返回非 `audio/*` 内容时记为 `speech_invalid_response`，浏览器据此回退到系统语音。
+
+## POST `/api/speech/tts/test`
+
+设置页「测试合成接口」使用的诊断端点。它复用 `/api/speech/tts` 的端点策略、Bearer 注入与
+合成链路，因此**对任意 OpenAI 兼容端点都可用**（包括本机 5583 接口）；区别是只回传结构化
+诊断，**不回传音频本体**，并额外校验 `Content-Type`、最小字节数与已知容器魔数
+（ID3 / RIFF / OggS，裸 PCM 只校验长度）。
+
+请求体与 `/api/speech/tts` 相同，但 `text`、`voice`、`speed`、`format` 可省略，缺省值来自
+通用规则配置（`Moss 语音接口测试成功。`、`alloy`、`1`、`mp3`）：
+
+```json
+{ "endpoint": { "endpoint": "http://127.0.0.1:5583/v1", "apiKey": "", "model": "eleven_flash_v2_5" } }
+```
+
+成功响应（HTTP 200）：
+
+```json
+{
+  "ok": true,
+  "status": 200,
+  "contentType": "audio/mpeg",
+  "bytes": 10240,
+  "durationMs": 321,
+  "model": "eleven_flash_v2_5",
+  "voice": "alloy",
+  "format": "mp3",
+  "checks": { "audioContentType": true, "plausiblePayload": true }
+}
+```
+
+上游不可达、返回非音频内容或音频不完整时，仍返回 HTTP 200 但带有 `ok: false` 与
+`error: { code, message }`，便于设置页直接展示原因；只有本地参数校验与限流失败才返回标准
+4xx。限流按 `speech-tts-test:<endpoint>` 单独计数，验证操作不会占满正常合成配额。
+
+本机 5583 / 5584 适配器另提供专用自检探针 `POST /v1/audio/speech/test`（同样只返回诊断），
+可用 `pnpm elevenlabs:test:synthesis` 或 `pnpm fishaudio:test:synthesis` 复跑；详见
+[ElevenLabs 适配服务 README](../backend/services/elevenlabs/README.md) 与
+[Fish Audio 适配服务 README](../backend/services/fishaudio/README.md)。
 
 ## POST `/api/conversation`
 
@@ -338,10 +518,11 @@ final 文本也在服务端发送前移除 emoji。
 一起直接展示。完整流程与字段定义见
 [`bilingual-conversation-design.md`](bilingual-conversation-design.md)。
 
-附带有效 `modelConfigEnvelope` 的自带密钥请求无需登录即可推理。未附带时，正常模式要求有效
-的 Supabase 用户 session。只有显式设置 `NEXT_PUBLIC_DEMO_MODE=true` 时接口才返回
-`source: "demo"`，且演示模式不会调用外部 AI provider。旧变量 `AI_MODEL` 仍可作为模型名称
-的兼容配置。
+推理配置优先取服务端 `AI_*` 环境变量；仅当服务端未配置时，`modelConfigEnvelope` 中的自带密钥
+才会生效，此时无需登录即可推理。服务端配置已存在时，携带自带密钥仍要求有效的 Supabase 用户
+session，鉴权与限流按实际使用的配置来源判定。只有显式设置 `NEXT_PUBLIC_DEMO_MODE=true` 时接口
+才返回 `source: "demo"`，且演示模式不会调用外部 AI provider。旧变量 `AI_MODEL` 仍可作为模型
+名称的兼容配置。
 
 ### 错误
 
@@ -441,9 +622,12 @@ toast、对话记录和本机存储，规则如下：
 
 ## `/api/expressions`
 
-内置 1000 条表达随 Web 构建发布，不经过接口。该接口只同步当前用户通过 CSV 或 JSON
-导入的表达；浏览器先写入版本化 localStorage，再按每批最多 200 条调用 `POST`，因此整份
-文件不会被静默截断。
+内置 1170 条表达随 Web 构建发布，不经过接口。该接口只同步当前用户通过 CSV 或 JSON
+导入的表达；浏览器按每批最多 200 条调用 `POST`，只有服务端确认 `stored: true` 后才更新
+版本化 localStorage，因此整份文件不会被静默截断，也不会出现「提示成功但数据库没数据」。
+单批遇 `502/504` 或网络异常时限 3 次有界指数退避重试（upsert 幂等，重放安全），其余状态码不重试。
+导入字段除必填项外还支持 `exampleTranslation`、`usage`、`memoryTip` 和 `examples`
+（每条含 `text` 与可选 `translation`）。
 
 `GET` 每页返回最多 200 条，并使用十进制 `cursor` 继续读取：
 
@@ -461,6 +645,12 @@ toast、对话记录和本机存储，规则如下：
         "why": "eye 代表观察，keep 表示持续维持注意。",
         "origin": "由视觉动作形成的常用表达。",
         "example": "Could you keep an eye on my bag?",
+        "exampleTranslation": "能帮我看一下包吗？",
+        "usage": "常接宾语，也可接 over 引出照看范围。",
+        "memoryTip": "想象眼睛停在目标上。",
+        "examples": [
+          { "text": "Keep an eye on the kids.", "translation": "照看一下孩子。" }
+        ],
         "context": "通用",
         "kind": "idiom",
         "sceneCategory": "social",
@@ -476,13 +666,58 @@ toast、对话记录和本机存储，规则如下：
 `housing`、`transport`、`work`、`social`、`health`、`services`、`learning` 和
 `emergency`；`context` 只接受 `日常`、`职场`、`通用`；`kind` 只接受 `idiom`、
 `collocation`、`phrasal-verb`、`sentence-pattern`。服务端从 session 写入 `user_id`，
-并按 `(user_id, scene_category, normalized_phrase)` 幂等更新。
+并按稳定的 `(user_id, client_id)` 唯一约束幂等更新（`clientId` 由场景与规范化短语哈希而来，
+不依赖 generated column，避免实例缺失该约束时报 `42P10`）。`extra_examples` 始终写数组：
+无拓展例句时写 `[]`，避免传 `null` 触发 `jsonb_typeof` 检查约束 `23514`。
+
+错误分类（数据库真实 code 会记录到服务端日志，不再一律 502）：同批重复表达/`clientId` 返回
+`400`；检查约束/非空/类型错误（`23514`/`23502`/`22P02`）返回 `400 expression_library_invalid_data`；
+唯一约束冲突返回 `409 expression_library_conflict`（不可重试）；表结构/迁移未就绪
+（`42P10`/`42703`/`42P01`/`42501`）返回 `503 expression_library_schema_mismatch`（重试无意义）；
+其余未知写入失败返回 `502 expression_library_write_failed`（客户端可重试）。
 
 `PUT` 请求体使用 `{ "item": { ... } }`，按当前用户和稳定 `clientId` 更新单条导入表达。
 字段校验与 `POST` 相同；若修改后的场景和规范化表达与另一条记录冲突，返回 `409`。
 
 `DELETE` 使用 `?clientId=<client-id>`。演示模式下读取返回空云端集合，写入与删除返回
 `202`，本机内容继续可用。浏览器编辑和删除均先更新本机数据，再调用对应云端接口。
+
+## `/api/expressions/generate`
+
+`POST` 请求体为 `{ "phrases": ["keep an eye on"], "modelConfigEnvelope"? }`，一次最多
+10 个短语，每个不超过 120 字符。认证请求复用 Supabase session；仅当服务端 `AI_*` 未配置时，
+携带加密浏览器模型配置才可直接调用自带模型，明文配置会被拒绝。服务端要求模型只返回 JSON 数组，并按导入契约校验
+每条记录，失败时不把 Provider 错误透出客户端。
+
+成功响应：
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "phrase": "keep an eye on",
+        "meaning": "留意；照看",
+        "why": "eye 代表观察，keep 表示持续维持注意。",
+        "origin": "由视觉动作形成的常用表达。",
+        "example": "Could you keep an eye on my bag?",
+        "exampleTranslation": "能帮我看一下包吗？",
+        "sceneCategory": "social",
+        "context": "通用",
+        "kind": "idiom",
+        "usage": "常接宾语。",
+        "memoryTip": "想象眼睛停在目标上。",
+        "examples": [
+          { "text": "Keep an eye on the kids.", "translation": "照看一下孩子。" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+客户端把 `items` 写入 JSON 预检编辑器，不直接导入；学习者确认字段后才走本机优先的导入
+链路。演示模式返回结构完整的示例记录且不调用外部模型。
 
 ## `/api/account`
 
@@ -606,8 +841,8 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
 
 函数使用 `auth.uid()` 作为所有者，通过原子 upsert 更新 `rate_limit_buckets`。
 `anon` 无执行权限，认证用户不能直接读取或修改底层表。RPC 调用失败时 HTTP API 返回
-`503 rate_limit_unavailable`；携带有效加密 BYOK 配置的推理和翻译请求可回退到容量
-有界的单实例计数。
+`503 rate_limit_unavailable`；仅在服务端 `AI_*` 未配置且携带有效加密 BYOK 配置时，
+推理和翻译请求才回退到容量有界的单实例计数。
 
 跟读完成后先将声学评分写入本地学习记忆，再由快照同步。登录用户同时向
 `shadowing_attempts` 写入清晰度、连贯度、节奏、综合分和录音时长；`audio_path` 保持为空，
@@ -626,6 +861,16 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
     "items": [],
     "sceneProgress": {},
     "events": [],
+    "expressionStudy": {
+      "favorites": {},
+      "groups": {},
+      "progress": {},
+      "filters": {
+        "value": { "query": "", "categories": [], "source": "all" },
+        "updatedAt": "<ISO-8601 timestamp>"
+      },
+      "updatedAt": "<ISO-8601 timestamp>"
+    },
     "updatedAt": "<ISO-8601 timestamp>"
   },
   "p_expected_revision": 3,
@@ -634,6 +879,11 @@ Supabase OAuth 和邮箱验证回调。读取 `code` 并交换 session，然后�
 ```
 
 修订号匹配时写入并递增；不匹配时返回当前快照，客户端合并后最多重试三次。
+
+`expressionStudy` 是地道表达库的学习组织状态（收藏、分组、逐条进度、筛选位置）。它随不透明
+`jsonb` 快照传输，不需要新增表或列；按表达身份记账，收藏与分组用「按 key LWW + 墓碑」合并，
+因此取消收藏或删除分组能跨设备传播，而进度 `reviews` 取两侧最大值。旧快照缺少该字段时，
+解析层补空默认值。
 
 ## RPC `match_long_term_memories`
 

@@ -34,6 +34,7 @@ cp .env.example .env.local
 | Web + 云服务 | Supabase 与 AI 变量 | `pnpm dev` | 登录、云同步、真实模型回复 |
 | 完整离线语音 | 已安装 ASR/TTS | `pnpm dev:offline` | Web、ASR、TTS 一起启动 |
 | 单独语音服务 | 对应模型已安装 | `pnpm asr:start` / `pnpm tts:start` | 独立调试协议与模型 |
+| 可选 ElevenLabs 适配 | 已配置 `ELEVENLABS_API_KEY` | `pnpm elevenlabs:start` | 本机 OpenAI 兼容 TTS/ASR |
 | 生产构建 | 生产环境变量 | `pnpm build && pnpm start` | 优化后的 Next.js 服务 |
 
 本地地址：
@@ -45,10 +46,11 @@ cp .env.example .env.local
 | ASR | `ws://127.0.0.1:5580/v1/asr/stream` | `backend/services/asr` |
 | CosyVoice | `http://127.0.0.1:5581` | TTS 私有 sidecar |
 | Audio8 | `http://127.0.0.1:5582` | TTS 私有 sidecar |
+| ElevenLabs Adapter | `http://127.0.0.1:5583` | `backend/services/elevenlabs`（可选） |
 
 `pnpm dev:offline` 由 `backend/dev.mjs` 管理子进程。Web、ASR 或必需的 TTS 网关退出时，
 父进程会终止其他子进程，避免遗留占用端口的服务。Audio8 和 CosyVoice 是可选服务，
-未安装时不影响 Kokoro 网关启动。
+未安装时不影响 Kokoro 网关启动；ElevenLabs 适配器也不由 `dev:offline` 启动。
 
 ## 3. 请求与数据流
 
@@ -113,9 +115,9 @@ flowchart LR
 | `example` | 可直接用于当前场景的完整英文句子 |
 | `context` | `日常`、`职场` 或 `通用` |
 
-`frontend/src/lib/expression-library.ts` 将 100 条审校表达与
+`frontend/src/lib/expression-library.ts` 将 270 条审校表达与
 `expression-library.generated.json` 的 900 条场景表达合并为独立词库。词库按
-`SceneCategory` 的 10 个分类组织；生成数据必须通过 1000 条、短语唯一、字段完整和完整
+`SceneCategory` 的 10 个分类组织；生成数据必须通过 1170 条、短语唯一、字段完整和完整
 例句断言。`frontend/scripts/generate-expression-library.mjs` 仅用于维护内置数据，运行时
 页面不会调用模型。不要把未经确认的民间词源写成确定事实。
 
@@ -124,15 +126,28 @@ flowchart LR
 生成后必须人工抽查并运行表达词库测试。可用临时变量 `AI_EXPRESSION_FALLBACK_MODEL`
 为格式异常的批次指定备用模型。
 
+`frontend/src/lib/expression-recommendations.ts` 从词库现有字段和 `expressionStudy.progress`
+派生推荐分组，不维护第二份条目清单。新增推荐维度时同时更新维度标签、分组测试和工作台弹窗；
+加入推荐组通过 `addExpressionsToGroup` 一次写入学习记忆快照，避免逐条写入触发多次同步。
+词库页搜索文本在 `allItems` 变化时一次性建索引，推荐分组只在弹窗打开后构建；列表行保持
+memo 化且行级回调引用稳定。调整筛选或推荐逻辑时不要把这些预计算退化成每次渲染重复扫描。
+
 表达库支持直接粘贴 JSON，以及上传 UTF-8 JSON/CSV 文件。界面提供 JSON 格式说明、可下载
-CSV 模板和导入预检；字段为 `phrase`、`meaning`、`why`、`origin`、`example`、
-`sceneCategory`，可选 `context` 和 `kind`。两种入口统一调用
-`parseExpressionImportRows` 校验和去重。浏览器先写
+CSV 模板和导入预检；必填字段为 `phrase`、`meaning`、`why`、`origin`、`example`、
+`sceneCategory`，可选 `context`、`kind`、`exampleTranslation`、`usage`、`memoryTip` 和
+`examples`。CSV 中 `examples` 使用 JSON 数组字符串，每项包含 `text` 与可选 `translation`。
+两种入口统一调用 `parseExpressionImportRows` 校验和去重。浏览器先写
 `moss:expression-library:v1:<userId>`，再按 200 条一批调用 `/api/expressions`；批次大小是
 单请求资源边界，不是导入总量上限。用户导入项可在列表中编辑或删除，修改使用稳定
 `clientId` 调用 `PUT /api/expressions`，删除调用 `DELETE /api/expressions`；两者都先更新
 本机。JSON 输入使用动态加载的 `@monaco-editor/react`，避免增加表达列表首屏包体；新增字段
 时同步更新解析器、编辑器、API 校验、数据库约束和文件模板。
+
+`frontend/src/lib/expression-generation.ts` 定义短语规范化、生成契约和生成结果解析；
+`frontend/src/features/expressions/expression-generation-client.ts` 只发送加密模型配置信封。
+`POST /api/expressions/generate` 负责认证、限流、Provider 调用和错误归一化，返回的结果
+先进入现有 JSON 预检，不绕过本机优先写入链路。新增生成字段时同步更新提示词、预检解析、
+数据库列、CSV 模板和导入弹窗字段说明。
 
 ### 4.3 影子跟读
 
@@ -242,6 +257,47 @@ pnpm tts:start
 
 完整说明见 [`../backend/services/tts/README.md`](../backend/services/tts/README.md)。
 
+### 可选 ElevenLabs 适配服务
+
+`backend/services/elevenlabs` 独立实现 OpenAI 兼容的 `/audio/speech` 与
+`/audio/transcriptions`，在上游调用 ElevenLabs。它与 Kokoro/Audio8/CosyVoice 网关无关：
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+curl http://127.0.0.1:5583/health
+```
+
+在“偏好设置 → 语音服务接入”中把 ASR 与 TTS 都切到 HTTP API，再点各自的“使用本机接口”，
+即可填入 `http://127.0.0.1:5583/v1` 与 `scribe_v2` / `eleven_flash_v2_5`；也可以手动填写，或用
+`NEXT_PUBLIC_*_LOCAL_API_URL`、`NEXT_PUBLIC_*_LOCAL_API_MODEL` 改指向本机其他 OpenAI 兼容
+服务。若设置了 `MOSS_ELEVENLABS_ACCESS_TOKEN`，把同一个令牌填进“API 密钥”，由同源
+`/api/speech/*` 转发。链路为：浏览器 → `/api/speech/asr|/tts` → `127.0.0.1:5583` →
+ElevenLabs。该服务不会改变 `5578`/`5580`，也不会被 `dev:offline` 自动启动。
+测试使用 mock transport，不访问上游：
+
+```bash
+pnpm elevenlabs:test
+```
+
+完整契约、隐私边界和故障语义见
+[`../backend/services/elevenlabs/README.md`](../backend/services/elevenlabs/README.md)。
+
+### 可选 Fish Audio 适配服务
+
+`backend/services/fishaudio` 同样实现 OpenAI 兼容接口，监听 `127.0.0.1:5584`：
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+curl http://127.0.0.1:5584/health
+```
+
+设置页选择“Fish Audio 适配器”后使用 `http://127.0.0.1:5584/v1`、`transcribe-1-pro` /
+`s2.1-pro-free`。该适配器需要能访问 `api.fish.audio`：国内网络常需代理，`httpx` 会读取
+`HTTPS_PROXY`；若代理只转发部分域名，请在启动进程的环境里显式设置可用的出口，或把
+`MOSS_FISHAUDIO_BASE_URL` 指向可达的兼容服务。
+
 ## 9. 环境变量与秘密
 
 `.env.example` 是变量名称和默认路径的唯一清单。提交前检查：
@@ -251,6 +307,9 @@ pnpm tts:start
 - `NEXT_PUBLIC_TTS_SERVICE_URL` 只接受 loopback。
 - `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_TTS_API_URL` 只能提供公开地址与模型名；语音接口
   密钥只保存在浏览器 `moss:speech-config:v1`，随请求进入同源 `/api/speech/*`。
+- `NEXT_PUBLIC_*_LOCAL_API_URL` 与 `NEXT_PUBLIC_*_LOCAL_API_MODEL` 只提供本机回环地址和
+  模型名，供设置的“使用本机接口”预设使用；回环在生产构建下同样允许，但仅适用于应用与
+  语音服务同机的自托管部署。
 - 公网 ASR 必须使用 WSS、精确 Origin 白名单和 `MOSS_ASR_API_KEY`。
 - 生产环境必须显式关闭 demo 模式并配置稳定的模型信封私钥。
 
@@ -315,6 +374,29 @@ Next.js，因为这些变量会在构建阶段内联。
 
 先请求 `GET http://127.0.0.1:5578/health`。网关完全不可达时允许回退；网关可达但模型文件
 缺失时应修复安装，不应把配置错误当成降级成功。
+
+### 5583 / 5584 一直返回 502
+
+先分清「端口没起来」和「上游拒绝」：`GET http://127.0.0.1:5583/health` 或 `:5584/health`
+返回 200 说明适配器在线，502 来自上游。设置页「测试合成接口」的诊断会给出还原后的状态：
+
+- `speech_credentials_invalid`（401）：适配器进程里的 `ELEVENLABS_API_KEY` / `FISH_API_KEY`
+  无效。ElevenLabs 只接受 `sk_` 开头、创建时展示一次的密钥，把 Key ID 填进环境变量会得到
+  `invalid_api_key`。
+- `speech_payment_required`（402）：Fish Audio 当前模型需要充值；合成可换免费模型
+  `s2.1-pro-free`，识别（`transcribe-1-pro`）暂无免费模型，只能充值或改用其他识别服务。
+- `speech_unavailable`（503）：出口网络或代理无法访问上游域名。
+- `speech_request_rejected`（400/404）：模型、音色或输出格式不被上游接受。适配器先兜底：
+  5583 无效音色改用默认音色重试、无效模型改用默认模型重试；5584 无效 reference_id 去掉
+  音色重试。兜底仍失败时错误带上游码，`voice_not_found` 提示清空音色用默认音色。
+
+适配器改造后必须重启进程才会生效：`pnpm elevenlabs:start` / `pnpm fishaudio:start`。
+旧进程会继续用改造前的错误码，看起来就像「改了没作用」。
+
+设置页「本机服务」徽章与一键接入圆点按探活结果分三态：在线（`/health` 200）、
+已启动·缺密钥（503 且 body 带 `configured:false`，直接提示该改哪个 `.env.local`）、
+未启动（探活失败）。看到「已启动·缺密钥」时不要再排查端口，直接补密钥并重启适配器；
+「检测本机服务」按钮在这类机器上也不再误报「均未启动」。
 
 ### ASR 能连接但没有 final
 

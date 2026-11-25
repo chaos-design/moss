@@ -1,8 +1,19 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { normalizeSpeechTranscript } from "@/lib/call-runtime"
+import { toast } from "sonner"
 import {
+  type ApiAsrTurnTracker,
+  apiBargeInThresholdBoost,
+  apiMinUtteranceMs,
+  calculateByteRms,
+  createApiAsrTurnTracker,
+} from "@/features/speech/api-asr-turn-detection"
+import { resamplePcm } from "@/features/speech/use-streaming-asr"
+import { encodeWavBlob } from "@/lib/audio-wav"
+import { normalizeSpeechTranscript, stripSpeechAnnotations } from "@/lib/call-runtime"
+import {
+  isRetryableRecognitionFailure,
   SpeechApiClientError,
   supportsBrowserSpeechRecognition,
   transcribeSpeechAudio,
@@ -64,19 +75,18 @@ function describeRecognitionError(error: string) {
   return new Error(`浏览器语音识别失败：${error}`)
 }
 
-function selectAudioMimeType() {
-  if (typeof MediaRecorder === "undefined") {
-    return ""
-  }
-  return (
-    ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find(
-      (type) => MediaRecorder.isTypeSupported(type),
-    ) ?? ""
-  )
-}
+// api 识别上传统一编码为 16kHz 单声道 WAV：与流式识别的采样率一致，
+// 25s 上限约 800KB，远低于网关的音频字节上限。
+const apiUploadSampleRate = 16_000
+const apiMeterIntervalMs = 100
+// 5xx / 网络瞬断自动重试：首次失败后再试 2 次，退避 700ms / 1400ms。
+const recognitionAttempts = 3
+const recognitionRetryDelayMs = 700
 
 export type BrowserAsrOptions = {
   endpoint: SpeechEndpoint
+  /** 暂停采集（助手播报/静音）期间是否保留高阈值打断监听。 */
+  bargeInEnabled?: boolean
   onError: (error: Error) => void
   onPartial: (text: string) => void
   onProcessingChange: (processing: boolean) => void
@@ -87,8 +97,11 @@ export type BrowserAsrOptions = {
 /**
  * Web Speech API backend. It replaces the local streaming service when it is unavailable or the
  * learner selects it explicitly, so voice practice keeps working without any sidecar process.
+ * The `api` transport records through the same Web Audio graph that powers turn detection and
+ * uploads a WAV per detected turn.
  */
 export function useBrowserAsr({
+  bargeInEnabled = false,
   endpoint,
   onError,
   onPartial,
@@ -98,17 +111,40 @@ export function useBrowserAsr({
 }: BrowserAsrOptions) {
   const [available, setAvailable] = useState(false)
   const recognitionRef = useRef<BrowserRecognitionInstance | null>(null)
-  const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const chunksRef = useRef<Blob[]>([])
+  // 麦克风流通常由通话运行时持有并在通话结束时释放；只有这里自己 getUserMedia
+  // 的流才允许在本 hook 内停轨，否则下一轮 start() 会拿到无活轨的死流。
+  const selfAcquiredStreamRef = useRef(false)
   const activeRef = useRef(false)
   const processingRef = useRef(false)
+  // api 接入的静音断句与 PCM 采集共用一张 Web Audio 图：能量检测说「说完一句」
+  // 时快照已积累的 PCM 编码为 WAV 上传，采集保持运行，监听不中断。
+  const audioGraphRef = useRef<{
+    context: AudioContext
+    source: MediaStreamAudioSourceNode
+    processor: ScriptProcessorNode
+    silentGain: GainNode
+  } | null>(null)
+  const turnAnalyserRef = useRef<AnalyserNode | null>(null)
+  const turnMeterBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null)
+  const turnFeedTimerRef = useRef<number | null>(null)
+  const turnTrackerRef = useRef<ApiAsrTurnTracker | null>(null)
+  const pcmFramesRef = useRef<Float32Array[]>([])
+  const pcmFrameCountRef = useRef(0)
+  const capturePausedRef = useRef(false)
+  // 逐句上传走一条串行队列：上一句上传（含重试）未结算前，下一句排队等待，
+  // 结果按断句顺序提交，避免后说的句子因网络更快而反超先说的句子写反消息顺序。
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
+  // 重试耗尽后保留的失败录音：亮出重试按钮，等待学习者手动重试。
+  const failedUploadRef = useRef<Blob | null>(null)
+  const [recognitionRetryPending, setRecognitionRetryPending] = useState(false)
   const onErrorRef = useRef(onError)
   const onPartialRef = useRef(onPartial)
   const onProcessingChangeRef = useRef(onProcessingChange)
   const onSpeechStartRef = useRef(onSpeechStart)
   const onTranscriptRef = useRef(onTranscript)
   const endpointRef = useRef(endpoint)
+  const bargeInRef = useRef(bargeInEnabled)
   const requestIdRef = useRef(0)
 
   onErrorRef.current = onError
@@ -117,6 +153,7 @@ export function useBrowserAsr({
   onSpeechStartRef.current = onSpeechStart
   onTranscriptRef.current = onTranscript
   endpointRef.current = endpoint
+  bargeInRef.current = bargeInEnabled
 
   const setProcessing = useCallback((processing: boolean) => {
     processingRef.current = processing
@@ -136,65 +173,190 @@ export function useBrowserAsr({
       recognition.onspeechend = null
       recognition.abort()
     }
-    const recorder = recorderRef.current
-    recorderRef.current = null
-    if (recorder && recorder.state !== "inactive") {
-      recorder.onstop = null
-      recorder.ondataavailable = null
-      recorder.stop()
+    pcmFramesRef.current = []
+    pcmFrameCountRef.current = 0
+    capturePausedRef.current = false
+    // 丢弃在途与排队上传：requestId 已失效，残留任务会因 requestId 校验直接返回，
+    // 但把队列归零可让挂着的录音 Blob 及时释放。
+    uploadQueueRef.current = Promise.resolve()
+    if (turnFeedTimerRef.current !== null) {
+      window.clearInterval(turnFeedTimerRef.current)
+      turnFeedTimerRef.current = null
     }
-    chunksRef.current = []
-    for (const track of streamRef.current?.getTracks() ?? []) {
-      track.stop()
+    turnTrackerRef.current = null
+    turnAnalyserRef.current = null
+    turnMeterBufferRef.current = null
+    const graph = audioGraphRef.current
+    audioGraphRef.current = null
+    if (graph) {
+      graph.processor.onaudioprocess = null
+      graph.source.disconnect()
+      graph.processor.disconnect()
+      graph.silentGain.disconnect()
+      void graph.context.close().catch(() => {})
+    }
+    if (selfAcquiredStreamRef.current) {
+      for (const track of streamRef.current?.getTracks() ?? []) {
+        track.stop()
+      }
+      selfAcquiredStreamRef.current = false
     }
     streamRef.current = null
     setProcessing(false)
     onPartialRef.current("")
+    setRecognitionRetryPending(false)
+    failedUploadRef.current = null
   }, [setProcessing])
 
-  const transcribeRecordedChunk = useCallback(async () => {
-    const recorder = recorderRef.current
-    const mimeType = recorder?.mimeType || selectAudioMimeType()
-    if (recorder && recorder.state === "recording") {
-      recorder.stop()
-    }
-    const audio =
-      chunksRef.current.length > 0
-        ? new Blob(chunksRef.current, mimeType ? { type: mimeType } : undefined)
-        : null
-    chunksRef.current = []
-    if (!audio || audio.size === 0) {
+  const uploadRecordedAudio = useCallback(
+    async (audio: Blob | null) => {
+      if (!audio || audio.size === 0) {
+        return
+      }
+      const requestId = requestIdRef.current
+      setProcessing(true)
+      try {
+        // 5xx / 网络失败自动重试两次（线性退避）；4xx 是参数或凭据问题，重试无意义。
+        for (let attempt = 1; attempt <= recognitionAttempts; attempt += 1) {
+          try {
+            const { text } = await transcribeSpeechAudio({
+              audio,
+              endpoint: endpointRef.current,
+            })
+            if (requestId !== requestIdRef.current) {
+              return
+            }
+            if (!text) {
+              // 服务端对这段录音没有返回文字：整轮静默丢弃会让学习者以为「说了没反应」。
+              // 能走到这里说明断句时的发声时长已达阈值，多半是音量太小或发音被吞，
+              // 明确提示比悄悄回到待听状态更可诊断。
+              toast.warning("这段语音没有识别出文字，请靠近麦克风再说一遍")
+              return
+            }
+            onTranscriptRef.current(text)
+            return
+          } catch (error) {
+            if (requestId !== requestIdRef.current) {
+              return
+            }
+            if (error instanceof DOMException && error.name === "AbortError") {
+              return
+            }
+            const failure =
+              error instanceof SpeechApiClientError || error instanceof Error
+                ? error
+                : new SpeechApiClientError("语音识别接口暂时不可用")
+            if (!isRetryableRecognitionFailure(failure)) {
+              onErrorRef.current(failure)
+              return
+            }
+            if (attempt >= recognitionAttempts) {
+              // 重试耗尽：结束本次识别——暂停采集，不再往失败回合里积累音频，
+              // 避免学习者继续说时新句子照常上传、把旧句子的重试结果顶到后面去；
+              // 保留录音并亮出重试按钮，等待学习者手动重试（retryRecognition 恢复采集）。
+              capturePausedRef.current = true
+              failedUploadRef.current = audio
+              setRecognitionRetryPending(true)
+              onErrorRef.current(failure)
+              return
+            }
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, recognitionRetryDelayMs * attempt),
+            )
+          }
+        }
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setProcessing(false)
+        }
+      }
+    },
+    [setProcessing],
+  )
+
+  // 短噪声轮（发声时长低于 apiMinUtteranceMs）按噪声丢弃：清掉已积累的 PCM，
+  // 不发起识别上传，采集继续等待下一句。
+  const discardRecordedAudio = useCallback(() => {
+    pcmFramesRef.current = []
+    pcmFrameCountRef.current = 0
+  }, [])
+
+  // 重试按钮入口：把上次失败的录音重新上传。成功后恢复采集继续下一轮；
+  // 仍失败则按钮保留，采集保持暂停，可以反复重试。
+  // VAD 断句用：只快照已积累的 PCM 并编码上传，采集保持运行，监听不中断；
+  // 上传与提交期间用户继续说话的内容会进入下一个快照。
+  // 上传走串行队列（uploadQueueRef），断句顺序即提交顺序。
+  const flushRecordedAudio = useCallback(() => {
+    const graph = audioGraphRef.current
+    const frames = pcmFramesRef.current
+    const frameCount = pcmFrameCountRef.current
+    pcmFramesRef.current = []
+    pcmFrameCountRef.current = 0
+    if (!graph || frameCount === 0) {
       return
     }
-    const requestId = requestIdRef.current
-    setProcessing(true)
-    try {
-      const { text } = await transcribeSpeechAudio({
-        audio,
-        endpoint: endpointRef.current,
-      })
-      if (requestId !== requestIdRef.current || !text) {
-        return
-      }
-      onTranscriptRef.current(text)
-    } catch (error) {
-      if (requestId !== requestIdRef.current) {
-        return
-      }
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return
-      }
-      onErrorRef.current(
-        error instanceof SpeechApiClientError || error instanceof Error
-          ? error
-          : new Error("语音识别接口暂时不可用"),
-      )
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setProcessing(false)
-      }
+    const samples = new Float32Array(frameCount)
+    let offset = 0
+    for (const frame of frames) {
+      samples.set(frame, offset)
+      offset += frame.length
     }
-  }, [setProcessing])
+    const resampled = resamplePcm(samples, graph.context.sampleRate, apiUploadSampleRate)
+    const audio = encodeWavBlob(resampled, apiUploadSampleRate)
+    // 串行提交：上传任务在前一个任务结算后执行；catch 兜底保证队列永不卡死。
+    uploadQueueRef.current = uploadQueueRef.current
+      .then(() => uploadRecordedAudio(audio))
+      .catch(() => {})
+  }, [uploadRecordedAudio])
+
+  const armFeedLoop = useCallback(() => {
+    if (turnFeedTimerRef.current !== null) {
+      return
+    }
+    turnFeedTimerRef.current = window.setInterval(() => {
+      const currentAnalyser = turnAnalyserRef.current
+      const tracker = turnTrackerRef.current
+      const buffer = turnMeterBufferRef.current
+      if (!currentAnalyser || !tracker || !buffer) {
+        return
+      }
+      currentAnalyser.getByteTimeDomainData(buffer)
+      tracker.feed(calculateByteRms(buffer), apiMeterIntervalMs)
+    }, apiMeterIntervalMs)
+  }, [])
+
+  const armCaptureTracker = useCallback(() => {
+    turnTrackerRef.current = createApiAsrTurnTracker({
+      onSpeechStart: () => {
+        onSpeechStartRef.current?.()
+      },
+      onSpeechEnd: (end) => {
+        // 强制断句（25s 上限）一定上传；静音断句但发声过短的轮次按噪声丢弃。
+        if (end.reason === "silence" && end.utteranceMs < apiMinUtteranceMs) {
+          discardRecordedAudio()
+          return
+        }
+        flushRecordedAudio()
+      },
+    })
+    armFeedLoop()
+  }, [armFeedLoop, discardRecordedAudio, flushRecordedAudio])
+
+  // 播报期间的打断监听：与采集共用同一张 Web Audio 图，但用高倍阈值——扬声器回声
+  // 经噪声底自适应后远低于直接说话的能量，只有真实发言能触发 speech-start；
+  // 监听不产生转写与上传，侦测到打断后由运行时立即恢复完整采集。
+  const armBargeInMonitor = useCallback(() => {
+    if (!turnAnalyserRef.current || turnFeedTimerRef.current !== null) {
+      return
+    }
+    turnTrackerRef.current = createApiAsrTurnTracker({
+      thresholdBoost: apiBargeInThresholdBoost,
+      onSpeechStart: () => {
+        onSpeechStartRef.current?.()
+      },
+    })
+    armFeedLoop()
+  }, [])
 
   const start = useCallback(
     async (stream?: MediaStream) => {
@@ -203,22 +365,40 @@ export function useBrowserAsr({
       requestIdRef.current += 1
 
       if (endpointRef.current.transport === "api") {
-        if (typeof MediaRecorder === "undefined") {
+        if (typeof window.AudioContext === "undefined") {
           throw new Error("当前浏览器不支持录音上传识别，请改用其他识别方式")
         }
         const mediaStream =
           stream ?? (await navigator.mediaDevices.getUserMedia({ audio: true }))
+        selfAcquiredStreamRef.current = !stream
         streamRef.current = mediaStream
-        const recorder = new MediaRecorder(mediaStream, {
-          ...(selectAudioMimeType() ? { mimeType: selectAudioMimeType() } : {}),
-        })
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            chunksRef.current.push(event.data)
+
+        const audioContext = new AudioContext()
+        void audioContext.resume().catch(() => {})
+        const source = audioContext.createMediaStreamSource(mediaStream)
+        const analyser = audioContext.createAnalyser()
+        analyser.fftSize = 1024
+        source.connect(analyser)
+        // ScriptProcessor 与流式识别同一采集模式；接一个静音增益到目的地才能持续触发。
+        const processor = audioContext.createScriptProcessor(4096)
+        const silentGain = audioContext.createGain()
+        silentGain.gain.value = 0
+        processor.onaudioprocess = (event) => {
+          if (capturePausedRef.current) {
+            return
           }
+          const frame = new Float32Array(event.inputBuffer.getChannelData(0))
+          pcmFramesRef.current.push(frame)
+          pcmFrameCountRef.current += frame.length
         }
-        recorder.start(1_000)
-        recorderRef.current = recorder
+        source.connect(processor)
+        processor.connect(silentGain)
+        silentGain.connect(audioContext.destination)
+
+        audioGraphRef.current = { context: audioContext, source, processor, silentGain }
+        turnAnalyserRef.current = analyser
+        turnMeterBufferRef.current = new Uint8Array(new ArrayBuffer(analyser.fftSize))
+        armCaptureTracker()
         return
       }
 
@@ -241,7 +421,9 @@ export function useBrowserAsr({
         let interim = ""
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
           const result = event.results[index]
-          const text = normalizeSpeechTranscript(result?.[0]?.transcript ?? "")
+          const text = normalizeSpeechTranscript(
+            stripSpeechAnnotations(result?.[0]?.transcript ?? ""),
+          )
           if (!text) {
             continue
           }
@@ -284,16 +466,52 @@ export function useBrowserAsr({
         throw error instanceof Error ? error : new Error("无法启动浏览器语音识别")
       }
     },
-    [setProcessing, teardown],
+    [armCaptureTracker, flushRecordedAudio, setProcessing, teardown],
   )
 
-  const pause = useCallback(() => {
-    if (endpointRef.current.transport === "api" && recorderRef.current) {
-      void transcribeRecordedChunk()
+  const retryRecognition = useCallback(() => {
+    const audio = failedUploadRef.current
+    if (!audio) {
       return
     }
-    teardown()
-  }, [teardown, transcribeRecordedChunk])
+    failedUploadRef.current = null
+    setRecognitionRetryPending(false)
+    // 重试也走同一条串行队列，避免与新的断句上传交错乱序。
+    uploadQueueRef.current = uploadQueueRef.current
+      .then(() => uploadRecordedAudio(audio))
+      .catch(() => {})
+    void uploadQueueRef.current.finally(() => {
+      if (failedUploadRef.current === null) {
+        // 重试成功：恢复采集继续下一轮。
+        capturePausedRef.current = false
+        armCaptureTracker()
+        armFeedLoop()
+      }
+      // 仍失败：uploadRecordedAudio 的耗尽分支已保留重试按钮并保持采集暂停。
+    })
+  }, [armCaptureTracker, armFeedLoop, uploadRecordedAudio])
+
+  const pause = useCallback(() => {
+    if (endpointRef.current.transport !== "api") {
+      teardown()
+      return
+    }
+    // 先停采集并同步解除采集用检测器（回声不能触发 speech-start 打断播报），
+    // 上传已积累音频；随后保留高阈值打断监听，真实发言立即恢复识别。
+    capturePausedRef.current = true
+    turnTrackerRef.current = null
+    if (turnFeedTimerRef.current !== null) {
+      window.clearInterval(turnFeedTimerRef.current)
+      turnFeedTimerRef.current = null
+    }
+    flushRecordedAudio()
+    // 已排队的上传结算后再挂高阈值监听（保留原语义：先把已积累音频传完）。
+    void uploadQueueRef.current.then(() => {
+      if (activeRef.current && bargeInRef.current) {
+        armBargeInMonitor()
+      }
+    })
+  }, [armBargeInMonitor, flushRecordedAudio])
 
   const stop = useCallback(() => {
     teardown()
@@ -301,7 +519,7 @@ export function useBrowserAsr({
 
   const prepare = useCallback(async () => {
     if (endpointRef.current.transport === "api") {
-      if (typeof MediaRecorder === "undefined") {
+      if (typeof window.AudioContext === "undefined") {
         throw new Error("当前浏览器不支持录音上传识别，请改用其他识别方式")
       }
       return
@@ -314,11 +532,19 @@ export function useBrowserAsr({
   useEffect(() => {
     setAvailable(
       endpoint.transport === "api"
-        ? typeof MediaRecorder !== "undefined"
+        ? typeof window.AudioContext !== "undefined"
         : supportsBrowserSpeechRecognition(),
     )
     return stop
   }, [endpoint.transport, stop])
 
-  return { available, pause, prepare, start, stop }
+  return {
+    available,
+    pause,
+    prepare,
+    recognitionRetryPending,
+    retryRecognition,
+    start,
+    stop,
+  }
 }

@@ -1,6 +1,13 @@
 "use client"
 
-import { type Dispatch, type MutableRefObject, useCallback, useEffect, useRef } from "react"
+import {
+  type Dispatch,
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { toast } from "sonner"
 import type {
   ConversationMessage,
@@ -12,10 +19,16 @@ import { type SpeechVoiceTarget, useLocalTts } from "@/features/speech/use-local
 import { useSpeechConfig } from "@/features/speech/use-speech-config"
 import { useTtsConfig } from "@/features/speech/use-tts-config"
 import { asrEngineOptions } from "@/lib/asr-config"
-import { isLikelyPlaybackEcho, normalizeSpeechTranscript } from "@/lib/call-runtime"
-import type { ConversationInputMode } from "@/lib/conversation-history"
+import {
+  isLikelyPlaybackEcho,
+  normalizeSpeechTranscript,
+  stripSpeechAnnotations,
+} from "@/lib/call-runtime"
 import type { ConversationScene } from "@/lib/conversation-scenes"
-import { isSupportedSpeechTranscript } from "@/lib/language-detection"
+import {
+  isMeaningfulSpeechTranscript,
+  isSupportedSpeechTranscript,
+} from "@/lib/language-detection"
 import {
   apiTtsVoiceOptions,
   getSelectedApiVoiceValue,
@@ -69,6 +82,13 @@ const voicePreviewSample = "Hi there! Let's practice English together."
 const chineseVoicePreviewSample = "你好，很高兴和你一起练习。"
 const playbackEchoGuardMs = 5_000
 
+// 语音提交面：commit 把一句识别结果立即提交为独立消息；requestReply 在静默触发器
+// 判定「学习者说完了」之后为已提交的轮次统一请求一次回复。
+export type VoiceSubmitRef = {
+  commit: (content: string) => void
+  requestReply: () => Promise<void>
+}
+
 function scheduleIdleTask(callback: () => void) {
   if (typeof window.requestIdleCallback === "function") {
     const handle = window.requestIdleCallback(callback, { timeout: 2500 })
@@ -77,13 +97,6 @@ function scheduleIdleTask(callback: () => void) {
 
   const handle = window.setTimeout(callback, 600)
   return () => window.clearTimeout(handle)
-}
-
-function combineVoiceSegments(segments: string[]) {
-  return normalizeSpeechTranscript(segments.join(" ")).replace(
-    /([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g,
-    "$1",
-  )
 }
 
 // Voice lists belong to the active synthesis transport: the local registry for the loopback
@@ -137,8 +150,8 @@ export function useVoiceCallRuntime({
   pendingRef,
   persistSession,
   scene,
-  submitMessageRef,
   voiceSentenceDelayMs,
+  voiceSubmitRef,
 }: {
   callActive: boolean
   callSecondsRef: MutableRefObject<number>
@@ -149,9 +162,7 @@ export function useVoiceCallRuntime({
   persistSession: (messages: ConversationMessage[]) => void
   scene: ConversationScene
   voiceSentenceDelayMs: number
-  submitMessageRef: MutableRefObject<
-    (content: string, inputMode?: ConversationInputMode) => Promise<void>
-  >
+  voiceSubmitRef: MutableRefObject<VoiceSubmitRef>
 }) {
   const {
     playbackState: speechPlaybackState,
@@ -174,17 +185,30 @@ export function useVoiceCallRuntime({
   const callStartRequestRef = useRef(0)
   const callStartedAtRef = useRef(0)
   const streamRef = useRef<MediaStream | null>(null)
-  const voiceSegmentsRef = useRef<string[]>([])
+  // 有已提交、尚未回答的语音轮次：静默触发器据此决定是否请求回复。
+  const hasUnansweredVoiceTurnRef = useRef(false)
   const voiceCommitTimerRef = useRef<number | null>(null)
+  const runVoiceReplyTriggerRef = useRef<() => void>(() => {})
   const lastAssistantSpeechRef = useRef("")
   const echoGuardUntilRef = useRef(0)
   const idleReminderCountRef = useRef(0)
   const lastVoiceActivityAtRef = useRef(Date.now())
+  // 学习者此刻正在说话（语音起点已触发、尚未产出转写）：重启识别时保持「录音中」
+  // 而不回落到「可以说话」，否则说话中途会看到状态倒退。
+  const voiceInProgressRef = useRef(false)
   const previewingVoiceRef = useRef<string | null>(null)
+  // 正在朗读（或合成）的文本：转写里的播放按钮据此显示加载/停止状态。
+  const [speechTargetText, setSpeechTargetText] = useState("")
+  // 正在朗读的那条消息的 id：两条内容相同的回复会各自拥有独立 id，播放按钮
+  // 据此精确定位，避免按文本匹配时两条相同回复同时显示停止态。空串表示没有
+  // 对应的转写消息（例如系统 idle 提示语）。
+  const [speechTargetMessageId, setSpeechTargetMessageId] = useState("")
 
   const stopAssistantSpeech = useCallback(() => {
     speechRequestRef.current += 1
     speakingRef.current = false
+    setSpeechTargetText("")
+    setSpeechTargetMessageId("")
     echoGuardUntilRef.current = Date.now() + playbackEchoGuardMs
     stopLocalSpeech()
   }, [stopLocalSpeech])
@@ -203,7 +227,7 @@ export function useVoiceCallRuntime({
 
   const resetVoiceTurn = useCallback(() => {
     clearVoiceCommitTimer()
-    voiceSegmentsRef.current = []
+    hasUnansweredVoiceTurnRef.current = false
   }, [clearVoiceCommitTimer])
 
   const markVoiceActivity = useCallback(() => {
@@ -216,27 +240,44 @@ export function useVoiceCallRuntime({
     markVoiceActivity()
   }, [markVoiceActivity])
 
-  const scheduleVoiceTurnCommit = useCallback(() => {
+  // 静默触发器：学习者每说一句就提交为独立消息，这里在学习者停止说话
+  // （静默 voiceSentenceDelayMs，partial 持续重置）后统一请求一次回复；
+  // 回复仍在生成或播报时顺延到该回合结束，不丢弃这句补充。
+  const runVoiceReplyTrigger = useCallback(() => {
+    voiceCommitTimerRef.current = null
+    if (!hasUnansweredVoiceTurnRef.current) {
+      return
+    }
+    if (pendingRef.current || speakingRef.current) {
+      voiceCommitTimerRef.current = window.setTimeout(
+        () => runVoiceReplyTriggerRef.current(),
+        voiceSentenceDelayMs,
+      )
+      return
+    }
+    hasUnansweredVoiceTurnRef.current = false
+    void voiceSubmitRef.current.requestReply()
+  }, [pendingRef, speakingRef, voiceSentenceDelayMs, voiceSubmitRef])
+
+  runVoiceReplyTriggerRef.current = runVoiceReplyTrigger
+
+  const scheduleVoiceReplyTrigger = useCallback(() => {
     clearVoiceCommitTimer()
-    voiceCommitTimerRef.current = window.setTimeout(() => {
-      voiceCommitTimerRef.current = null
-      const content = combineVoiceSegments(voiceSegmentsRef.current)
-      voiceSegmentsRef.current = []
-      if (content) {
-        void submitMessageRef.current(content, "voice")
-      }
-    }, voiceSentenceDelayMs)
-  }, [clearVoiceCommitTimer, submitMessageRef, voiceSentenceDelayMs])
+    voiceCommitTimerRef.current = window.setTimeout(runVoiceReplyTrigger, voiceSentenceDelayMs)
+  }, [clearVoiceCommitTimer, runVoiceReplyTrigger, voiceSentenceDelayMs])
 
   const {
     available: speechRecognitionAvailable,
     loadingProgress: speechRecognitionProgress,
     pause: pauseStreamingAsr,
     prepare: prepareStreamingAsr,
+    recognitionRetryPending,
+    retryRecognition: retryFailedRecognition,
     start: startStreamingRecognition,
     stop: stopStreamingAsr,
     transport: asrTransport,
   } = useAsrSession({
+    bargeInEnabled: !mutedRef.current,
     context: [
       `Scenario: ${scene.title}.`,
       `Goal: ${scene.objective}`,
@@ -258,17 +299,20 @@ export function useVoiceCallRuntime({
       toast.error(error.message || "语音识别服务暂时不可用")
     },
     onPartial: (transcript) => {
-      if (callActiveRef.current && listeningRef.current) {
-        markVoiceActivity()
-        clearVoiceCommitTimer()
-        dispatch({
-          type: "transcript-changed",
-          transcript: combineVoiceSegments([
-            ...voiceSegmentsRef.current,
-            normalizeSpeechTranscript(transcript),
-          ]),
-        })
+      if (!callActiveRef.current || !listeningRef.current) {
+        return
       }
+      markVoiceActivity()
+      // 学习者还在说话：推迟回答触发。回复生成/播报期间不再展示识别文本——
+      // 回答完整之前转写里不出现识别语音；打断仍由语音起点（onSpeechStart）负责。
+      clearVoiceCommitTimer()
+      if (pendingRef.current || speakingRef.current) {
+        return
+      }
+      dispatch({
+        type: "transcript-changed",
+        transcript: normalizeSpeechTranscript(stripSpeechAnnotations(transcript)),
+      })
     },
     onProcessingChange: (processing) => {
       if (processing && callActiveRef.current) {
@@ -280,39 +324,66 @@ export function useVoiceCallRuntime({
         !pendingRef.current &&
         !speakingRef.current
       ) {
+        voiceInProgressRef.current = false
         dispatch({ type: "call-status-changed", status: "listening" })
       }
     },
     onSpeechStart: () => {
       if (callActiveRef.current && !mutedRef.current) {
         markVoiceActivity()
+        voiceInProgressRef.current = true
+        // 检测到说话立刻进入录音态：这是「真的在录」的直接证据，不必等到上传识别
+        // 才变化。正常轮次与打断恢复后都成立。
+        dispatch({ type: "call-status-changed", status: "recording" })
       }
       if (!pendingRef.current && !speakingRef.current) {
         return
       }
+      if (mutedRef.current) {
+        // 静音时监听到的任何事件都不构成打断（api 打断监听此时只能听到静音轨）。
+        return
+      }
       interruptAssistant()
       if (callActiveRef.current && !mutedRef.current) {
-        dispatch({ type: "call-status-changed", status: "listening" })
+        voiceInProgressRef.current = true
+        dispatch({ type: "call-status-changed", status: "recording" })
+        // api 接入的采集在播报前已停止：打断后立即重启；本机/浏览器通道仍在监听，
+        // 无需重启（重复 start 会先经过 connecting 抖动状态）。
+        if (asrTransport === "api") {
+          startRecognition()
+        }
       }
     },
     onTranscript: (transcript, language) => {
-      const normalized = normalizeSpeechTranscript(transcript)
+      // 识别引擎会把非语音事件以方括号标注混进转写（[background noise]/[噪音] 等）：
+      // 在入口剥掉，整段只剩标注时为空串，真值门控直接丢弃、不发消息。
+      const normalized = normalizeSpeechTranscript(stripSpeechAnnotations(transcript))
       const echoBlocked =
         Date.now() < echoGuardUntilRef.current &&
         isLikelyPlaybackEcho(normalized, lastAssistantSpeechRef.current)
-      if (!callActiveRef.current || !listeningRef.current || echoBlocked) {
+      if (!callActiveRef.current || !listeningRef.current) {
         return
       }
-      if (normalized && isSupportedSpeechTranscript(normalized, language)) {
+      if (normalized && !echoBlocked && isSupportedSpeechTranscript(normalized, language)) {
         resetIdleReminders()
-        voiceSegmentsRef.current.push(normalized)
-        dispatch({
-          type: "transcript-changed",
-          transcript: combineVoiceSegments(voiceSegmentsRef.current),
-        })
-        scheduleVoiceTurnCommit()
-      } else if (callActiveRef.current && !mutedRef.current) {
+        voiceInProgressRef.current = false
+        // 每句识别结果立即提交为独立消息（多次说 = 多条消息）；提交事件会清空实时
+        // 识别条，回答由静默触发器在学习者说完后统一请求，不逐句抢答。
+        hasUnansweredVoiceTurnRef.current = true
+        voiceSubmitRef.current.commit(normalized)
+        scheduleVoiceReplyTrigger()
+        return
+      }
+      voiceInProgressRef.current = false
+      if (callActiveRef.current && !mutedRef.current) {
         dispatch({ type: "call-status-changed", status: "listening" })
+      }
+      // 有内容却被丢弃的识别结果必须给出解释，否则学习者会以为「说了没反应」：
+      // 回声守卫与语言校验各自一句提示；纯填充词（嗯/呃）与只剩标注的空串保持静默。
+      if (echoBlocked) {
+        toast.info("这句与刚播报的内容相似，已按回声忽略；如未收到回复请再说一遍")
+      } else if (normalized && isMeaningfulSpeechTranscript(normalized)) {
+        toast.warning("识别到了语音，但这句不是中英文内容，已忽略")
       }
     },
   })
@@ -361,7 +432,11 @@ export function useVoiceCallRuntime({
     void startStreamingRecognition(stream)
       .then(() => {
         if (callActiveRef.current && !mutedRef.current && !speakingRef.current) {
-          dispatch({ type: "call-status-changed", status: "listening" })
+          // 说话中途重启识别（api 打断恢复）时保持「录音中」，不倒退回「可以说话」。
+          dispatch({
+            type: "call-status-changed",
+            status: voiceInProgressRef.current ? "recording" : "listening",
+          })
         }
       })
       .catch((error) => {
@@ -371,8 +446,18 @@ export function useVoiceCallRuntime({
       })
   }, [dispatch, startStreamingRecognition])
 
+  // 转写里的停止控件。语音通话中停止朗读后必须立刻恢复监听：speak() 会暂停 ASR 并把状态
+  // 置为 speaking，若不重启识别，通话会卡在 speaking 且没有语音起点信号可以唤醒。
+  const stopSpeech = useCallback(() => {
+    stopAssistantSpeech()
+    if (callActiveRef.current && !mutedRef.current) {
+      lastVoiceActivityAtRef.current = Date.now()
+      startRecognition()
+    }
+  }, [startRecognition, stopAssistantSpeech])
+
   const speak = useCallback(
-    (text: string, force = false) => {
+    (text: string, force = false, messageId = "") => {
       if (!speakerEnabledRef.current && !force) {
         startRecognition()
         return
@@ -382,6 +467,8 @@ export function useVoiceCallRuntime({
       speechRequestRef.current = requestId
       speakingRef.current = true
       lastAssistantSpeechRef.current = text
+      setSpeechTargetText(text)
+      setSpeechTargetMessageId(messageId)
       echoGuardUntilRef.current = Number.POSITIVE_INFINITY
       resetVoiceTurn()
       stopRecognition()
@@ -443,6 +530,29 @@ export function useVoiceCallRuntime({
         })
     },
     [dispatch, playVoicePreview, ttsConfig.engine, ttsTransport],
+  )
+
+  const retryRecognition = useCallback(() => {
+    listeningRef.current = true
+    shouldListenRef.current = true
+    retryFailedRecognition()
+  }, [retryFailedRecognition])
+
+  // 音色选择按播报通道路由到各自的存储：接口音色保存在 speech-config 的 tts 配置里
+  // （播放链路从这里读取），本机音色库仍走 tts-config。browser 通道音色由系统决定。
+  const selectVoiceForTransport = useCallback(
+    (optionValue: string) => {
+      if (ttsTransport === "api") {
+        const voice = parseApiVoiceValue(optionValue)
+        setSpeechEndpoint("tts", (current) => ({ ...current, voice }))
+        return
+      }
+      if (ttsTransport === "browser") {
+        return
+      }
+      selectVoice(optionValue)
+    },
+    [selectVoice, setSpeechEndpoint, ttsTransport],
   )
 
   const startCall = useCallback(async () => {
@@ -529,7 +639,8 @@ export function useVoiceCallRuntime({
     if (continuingSession) {
       startRecognition()
     } else {
-      speak(scene.opening.content)
+      // 开场白是一条转写消息（id `${scene.id}-opening`），带上 id 以便播放按钮精确定位。
+      speak(scene.opening.content, false, `${scene.id}-opening`)
     }
   }, [
     callSecondsRef,
@@ -556,6 +667,7 @@ export function useVoiceCallRuntime({
       resetVoiceTurn()
       shouldListenRef.current = false
       listeningRef.current = false
+      voiceInProgressRef.current = false
       stopStreamingAsr()
       for (const track of streamRef.current?.getTracks() ?? []) {
         track.stop()
@@ -669,6 +781,7 @@ export function useVoiceCallRuntime({
       callStartRequestRef.current += 1
       callActiveRef.current = false
       shouldListenRef.current = false
+      voiceInProgressRef.current = false
       resetVoiceTurn()
       stopStreamingAsr()
       for (const track of streamRef.current?.getTracks() ?? []) {
@@ -697,13 +810,18 @@ export function useVoiceCallRuntime({
       setSpeechEndpoint("asr", (current) => ({ ...current, transport })),
     selectTtsTransport: (transport: SpeechTransport) =>
       setSpeechEndpoint("tts", (current) => ({ ...current, transport })),
-    selectVoice,
+    selectVoice: selectVoiceForTransport,
     selectedAsrEngine: asrEngine,
     selectedVoice: getSelectedVoiceForTransport(ttsTransport, ttsConfig, speechConfig.tts),
     speakerEnabledRef,
     speak,
     speakingRef,
     speechPlaybackState,
+    speechTargetText,
+    speechTargetMessageId,
+    recognitionRetryPending,
+    retryRecognition,
+    stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     startCall,

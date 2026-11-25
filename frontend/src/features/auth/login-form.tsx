@@ -9,9 +9,19 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -30,10 +40,12 @@ import {
 } from "@/components/ui/input-group"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isDemoMode } from "@/lib/runtime-mode"
+import { getSafeRedirectPath } from "@/lib/safe-redirect"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { getSupabasePublicConfig } from "@/lib/supabase/config"
 
 type AuthMode = "login" | "register"
+type PendingAuth = "password" | "google"
 
 export function getAuthErrorMessage(error: unknown) {
   if (!error || typeof error !== "object") {
@@ -66,14 +78,46 @@ export function LoginForm({
 }) {
   const router = useRouter()
   const googleAuthEnabled = getSupabasePublicConfig()?.googleAuthEnabled ?? false
+  const formRef = useRef<HTMLFormElement>(null)
   const [mode, setMode] = useState<AuthMode>("login")
   const [showPassword, setShowPassword] = useState(false)
   const [pending, setPending] = useState(false)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
+  // 未勾选条款时点击登录/注册，记录待执行的动作并弹出条款确认框。
+  const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null)
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const formData = new FormData(event.currentTarget)
+    if (!agreedToTerms) {
+      setPendingAuth("password")
+      return
+    }
+    void performPasswordAuth()
+  }
+
+  function handleGoogleLoginClick() {
+    if (!agreedToTerms) {
+      setPendingAuth("google")
+      return
+    }
+    void performGoogleAuth()
+  }
+
+  function handleConfirmTerms() {
+    const action = pendingAuth
+    setAgreedToTerms(true)
+    setPendingAuth(null)
+    if (action === "password") {
+      void performPasswordAuth()
+    } else if (action === "google") {
+      void performGoogleAuth()
+    }
+  }
+
+  async function performPasswordAuth() {
+    const form = formRef.current
+    if (!form) return
+    const formData = new FormData(form)
     const email = String(formData.get("email") ?? "")
     const password = String(formData.get("password") ?? "")
     const supabase = getSupabaseBrowserClient()
@@ -120,8 +164,12 @@ export function LoginForm({
       }
 
       toast.success(mode === "login" ? "登录成功，正在进入学习空间" : "账户已创建")
-      router.replace(nextPath)
-      router.refresh()
+      // signInWithPassword 已经把会话写进 cookie。用 App Router 的客户端软导航进入
+      // 目标页：只替换当前路由，不整页重载，因此不会出现「跳转时又刷新了当前页面」。
+      // /workspace 的服务端守卫与登录页共用 hasUsableSession，即使服务端暂时连不上
+      // Supabase Auth，也能凭刚写入的会话 cookie 放行，软导航不会再被 307 弹回登录页。
+      // 绝不能追加 refresh()：它会重新拉取当前 /login 路由并取消尚未完成的 replace。
+      router.replace(getSafeRedirectPath(nextPath))
     } catch (error) {
       toast.error(getAuthErrorMessage(error))
     } finally {
@@ -129,7 +177,7 @@ export function LoginForm({
     }
   }
 
-  async function handleGoogleLogin() {
+  async function performGoogleAuth() {
     const supabase = getSupabaseBrowserClient()
     if (!supabase) {
       toast.warning(isDemoMode() ? "演示环境未连接第三方登录" : "Supabase 尚未配置")
@@ -192,7 +240,7 @@ export function LoginForm({
         </Alert>
       ) : null}
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} ref={formRef}>
         <FieldGroup>
           <Field>
             <FieldLabel htmlFor="email">邮箱</FieldLabel>
@@ -265,12 +313,7 @@ export function LoginForm({
               。
             </span>
           </div>
-          <Button
-            type="submit"
-            size="lg"
-            disabled={pending || !agreedToTerms}
-            className="mt-1 w-full"
-          >
+          <Button type="submit" size="lg" disabled={pending} className="mt-1 w-full">
             {pending ? (
               <LoaderCircleIcon data-icon="inline-start" className="animate-spin" />
             ) : null}
@@ -284,8 +327,8 @@ export function LoginForm({
                 type="button"
                 variant="outline"
                 size="lg"
-                disabled={pending || !agreedToTerms}
-                onClick={handleGoogleLogin}
+                disabled={pending}
+                onClick={handleGoogleLoginClick}
               >
                 <span data-icon="inline-start" className="font-mono font-semibold">
                   G
@@ -298,8 +341,44 @@ export function LoginForm({
       </form>
 
       <p className="mt-6 text-xs leading-5 text-muted-foreground">
-        登录与注册都需要先勾选同意条款。本地演示模式需要由项目配置显式启用。
+        未勾选同意条款时点击登录或注册，会先弹出确认窗口。本地演示模式需要由项目配置显式启用。
       </p>
+
+      <AlertDialog
+        open={pendingAuth !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setPendingAuth(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>先同意服务条款与隐私政策</AlertDialogTitle>
+            <AlertDialogDescription>
+              继续之前，请先阅读并同意
+              <Link
+                href="/terms"
+                className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                服务条款
+              </Link>
+              与
+              <Link
+                href="/privacy"
+                className="mx-1 rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                隐私政策
+              </Link>
+              。确认后将自动勾选同意选项并继续。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={pending} onClick={handleConfirmTerms}>
+              同意并{mode === "login" ? "登录" : "注册"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

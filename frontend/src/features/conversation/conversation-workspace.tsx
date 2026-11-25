@@ -23,6 +23,7 @@ import {
   RotateCcwIcon,
   SendIcon,
   SettingsIcon,
+  SquareIcon,
   Trash2Icon,
   Volume2Icon,
   VolumeXIcon,
@@ -30,6 +31,7 @@ import {
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import {
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   memo,
@@ -69,6 +71,7 @@ import {
   ConversationGuideSheet,
 } from "@/features/conversation/conversation-guide"
 import { ConversationHistorySheet } from "@/features/conversation/conversation-history-sheet"
+import { ConversationLoading } from "@/features/conversation/conversation-loading"
 import {
   canRequestTranslation,
   requestConversationTranslation,
@@ -81,6 +84,7 @@ import {
   useVoiceConversation,
 } from "@/features/conversation/use-voice-conversation"
 import { VoiceActivity } from "@/features/conversation/voice-activity"
+import type { LocalTtsPlaybackState } from "@/features/speech/use-local-tts"
 import type { AsrEngine, AsrEngineOption } from "@/lib/asr-config"
 import {
   formatCallDuration,
@@ -269,6 +273,32 @@ export function scrollLatestTranscriptTurn(transcript: HTMLElement) {
   }
 }
 
+// 三类回复头像（已提交回复、生成中占位、识别条）的可视区不变量：头像必须完整落在
+// 转写视口内。原先按整条 article 顶/底边推断，长回复 + nearest 对齐会把顶部头像推出
+// 视口；改按头像自身边界校正，也不受 content-visibility:auto 的占位高度干扰。
+// panelTop 是浮动输入面板顶部，传入时头像底部不得越过它。
+export function keepTurnAvatarVisible(
+  transcript: HTMLElement,
+  turn: HTMLElement,
+  panelTop?: number,
+) {
+  const avatar = turn.querySelector<HTMLElement>("[data-turn-avatar]")
+  if (!avatar) {
+    return
+  }
+  const transcriptRect = transcript.getBoundingClientRect()
+  const bottomEdge = typeof panelTop === "number" ? panelTop : transcriptRect.bottom
+  const avatarRect = avatar.getBoundingClientRect()
+  const margin = 16
+  const overflowTop = transcriptRect.top + margin - avatarRect.top
+  const overflowBottom = avatarRect.bottom - (bottomEdge - margin)
+  if (overflowTop > 0) {
+    transcript.scrollTop -= overflowTop
+  } else if (overflowBottom > 0) {
+    transcript.scrollTop += overflowBottom
+  }
+}
+
 export function ConversationWorkspace({
   focusMemoryItemId,
   restoreLastScene = false,
@@ -281,6 +311,9 @@ export function ConversationWorkspace({
   const router = useRouter()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
+  // 无 ?scene= 进入时场景要等客户端读取「上次场景」才能确定：确定前渲染加载骨架，
+  // 避免先闪现默认场景再被重定向切走。显式 ?scene= 无需解析，直接渲染内容。
+  const [sceneResolved, setSceneResolved] = useState(!restoreLastScene)
   const { forgetConversationTurn, state, recordConversationTurn } = useLearningMemory()
   const { prefs, setPrefs } = useConversationPrefs()
   const memoryContext = useMemo(
@@ -309,10 +342,13 @@ export function ConversationWorkspace({
     const history = readConversationHistory()
     const lastSceneId = readLastConversationScene(history)
     if (restoreLastScene && lastSceneId && lastSceneId !== scene.id) {
+      // 重定向期间保持骨架：路由按确认后的场景重渲染时，restoreLastScene 变为
+      // false，内容才正式加载。
       router.replace(`/workspace/conversation?scene=${encodeURIComponent(lastSceneId)}`)
       return
     }
     saveLastConversationScene(scene.id)
+    setSceneResolved(true)
   }, [restoreLastScene, router, scene.id])
 
   const {
@@ -347,13 +383,20 @@ export function ConversationWorkspace({
     selectVoice,
     sendDraft,
     setDraft,
+    stopReply,
     speakerEnabled,
     speechPlaybackState,
+    speechTargetText,
+    speechTargetMessageId,
+    recognitionRetryPending,
+    retryRecognition,
+    stopSpeech,
     speechRecognitionAvailable,
     speechRecognitionProgress,
     speak,
     startCall,
     startNewConversation,
+    startRecognition,
     toggleMute,
     toggleSpeaker,
     voiceOptions,
@@ -376,6 +419,7 @@ export function ConversationWorkspace({
   }, [messages])
   // Collapsed keeps the floating composer as a slim pill; expanded reveals the full textarea.
   const [composerExpanded, setComposerExpanded] = useState(false)
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null)
   // Track the floating panel height so the transcript can reserve matching bottom padding
   // and the last turn never hides behind the overlay.
   const [composerHeight, setComposerHeight] = useState(0)
@@ -408,6 +452,29 @@ export function ConversationWorkspace({
     }
   }, [callActive])
 
+  // Auto-grow the draft with its content so longer messages stay fully visible, capped to keep
+  // the floating panel from covering the transcript. Collapsed stays a one-row pill.
+  useEffect(() => {
+    const node = composerTextareaRef.current
+    if (!node) {
+      return
+    }
+    node.style.height = "auto"
+    const nextHeight = Math.min(node.scrollHeight, composerExpanded ? 152 : 56)
+    node.style.height = `${nextHeight}px`
+  }, [composerExpanded, draft])
+
+  // Desktop learners can start typing right away; touch devices keep the keyboard closed until
+  // the composer is actually tapped.
+  useEffect(() => {
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: fine)").matches
+    ) {
+      composerTextareaRef.current?.focus()
+    }
+  }, [])
+
   useEffect(() => {
     const transcript = transcriptRef.current
     if (!transcript) {
@@ -415,7 +482,54 @@ export function ConversationWorkspace({
     }
 
     scrollLatestTranscriptTurn(transcript)
+    const turns = transcript.querySelectorAll<HTMLElement>("[data-transcript-turn]")
+    const latestTurn = turns[turns.length - 1]
+    if (latestTurn) {
+      keepTurnAvatarVisible(transcript, latestTurn)
+    }
   }, [latestMessageId, messages.length])
+
+  // 语音通话期间把正在识别的轮次滚进可视区：浮动输入面板盖住转写底部，
+  // 「最近消息对齐顶部」的滚动不保证这一轮可见。每个 partial 都会触发本效果，
+  // 必须用瞬时滚动——平滑动画会互相打断，识别条长句时会肉眼可见地卡顿。
+  useEffect(() => {
+    if (!callActive) {
+      return
+    }
+    const transcript = transcriptRef.current
+    const liveTurn = transcript?.querySelector<HTMLElement>("[data-live-transcript-turn]")
+    if (!transcript || !liveTurn) {
+      return
+    }
+    liveTurn.scrollIntoView({ block: "nearest" })
+    const panelTop = composerRef.current?.getBoundingClientRect().top
+    const liveBottom = liveTurn.getBoundingClientRect().bottom
+    if (typeof panelTop === "number" && liveBottom > panelTop - 8) {
+      transcript.scrollTop += liveBottom - panelTop + 8
+    }
+    keepTurnAvatarVisible(transcript, liveTurn, panelTop)
+  }, [callActive, callStatus, liveTranscript])
+
+  // 回复生成期间把「正在回应」占位滚进可视区：浮动面板盖住转写底部，占位停在
+  // 面板后面时等待的人看不到它。与识别条同一套补偿——nearest 滚入后若仍被
+  // 面板压住，就按面板顶部再补一段滚动。
+  useEffect(() => {
+    if (!pending) {
+      return
+    }
+    const transcript = transcriptRef.current
+    const pendingTurn = transcript?.querySelector<HTMLElement>("[data-pending-reply-turn]")
+    if (!transcript || !pendingTurn) {
+      return
+    }
+    pendingTurn.scrollIntoView({ block: "nearest" })
+    const panelTop = composerRef.current?.getBoundingClientRect().top
+    const turnBottom = pendingTurn.getBoundingClientRect().bottom
+    if (typeof panelTop === "number" && turnBottom > panelTop - 8) {
+      transcript.scrollTop += turnBottom - panelTop + 8
+    }
+    keepTurnAvatarVisible(transcript, pendingTurn, panelTop)
+  }, [pending])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -428,9 +542,20 @@ export function ConversationWorkspace({
       if (draft.trim()) {
         sendDraft()
       }
+      return
+    }
+    // Escape 收起展开的输入框，把屏幕还给转写内容；草稿保留在输入框里。
+    // IME 组合中（拼音/注音候选）Escape 先交给输入法取消组词，不收起输入框。
+    if (event.key === "Escape" && composerExpanded && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      setComposerExpanded(false)
     }
   }
 
+  if (!sceneResolved) {
+    // 场景确定前只渲染骨架：避免闪现默认场景；hooks 顺序不受影响。
+    return <ConversationLoading />
+  }
   return (
     <div className="flex h-full min-h-[560px] w-full min-w-0 overflow-hidden bg-card">
       <section className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -454,11 +579,13 @@ export function ConversationWorkspace({
                   <span
                     className={cn(
                       "size-1.5 rounded-full",
+                      // 通话阶段各占一色，扫一眼就能区分卡在哪一步：
+                      // 连接=蓝、录音中=红、识别=紫、思考=琥珀、可以说话=绿、播报中=品牌色。
                       callStatus === "listening" && "bg-[var(--success)]",
-                      (callStatus === "connecting" ||
-                        callStatus === "transcribing" ||
-                        callStatus === "thinking") &&
-                        "bg-[var(--chart-3)]",
+                      callStatus === "recording" && "bg-[var(--chart-1)]",
+                      callStatus === "connecting" && "bg-[var(--chart-4)]",
+                      callStatus === "transcribing" && "bg-[var(--chart-5)]",
+                      callStatus === "thinking" && "bg-[var(--chart-3)]",
                       callStatus === "speaking" && "bg-primary",
                       (!callActive || callStatus === "muted") && "bg-muted-foreground",
                     )}
@@ -599,13 +726,22 @@ export function ConversationWorkspace({
                   partnerName={scene.partnerName}
                   onDelete={deleteMessage}
                   onSpeak={speak}
+                  onStopSpeech={stopSpeech}
                   onRetry={retryLastReply}
+                  speechState={speechPlaybackState}
+                  speechTargetText={speechTargetText}
+                  speechTargetMessageId={speechTargetMessageId}
                   layout={prefs.transcriptLayout}
                 />
               ))}
             </div>
 
-            {liveTranscript || callStatus === "listening" || callStatus === "transcribing" ? (
+            {/* 回答生成期间转写里只保留骨架占位：识别文本在回答完整之前不出现 */}
+            {!pending &&
+            (liveTranscript ||
+              callStatus === "listening" ||
+              callStatus === "recording" ||
+              callStatus === "transcribing") ? (
               <LiveTranscriptTurn
                 layout={prefs.transcriptLayout}
                 status={callStatus}
@@ -624,6 +760,7 @@ export function ConversationWorkspace({
 
         <div
           ref={composerRef}
+          data-conversation-composer
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 md:px-5 md:pb-4"
         >
           <div className="pointer-events-auto mx-auto w-full max-w-lg">
@@ -631,6 +768,9 @@ export function ConversationWorkspace({
               <VoiceCallPanel
                 callSeconds={callSeconds}
                 callStatus={callStatus}
+                onRestartRecognition={startRecognition}
+                onRetryRecognition={retryRecognition}
+                recognitionRetryPending={recognitionRetryPending}
                 idlePrompt={idlePrompt}
                 muted={muted}
                 onEndCall={endCall}
@@ -659,12 +799,33 @@ export function ConversationWorkspace({
                   )}
                 >
                   <InputGroupTextarea
+                    ref={composerTextareaRef}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={handleDraftKeyDown}
                     onFocus={() => setComposerExpanded(true)}
-                    rows={composerExpanded ? 2 : 1}
-                    placeholder="输入中文或英文消息…"
+                    onBlur={(event) => {
+                      // 失焦只在焦点真正离开输入面板时收起空输入框：正在写的草稿保持
+                      // 展开；焦点移到面板内的按钮（收起/语音开关）不算离开，否则
+                      // blur 收起与点击 toggle 互相抵消，空草稿时「收起」点不动。
+                      // 判据用 blur 的 relatedTarget（将获焦元素）：blur 事件按规范在
+                      // activeElement 更新之前触发，此刻读 activeElement 读到的还是
+                      // 旧的输入框，会把「真正离开面板」误判成「仍在面板内」。
+                      if (draft.trim()) {
+                        return
+                      }
+                      const next = event.relatedTarget
+                      if (
+                        next instanceof Element &&
+                        next.closest("[data-conversation-composer]")
+                      ) {
+                        return
+                      }
+                      setComposerExpanded(false)
+                    }}
+                    placeholder={
+                      pending ? "对方正在回应，可以先继续输入…" : "输入中文或英文消息…"
+                    }
                     aria-label="输入对话内容"
                     className={cn(
                       "py-1 transition-[min-height] duration-300 ease-out",
@@ -712,6 +873,18 @@ export function ConversationWorkspace({
                       <MicIcon data-icon="inline-start" />
                       语音
                     </Button>
+                    {pending ? (
+                      <InputGroupButton
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label="停止生成回复"
+                        title="停止生成回复"
+                        onClick={stopReply}
+                      >
+                        <SquareIcon aria-hidden="true" />
+                      </InputGroupButton>
+                    ) : null}
                     <InputGroupButton
                       type="submit"
                       size="icon-sm"
@@ -827,7 +1000,7 @@ export function ConversationSettingsPopover({
             disabled={disabled}
             hint={
               asrTransport === "api"
-                ? "整段上传识别，不提供实时字幕与说话打断。"
+                ? "说完停顿约 1 秒自动整段上传识别；不提供实时字幕，播放回复时不能抢话。"
                 : asrTransport === "browser"
                   ? "使用浏览器语音识别，无需本机服务。"
                   : "使用本机 ASR 服务，未启动时自动回退浏览器语音。"
@@ -1108,13 +1281,21 @@ export const TranscriptTurn = memo(function TranscriptTurn({
   onDelete,
   onRetry,
   onSpeak,
+  onStopSpeech,
+  speechState = "idle",
+  speechTargetText = "",
+  speechTargetMessageId = "",
   layout,
 }: {
   message: ConversationMessage
   partnerName: string
   onDelete?: (messageId: string) => void
   onRetry: () => void
-  onSpeak: (text: string, force?: boolean) => void
+  onSpeak: (text: string, force?: boolean, messageId?: string) => void
+  onStopSpeech?: () => void
+  speechState?: LocalTtsPlaybackState
+  speechTargetText?: string
+  speechTargetMessageId?: string
   layout: TranscriptLayout
 }) {
   const assistant = message.role === "assistant"
@@ -1124,6 +1305,14 @@ export const TranscriptTurn = memo(function TranscriptTurn({
   const [translationVisible, setTranslationVisible] = useState(false)
   const [translation, setTranslation] = useState(message.translation)
   const [translating, setTranslating] = useState(false)
+  // 这条回复正在被朗读（或合成）时，播放按钮变成停止控件，Agent 语音反馈由此可感知。
+  // 优先按消息 id 精确定位（两条内容相同的回复各自有独立 id，不会互相命中）；
+  // 没有 id 时（如系统 idle 提示语）回退到文本匹配。
+  const speechActive =
+    speechState !== "idle" &&
+    (speechTargetMessageId !== ""
+      ? speechTargetMessageId === message.id
+      : Boolean(speechTargetText) && speechTargetText === message.content)
   // In split mode the learner's own turns hug the right edge like a chat thread. The
   // partner (assistant) always stays left so validation and examples have room to breathe.
   const alignRight = layout === "split" && !assistant
@@ -1164,7 +1353,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({
       data-transcript-turn={message.id}
     >
       {alignRight ? null : (
-        <Avatar>
+        <Avatar data-turn-avatar>
           <AvatarFallback
             className={cn(
               assistant
@@ -1214,11 +1403,24 @@ export const TranscriptTurn = memo(function TranscriptTurn({
               type="button"
               variant="ghost"
               size="icon-xs"
-              aria-label="播放本轮英语"
-              title="播放本轮英语"
-              onClick={() => onSpeak(message.content, true)}
+              aria-label={speechActive ? "停止播放" : "播放本轮英语"}
+              title={speechActive ? "停止播放" : "播放本轮英语"}
+              aria-pressed={speechActive || undefined}
+              onClick={() => {
+                if (speechActive) {
+                  onStopSpeech?.()
+                  return
+                }
+                onSpeak(message.content, true, message.id)
+              }}
             >
-              <Volume2Icon />
+              {speechActive && speechState === "loading" ? (
+                <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
+              ) : speechActive ? (
+                <SquareIcon aria-hidden="true" />
+              ) : (
+                <Volume2Icon />
+              )}
             </Button>
           ) : null}
         </div>
@@ -1323,6 +1525,10 @@ export const TranscriptTurn = memo(function TranscriptTurn({
 })
 
 // Interim speech recognition results, shown while the learner is still speaking.
+// 三种文案状态：「准备就绪」（麦克风已开、还没听到语音）、「录音中」（检测到说话，
+// 采集正在积累这段音频）与「识别中」（正在转写本句话）。录音中用红色圆点呼应通话
+// 阶段徽章——学习者开口的瞬间就能确认「真的在录」。
+// 识别中的长文本在固定宽度内水平滚动（marquee），识别阶段由状态行呈现，不再额外提示。
 function LiveTranscriptTurn({
   layout,
   status,
@@ -1333,8 +1539,24 @@ function LiveTranscriptTurn({
   text: string
 }) {
   const alignRight = layout === "split"
+  const recording = !text && status === "recording"
+  const recognizing = Boolean(text) || (!recording && status === "transcribing")
+  const marquee = text.length > 40
+  // 时长随文本长度缩放，保持匀速可读；内容渲染两份以无缝循环。
+  const marqueeDuration = `${Math.max(10, Math.min(30, Math.round(text.length / 3)))}s`
+  const stateTone = recording
+    ? "text-[var(--chart-1)]"
+    : recognizing
+      ? "text-[var(--chart-5)]"
+      : "text-[var(--success)]"
+  const stateDot = recording
+    ? "bg-[var(--chart-1)]"
+    : recognizing
+      ? "bg-[var(--chart-5)]"
+      : "bg-[var(--success)]"
   return (
     <article
+      data-live-transcript-turn
       className={cn(
         "grid gap-3 py-5",
         alignRight ? "grid-cols-[minmax(0,1fr)_40px]" : "grid-cols-[40px_minmax(0,1fr)]",
@@ -1342,32 +1564,52 @@ function LiveTranscriptTurn({
       aria-live="polite"
     >
       {alignRight ? null : (
-        <Avatar>
+        <Avatar data-turn-avatar>
           <AvatarFallback className="bg-primary text-primary-foreground">你</AvatarFallback>
         </Avatar>
       )}
       <div className={cn("min-w-0", alignRight && "flex flex-col items-end text-right")}>
         <div className="flex items-center gap-2">
           <p className="text-xs font-semibold">你</p>
-          <span className="flex items-center gap-1 text-[11px] text-[var(--success)]">
-            <span className="size-1.5 animate-pulse rounded-full bg-[var(--success)]" />
-            {status === "transcribing" ? "本地识别中" : "离线语音识别"}
+          <span className={cn("flex items-center gap-1 text-[11px]", stateTone)}>
+            <span className={cn("size-1.5 animate-pulse rounded-full", stateDot)} />
+            {recording ? "录音中" : recognizing ? "识别中" : "准备就绪"}
           </span>
         </div>
-        <p
-          className={cn(
-            !text ? "text-xs" : "text-base",
-            "mt-2 leading-7 text-muted-foreground",
-          )}
-        >
-          {text ||
-            (status === "transcribing"
-              ? "正在将这句话转换为文字…"
-              : "可以说中文、英文或中英混合内容…")}
-        </p>
+        {text ? (
+          <div className="mt-2">
+            {marquee ? (
+              <div className="speech-marquee w-full">
+                <div
+                  className="speech-marquee-track text-base leading-7 text-muted-foreground"
+                  style={{ "--speech-marquee-duration": marqueeDuration } as CSSProperties}
+                >
+                  <span className="pr-12">{text}</span>
+                  <span className="pr-12" aria-hidden="true">
+                    {text}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-base leading-7 text-muted-foreground">{text}</p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 flex items-center gap-2 text-sm leading-7 text-muted-foreground">
+            <span
+              className={cn("size-1.5 shrink-0 animate-pulse rounded-full", stateDot)}
+              aria-hidden="true"
+            />
+            {recording
+              ? "正在聆听这句话，说完稍作停顿即自动发送。"
+              : recognizing
+                ? "正在将这句话转换为文字…"
+                : "麦克风已就绪，随时可以开口。"}
+          </p>
+        )}
       </div>
       {alignRight ? (
-        <Avatar>
+        <Avatar data-turn-avatar>
           <AvatarFallback className="bg-primary text-primary-foreground">你</AvatarFallback>
         </Avatar>
       ) : null}
@@ -1385,13 +1627,14 @@ function PendingReplyTurn({
 }) {
   return (
     <article
+      data-pending-reply-turn
       className={cn(
         "grid grid-cols-[40px_minmax(0,1fr)] gap-3 py-5",
         layout === "stacked" && "border-t",
       )}
       aria-live="polite"
     >
-      <Avatar>
+      <Avatar data-turn-avatar>
         <AvatarFallback className="bg-foreground text-background">
           {partnerName.slice(0, 1)}
         </AvatarFallback>
@@ -1423,20 +1666,26 @@ export function VoiceCallPanel({
   idlePrompt,
   muted,
   onEndCall,
+  onRestartRecognition,
+  onRetryRecognition,
   onToggleMute,
   onToggleSpeaker,
   speakerEnabled,
   speechRecognitionProgress,
+  recognitionRetryPending,
 }: {
   callSeconds: number
   callStatus: VoiceCallStatus
   idlePrompt?: string | null
   muted: boolean
   onEndCall: () => void
+  onRestartRecognition: () => void
+  onRetryRecognition: () => void
   onToggleMute: () => void
   onToggleSpeaker: () => void
   speakerEnabled: boolean
   speechRecognitionProgress: number | null
+  recognitionRetryPending: boolean
 }) {
   return (
     <div className="grid min-h-16 gap-3 rounded-lg border bg-background/85 px-3 py-3 shadow-lg ring-1 ring-black/5 backdrop-blur duration-300 animate-in fade-in slide-in-from-bottom-2 min-[480px]:grid-cols-[minmax(0,1fr)_auto] min-[480px]:items-center dark:ring-white/5">
@@ -1457,6 +1706,30 @@ export function VoiceCallPanel({
                 ? `首次加载离线识别模型 ${speechRecognitionProgress}%`
                 : getVoiceCallStatusDescription(callStatus))}
           </p>
+          {recognitionRetryPending ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={onRetryRecognition}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              重试识别
+            </Button>
+          ) : null}
+          {callStatus === "manual" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={onRestartRecognition}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              重试语音识别
+            </Button>
+          ) : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center justify-center gap-2">

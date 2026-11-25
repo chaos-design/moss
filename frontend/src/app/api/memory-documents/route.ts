@@ -4,6 +4,7 @@ import { type PracticeMemoryWrite, persistPracticeMemory } from "@/lib/memory/se
 import { isDemoMode } from "@/lib/runtime-mode"
 import { consumeSharedRateLimit } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 function isBoundedString(value: unknown, maximumLength: number) {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maximumLength
@@ -88,11 +89,8 @@ export async function POST(request: Request) {
     )
   }
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-  if (error || !user) {
+  const user = await resolveSessionUser(supabase)
+  if (!user) {
     return NextResponse.json(
       { error: { code: "unauthorized", message: "请先登录后再同步学习结果。" } },
       { status: 401 },

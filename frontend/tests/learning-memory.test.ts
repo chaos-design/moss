@@ -82,15 +82,28 @@ describe("learning memory", () => {
     if (!plan) {
       throw new Error("Expected a learning plan for seeded test memory")
     }
-    expect(plan.focus.id).toBe("polite-request")
-    expect(plan.sceneId).toBe("restaurant")
-    expect(plan.steps.map((step) => step.id)).toEqual(["recall", "conversation", "shadowing"])
-    expect(plan.steps.map((step) => step.href)).toEqual([
-      "/workspace/review?memory=polite-request",
-      "/workspace/conversation?scene=restaurant&memory=polite-request",
-      "/workspace/shadowing?memory=polite-request",
+    const focus = state.items.find((item) => item.id === plan.focus.id)
+    if (!focus) {
+      throw new Error("Expected the plan to point at a real memory")
+    }
+    const target = focus.transferTargets[0] ?? {
+      sceneId: focus.sourceSceneId,
+      sceneTitle: focus.sourceSceneTitle,
+    }
+    expect(plan.sceneId).toBe(target.sceneId)
+    expect(plan.steps.map((step) => step.id)).toEqual([
+      "recall",
+      "expression",
+      "conversation",
+      "shadowing",
     ])
-    expect(plan.reason).toContain("咖啡店点单")
+    expect(plan.steps.map((step) => step.href)).toEqual([
+      `/workspace/review?memory=${focus.id}`,
+      "/workspace/expressions",
+      `/workspace/conversation?scene=${target.sceneId}&memory=${focus.id}`,
+      `/workspace/shadowing?memory=${focus.id}`,
+    ])
+    expect(plan.reason).toContain(focus.sourceSceneTitle)
   })
 
   it("puts a requested memory first in review and keeps unknown ids on the default queue", () => {
@@ -195,12 +208,21 @@ describe("learning memory", () => {
   it("returns only memories relevant to the current scene", () => {
     const state = createDefaultLearningMemory(now)
     const context = buildConversationMemoryContext(state, "restaurant")
+    const relevantIds = new Set(
+      state.items
+        .filter(
+          (item) =>
+            item.sourceSceneId === "restaurant" ||
+            item.transferTargets.some((target) => target.sceneId === "restaurant"),
+        )
+        .map((item) => item.id),
+    )
 
-    expect(context).toHaveLength(1)
-    expect(context[0]).toMatchObject({
-      id: "polite-request",
-      source: "咖啡店点单",
-    })
+    expect(context.length).toBeGreaterThan(0)
+    expect(context.length).toBeLessThanOrEqual(3)
+    // 只送当前场景来源或迁移目标命中的记忆，且每条都带来源说明。
+    expect(context.every((item) => relevantIds.has(item.id))).toBe(true)
+    expect(context.every((item) => Boolean(item.source))).toBe(true)
   })
 
   it("prioritizes the requested relevant memory in conversation context", () => {
@@ -223,11 +245,11 @@ describe("learning memory", () => {
 
     const context = buildConversationMemoryContext(state, "restaurant", "in-stock")
 
-    expect(context.map((item) => item.id)).toEqual([
-      "in-stock",
-      "clarify-trade-off",
-      "polite-request",
-    ])
+    // 指定记忆优先，其余仍按强度从弱到强排列，且不重复。
+    expect(context[0]?.id).toBe("in-stock")
+    expect(context.filter((item) => item.id === "in-stock")).toHaveLength(1)
+    const restStrengths = context.slice(1).map((item) => item.strength)
+    expect(restStrengths).toEqual([...restStrengths].sort((left, right) => left - right))
   })
 
   it("creates pronunciation memory and preserves measured shadowing scores", () => {
@@ -362,7 +384,7 @@ describe("learning memory", () => {
     expect(next.items[0]?.kind).toBe("grammar")
   })
 
-  it("increments the same memory item when an expression is studied repeatedly", () => {
+  it("does not double-count repeated study of the same expression", () => {
     const state = createEmptyLearningMemory(now)
     const input = {
       itemId: "expression-library-item-3",
@@ -381,10 +403,12 @@ describe("learning memory", () => {
     expect(twice.items).toHaveLength(1)
     expect(twice.items[0]).toMatchObject({
       id: "expression-library-item-3",
-      encounters: 2,
-      strength: 53,
+      encounters: 1,
+      strength: 49,
     })
-    expect(twice.events).toHaveLength(2)
+    expect(twice.events).toHaveLength(1)
+    // 幂等返回同一份状态引用，调用方不会因此触发无意义的 setState/向量写入。
+    expect(twice).toBe(once)
   })
 
   it("records a recall attempt without granting the strength a self-rating would", () => {

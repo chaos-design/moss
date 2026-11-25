@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
+  applyExpressionImportDuplicateStrategy,
+  countExistingExpressionDuplicates,
   createExpressionImportTemplate,
+  indexExistingExpressionsByPhrase,
   parseExpressionImport,
   parseExpressionJsonImport,
 } from "@/lib/expression-import"
@@ -17,9 +20,9 @@ const validExpression = {
 }
 
 describe("expression import", () => {
-  it("parses JSON arrays and removes same-scene duplicates", async () => {
+  it("removes duplicate expressions by phrase even across scenes", async () => {
     const result = await parseExpressionImport(
-      JSON.stringify([validExpression, validExpression]),
+      JSON.stringify([validExpression, { ...validExpression, sceneCategory: "health" }]),
       "expressions.json",
     )
 
@@ -74,12 +77,69 @@ describe("expression import", () => {
     expect(result.issues).toEqual([{ row: 3, message: "缺少英文表达" }])
   })
 
-  it("creates an importable CSV template", async () => {
+  it("parses translation, usage, memory tip and extra examples", () => {
+    const result = parseExpressionJsonImport(
+      JSON.stringify({
+        items: [
+          {
+            ...validExpression,
+            exampleTranslation: "能帮我看一下包吗？",
+            usage: "常接宾语。",
+            memoryTip: "想象眼睛停在目标上。",
+            examples: [
+              {
+                text: "Keep an eye on the kids.",
+                translation: "照看一下孩子。",
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    expect(result.issues).toEqual([])
+    expect(result.items[0]).toMatchObject({
+      exampleTranslation: "能帮我看一下包吗？",
+      usage: "常接宾语。",
+      memoryTip: "想象眼睛停在目标上。",
+      examples: [{ text: "Keep an eye on the kids.", translation: "照看一下孩子。" }],
+    })
+  })
+
+  it("creates an importable CSV template with the enriched fields", async () => {
     const template = createExpressionImportTemplate()
     const result = await parseExpressionImport(template, "template.csv")
 
     expect(result.items).toHaveLength(1)
     expect(result.issues).toEqual([])
+    expect(result.items[0]).toMatchObject({
+      exampleTranslation: expect.any(String),
+      usage: expect.any(String),
+      memoryTip: expect.any(String),
+    })
+    expect(result.items[0]?.examples).toHaveLength(1)
+  })
+
+  it("treats the same phrase in another scene as a duplicate and aligns the scene on overwrite", () => {
+    const result = parseExpressionJsonImport(JSON.stringify([validExpression]))
+    const existingHealth = indexExistingExpressionsByPhrase(
+      parseExpressionJsonImport(
+        JSON.stringify([{ ...validExpression, sceneCategory: "health" }]),
+      ).items,
+    )
+
+    expect(countExistingExpressionDuplicates(result, existingHealth)).toBe(1)
+    expect(countExistingExpressionDuplicates(result, new Map())).toBe(0)
+    expect(
+      applyExpressionImportDuplicateStrategy(result, existingHealth, "skip").items,
+    ).toHaveLength(0)
+    const overwritten = applyExpressionImportDuplicateStrategy(
+      result,
+      existingHealth,
+      "overwrite",
+    ).items
+    expect(overwritten).toHaveLength(1)
+    expect(overwritten[0]?.sceneCategory).toBe("health")
   })
 
   it("accepts expression rows from a Moss account export", async () => {

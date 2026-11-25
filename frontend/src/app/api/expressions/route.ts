@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/expression-library-repository"
 import { consumeSharedRateLimit } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 const maximumImportBatchSize = 200
 const maximumRequestBytes = 2_000_000
@@ -31,11 +32,8 @@ async function authenticate(): Promise<AuthenticationResult> {
       response: errorResponse("service_not_configured", "服务端认证尚未配置。", 503),
     }
   }
-  const {
-    data: { user },
-    error,
-  } = await client.auth.getUser()
-  if (error || !user) {
+  const user = await resolveSessionUser(client)
+  if (!user) {
     return {
       authenticated: false,
       response: errorResponse("unauthorized", "请先登录后再同步表达词库。", 401),
@@ -76,12 +74,52 @@ function parseOffset(request: Request) {
   return Number.isSafeInteger(offset) ? offset : null
 }
 
+function postgresCode(error: unknown): string | null {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code
+    return typeof code === "string" ? code : null
+  }
+  return null
+}
+
 function isUniqueConstraintError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "23505"
+  return postgresCode(error) === "23505"
+}
+
+/**
+ * 把数据库错误如实记录并归类，杜绝「一切都是 502」的盲区：
+ * - 23514 检查约束 / 23502 非空 / 22P02 类型：数据问题，修数据可恢复，400；
+ * - 42P10 on_conflict 约束不存在 / 42703 列不存在 / 42P01 表不存在 / 42501 权限：配置或迁移问题，
+ *   重试无意义，503 并给出明确提示；
+ * - 其余未知错误保留 502（客户端可重试）。
+ * 无论哪类都 console.error 打印真实 code/message，让日志能直接定位。
+ */
+function databaseFailure(error: unknown, action: string): NextResponse {
+  const code = postgresCode(error)
+  const message =
+    typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message?: unknown }).message)
+      : String(error)
+  console.error(`[api/expressions] ${action} failed`, { code, message })
+
+  if (code === "23514" || code === "23502" || code === "22P02") {
+    return errorResponse(
+      "expression_library_invalid_data",
+      "表达字段未通过数据库校验，请检查字段格式后重试。",
+      400,
+    )
+  }
+  if (code === "42P10" || code === "42703" || code === "42P01" || code === "42501") {
+    return errorResponse(
+      "expression_library_schema_mismatch",
+      "云端表达表结构尚未就绪，请联系管理员完成数据库迁移。",
+      503,
+    )
+  }
+  return errorResponse(
+    `expression_library_${action}_failed`,
+    "云端暂时不可用，请稍后重试。",
+    502,
   )
 }
 
@@ -119,12 +157,8 @@ export async function GET(request: Request) {
         userId: auth.userId,
       },
     })
-  } catch {
-    return errorResponse(
-      "expression_library_read_failed",
-      "云端表达暂时无法读取，本机导入不受影响。",
-      502,
-    )
+  } catch (error) {
+    return databaseFailure(error, "read")
   }
 }
 
@@ -172,6 +206,11 @@ export async function POST(request: Request) {
   if (identities.size !== validItems.length) {
     return errorResponse("invalid_request", "同一批次包含重复的场景表达。", 400)
   }
+  // client_id 也有唯一约束；同批重复标识重试也救不回来，提前挡成 400。
+  const clientIds = new Set(validItems.map((item) => item.clientId))
+  if (clientIds.size !== validItems.length) {
+    return errorResponse("invalid_request", "同一批次包含重复的表达标识。", 400)
+  }
   if (isDemoMode()) {
     return NextResponse.json({ data: { stored: false } }, { status: 202 })
   }
@@ -186,12 +225,17 @@ export async function POST(request: Request) {
       items: validItems,
     })
     return NextResponse.json({ data: { stored: true, count: items.length } })
-  } catch {
-    return errorResponse(
-      "expression_library_write_failed",
-      "表达已保存在本机，但暂时无法同步到云端。",
-      502,
-    )
+  } catch (error) {
+    // 唯一约束冲突重试也救不回来，映射成 409 让客户端跳过重试；
+    // 其余按真实数据库错误分类（数据问题 400 / 迁移问题 503 / 未知 502）。
+    if (isUniqueConstraintError(error)) {
+      return errorResponse(
+        "expression_library_conflict",
+        "部分表达标识与云端冲突，请刷新词库后重试。",
+        409,
+      )
+    }
+    return databaseFailure(error, "write")
   }
 }
 
@@ -229,11 +273,7 @@ export async function PUT(request: Request) {
     if (isUniqueConstraintError(error)) {
       return errorResponse("expression_library_conflict", "同一场景中已存在同名表达。", 409)
     }
-    return errorResponse(
-      "expression_library_write_failed",
-      "修改已保存在本机，但暂时无法同步到云端。",
-      502,
-    )
+    return databaseFailure(error, "write")
   }
 }
 
@@ -252,11 +292,7 @@ export async function DELETE(request: Request) {
   try {
     await deleteExpressionLibraryItem({ ...auth, clientId })
     return NextResponse.json({ data: { deleted: true } })
-  } catch {
-    return errorResponse(
-      "expression_library_delete_failed",
-      "表达已从本机移除，但云端删除暂时失败。",
-      502,
-    )
+  } catch (error) {
+    return databaseFailure(error, "delete")
   }
 }

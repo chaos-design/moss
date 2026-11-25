@@ -117,10 +117,22 @@ function SloganPath({ motif }: { motif: PageHeadingMotif }) {
     case "scenes":
       return (
         <>
-          <rect x="4" y="5" width="24" height="18" rx="2" fill="none" stroke="currentColor" />
-          <rect x="36" y="5" width="24" height="18" rx="2" fill="none" stroke="currentColor" />
-          <rect x="68" y="5" width="24" height="18" rx="2" fill="none" stroke="currentColor" />
-          <path d="m10 18 5-5 4 4 3-3" fill="none" stroke="currentColor" />
+          {/* 一条穿过三个场景锚点的学习路径，末端是对话气泡：在具体情景中练语言。 */}
+          <path
+            d="M5 23c12 0 13-12 25-12s13 10 25 10 13-12 25-12 10 5 13 4"
+            fill="none"
+            stroke="currentColor"
+            strokeOpacity="0.45"
+          />
+          <circle cx="9" cy="22" r="2.6" fill="var(--background)" stroke="currentColor" />
+          <circle cx="55" cy="20" r="2.6" fill="var(--background)" stroke="currentColor" />
+          <circle cx="90" cy="8" r="2.6" fill="currentColor" />
+          <path
+            d="M16 4h20a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H27l-5 4v-4h-6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z"
+            fill="none"
+            stroke="currentColor"
+          />
+          <path d="M18 11h14M18 15h9" stroke="currentColor" strokeOpacity="0.65" />
         </>
       )
     case "review":
@@ -145,12 +157,16 @@ function SloganPath({ motif }: { motif: PageHeadingMotif }) {
     case "notebook":
       return (
         <>
+          {/* 记忆衰减曲线：强度随时间衰减，每次复习顶起一个尖峰——
+              「长期记忆 · 随每次复习持续更新」的图形化。 */}
           <path
-            d="M9 4h65v20H9zM17 4v20M24 10h42M24 15h54M24 20h35"
+            d="M5 5.5c8 6.5 14 12.5 22 14l2.5-9c8 4.5 15 8 22 8.5l2.5-7.5c8 3.5 15 6.5 23 7l2.5-5.5c6 2.5 11 4 14.5 4.5"
             fill="none"
             stroke="currentColor"
           />
-          <path d="m80 20 10-10 3 3-10 10-5 1z" fill="none" stroke="currentColor" />
+          <circle cx="29.5" cy="10.5" r="1.6" fill="currentColor" />
+          <circle cx="54" cy="11.5" r="1.6" fill="currentColor" />
+          <circle cx="79.5" cy="13" r="1.6" fill="currentColor" />
         </>
       )
     case "settings":

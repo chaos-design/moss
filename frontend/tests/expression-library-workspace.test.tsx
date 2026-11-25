@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ExpressionLibraryWorkspace } from "@/features/expressions/expression-library-workspace"
 import { builtInExpressionItems } from "@/lib/expression-library"
 import {
+  createEmptyExpressionStudyState,
   createEmptyLearningMemory,
   createExpressionMemoryItemId,
   type LearningMemoryState,
@@ -27,19 +28,31 @@ const importedExpression = {
 } as const
 const validImportContent = JSON.stringify([
   {
-    phrase: "keep an eye on",
-    meaning: "留意；照看",
-    why: "eye 代表观察，keep 表示持续维持注意。",
-    origin: "由视觉动作形成的常用表达。",
-    example: "Could you keep an eye on my bag?",
+    phrase: "moss import fixture phrase",
+    meaning: "用于测试导入的含义",
+    why: "用于测试导入的解释。",
+    origin: "由测试代码构造。",
+    example: "This is a moss import fixture phrase.",
     sceneCategory: "social",
     context: "通用",
     kind: "idiom",
   },
 ])
+const generatedImportItem = {
+  ...(JSON.parse(validImportContent)[0] as Record<string, unknown>),
+  exampleTranslation: "能帮我看一下包吗？",
+  usage: "常接宾语，也可接 over 引出照看范围。",
+  memoryTip: "想象眼睛停在目标上。",
+  examples: [{ text: "Keep an eye on the kids for me.", translation: "帮我照看一下孩子。" }],
+}
 
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowserClient: () => null,
+}))
+
+const routerPush = vi.fn()
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPush }),
 }))
 
 // Local toasts append an account-state suffix only for non-authenticated learners; these tests pin
@@ -54,6 +67,15 @@ vi.mock("@/components/auth-provider", () => ({
 
 const memoryMocks = vi.hoisted(() => ({
   recordExpressionStudy: vi.fn(),
+  toggleFavorite: vi.fn(),
+  createGroup: vi.fn(),
+  addGroupItems: vi.fn(),
+  renameGroup: vi.fn(),
+  deleteGroup: vi.fn(),
+  toggleGroupItem: vi.fn(),
+  recordExpressionProgress: vi.fn(),
+  saveExpressionFilters: vi.fn(),
+  rateReview: vi.fn(),
   state: null as LearningMemoryState | null,
 }))
 
@@ -61,6 +83,15 @@ vi.mock("@/components/learning-memory-provider", () => ({
   useLearningMemory: () => ({
     hydrated: true,
     recordExpressionStudy: memoryMocks.recordExpressionStudy,
+    toggleFavorite: memoryMocks.toggleFavorite,
+    createGroup: memoryMocks.createGroup,
+    addGroupItems: memoryMocks.addGroupItems,
+    renameGroup: memoryMocks.renameGroup,
+    deleteGroup: memoryMocks.deleteGroup,
+    toggleGroupItem: memoryMocks.toggleGroupItem,
+    recordExpressionProgress: memoryMocks.recordExpressionProgress,
+    saveExpressionFilters: memoryMocks.saveExpressionFilters,
+    rateReview: memoryMocks.rateReview,
     state: memoryMocks.state,
   }),
 }))
@@ -94,8 +125,29 @@ beforeEach(() => {
   window.localStorage.clear()
   memoryMocks.state = createEmptyLearningMemory(new Date("2026-10-05T08:00:00.000Z"))
   memoryMocks.recordExpressionStudy.mockReset()
-  fetchMock.mockReset().mockImplementation((_input, init: RequestInit | undefined) => {
+  memoryMocks.toggleFavorite.mockReset()
+  memoryMocks.createGroup.mockReset().mockReturnValue("new-group-id")
+  memoryMocks.addGroupItems.mockReset()
+  memoryMocks.renameGroup.mockReset()
+  memoryMocks.deleteGroup.mockReset()
+  memoryMocks.toggleGroupItem.mockReset()
+  memoryMocks.recordExpressionProgress.mockReset()
+  memoryMocks.saveExpressionFilters.mockReset()
+  memoryMocks.rateReview.mockReset()
+  routerPush.mockReset()
+  fetchMock.mockReset().mockImplementation((input, init: RequestInit | undefined) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url
     const method = init?.method ?? "GET"
+    if (url.includes("/api/expressions/generate")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: { items: [generatedImportItem] } })),
+      )
+    }
     const data =
       method === "GET"
         ? {
@@ -140,7 +192,7 @@ describe("ExpressionLibraryWorkspace", () => {
   it("shows the complete built-in count and filters detailed rows", async () => {
     render(<ExpressionLibraryWorkspace />)
 
-    expect(screen.getAllByText("1000")).toHaveLength(2)
+    expect(screen.getAllByText("1170")).toHaveLength(2)
     fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
       target: { value: "rule of thumb" },
     })
@@ -170,10 +222,43 @@ describe("ExpressionLibraryWorkspace", () => {
     })
 
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(120))
-    expect(screen.getByText("已显示 120 / 1000 条")).toBeTruthy()
+    expect(screen.getByText("已显示 120 / 1170 条")).toBeTruthy()
   })
 
-  it("imports directly pasted JSON locally before cloud sync", async () => {
+  it("offers a retry when the cloud read fails", async () => {
+    fetchMock.mockImplementation((input, init: RequestInit | undefined) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : (input as Request).url
+      const method = init?.method ?? "GET"
+      if (url.includes("/api/expressions") && method === "GET") {
+        return Promise.reject(new Error("network down"))
+      }
+      return Promise.resolve(new Response(JSON.stringify({ data: { stored: true } })))
+    })
+    render(<ExpressionLibraryWorkspace />)
+
+    expect(await screen.findByRole("status")).toBeTruthy()
+    const retry = screen.getByRole("button", { name: /重试加载/ })
+
+    // 重试后恢复成功，提示消失。
+    fetchMock.mockImplementation((_input, init: RequestInit | undefined) => {
+      const method = init?.method ?? "GET"
+      const data =
+        method === "GET"
+          ? { cloudAvailable: true, items: [], nextCursor: null, userId: "user-1" }
+          : { stored: true }
+      return Promise.resolve(new Response(JSON.stringify({ data })))
+    })
+    fireEvent.click(retry)
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull())
+  })
+
+  it("imports pasted JSON only after the database confirms storage", async () => {
     render(<ExpressionLibraryWorkspace />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
 
@@ -209,6 +294,58 @@ describe("ExpressionLibraryWorkspace", () => {
       "/api/expressions",
       expect.objectContaining({ method: "POST" }),
     )
+  })
+
+  it("keeps local state untouched and reports failure when the database rejects an import", async () => {
+    fetchMock.mockImplementation((_input, init: RequestInit | undefined) => {
+      const method = init?.method ?? "GET"
+      const data =
+        method === "GET"
+          ? { cloudAvailable: true, items: [], nextCursor: null, userId: "user-1" }
+          : { stored: false }
+      return Promise.resolve(new Response(JSON.stringify({ data })))
+    })
+    render(<ExpressionLibraryWorkspace />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "JSON 数据" }), {
+      target: { value: validImportContent },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: "导入 1 条" }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/expressions",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    )
+    // 数据库未确认写入：本机保持原样，弹窗与内容保留供用户重试。
+    expect(
+      JSON.parse(window.localStorage.getItem("moss:expression-library:v1:user-1") ?? "{}")
+        .items,
+    ).toHaveLength(0)
+    expect(screen.getByRole("textbox", { name: "JSON 数据" })).toBeTruthy()
+  })
+
+  it("generates an enriched import record from an input phrase", async () => {
+    render(<ExpressionLibraryWorkspace />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }))
+    fireEvent.click(screen.getByRole("tab", { name: /AI 生成/ }))
+    fireEvent.change(screen.getByRole("textbox", { name: "英文短语" }), {
+      target: { value: "moss import fixture phrase" },
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "生成导入数据" }))
+    })
+
+    expect(await screen.findByText(/已生成 1 条表达/)).toBeTruthy()
+    const editor = screen.getByRole("textbox", { name: "JSON 数据" }) as HTMLTextAreaElement
+    expect(editor.value).toContain("exampleTranslation")
+    expect(editor.value).toContain("memoryTip")
+    expect(await screen.findByRole("button", { name: "导入 1 条" })).toBeTruthy()
   })
 
   it("uploads a JSON file through the file mode", async () => {
@@ -312,6 +449,17 @@ describe("ExpressionLibraryWorkspace", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it("navigates to the filtered study scope with the chosen mode", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /例句填空/ }))
+
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=filtered&mode=cloze",
+    )
+  })
+
   it("marks expressions that already exist in long-term memory", async () => {
     const reviewedIndex =
       builtInExpressionItems.findIndex((item) => item.phrase === "rule of thumb") + 1
@@ -345,5 +493,230 @@ describe("ExpressionLibraryWorkspace", () => {
     })
 
     expect(await screen.findByText("已在记忆中")).toBeTruthy()
+    const addButton = screen.getByRole("button", { name: "rule of thumb 已在长期记忆中" })
+    expect((addButton as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("reveals the example translation only after the eye is pressed", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "keep tabs on" },
+    })
+
+    const translation = "你能持续关注这批货的配送情况，如果延迟了就告诉我吗？"
+    expect(await screen.findByText("已显示 1 / 1 条")).toBeTruthy()
+    // 默认收起：译文尚未渲染，学习者先自己读英文例句。
+    expect(screen.queryByText(translation)).toBeNull()
+
+    // 译文开关紧跟例句，无障碍名称按当前动作区分。
+    const eye = screen.getByRole("button", { name: "显示 keep tabs on 的例句译文" })
+    expect(eye.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(eye)
+
+    expect(eye.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText(translation)).toBeTruthy()
+
+    fireEvent.click(eye)
+    expect(screen.queryByText(translation)).toBeNull()
+  })
+
+  it("restores saved filters and persists each filter change", async () => {
+    memoryMocks.state = {
+      ...createEmptyLearningMemory(new Date("2026-10-05T08:00:00.000Z")),
+      expressionStudy: {
+        ...createEmptyExpressionStudyState(),
+        filters: {
+          value: { query: "rule of thumb", categories: [], source: "all" },
+          updatedAt: "2026-10-05T08:00:00.000Z",
+        },
+      },
+    }
+    render(<ExpressionLibraryWorkspace />)
+
+    const search = screen.getByRole("textbox", { name: "搜索地道表达" }) as HTMLInputElement
+    await waitFor(() => expect(search.value).toBe("rule of thumb"))
+    expect(await screen.findByText("已显示 1 / 1 条")).toBeTruthy()
+
+    fireEvent.change(search, { target: { value: "break the ice" } })
+    expect(memoryMocks.saveExpressionFilters).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "break the ice", source: "all" }),
+    )
+  })
+
+  it("toggles a favorite by expression identity", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "rule of thumb" },
+    })
+    const star = await screen.findByRole("button", { name: "收藏 rule of thumb" })
+    fireEvent.click(star)
+    expect(memoryMocks.toggleFavorite).toHaveBeenCalledWith(
+      expect.stringContaining("rule of thumb"),
+    )
+  })
+
+  it("creates a named study group from the my-study panel", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: "管理分组" }))
+    const nameInput = await screen.findByRole("textbox", { name: "新分组名称" })
+    fireEvent.change(nameInput, { target: { value: "面试表达" } })
+    fireEvent.click(screen.getByRole("button", { name: "新建" }))
+    expect(memoryMocks.createGroup).toHaveBeenCalledWith("面试表达")
+  })
+
+  it("opens the start learning menu without a Base UI context error", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+
+    expect(await screen.findByRole("menuitem", { name: /闪卡自测/ })).toBeTruthy()
+  })
+
+  it("exposes random and ebbinghaus learning methods in the simplified start menu", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+
+    expect(await screen.findByRole("menuitem", { name: /随机抽 10 条/ })).toBeTruthy()
+    expect(screen.getByRole("menuitem", { name: /艾宾浩斯记忆循环/ })).toBeTruthy()
+    // 简化后的四个分组标签都在。
+    expect(screen.getByText("快速开始")).toBeTruthy()
+    expect(screen.getByText("按计划学")).toBeTruthy()
+  })
+
+  it("一键随机抽词直接进入 random scope，不建分组", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /随机抽 10 条/ }))
+
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=random&count=10&mode=flashcard",
+    )
+    // 纯抽词，不再写分组。
+    expect(memoryMocks.createGroup).not.toHaveBeenCalled()
+    expect(memoryMocks.addGroupItems).not.toHaveBeenCalled()
+  })
+
+  it("navigates to the ebbinghaus view on the standalone study page", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /开始学习/ }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /艾宾浩斯记忆循环/ }))
+
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=ebbinghaus&mode=flashcard",
+    )
+  })
+
+  it("opens a row group menu without a Base UI context error", async () => {
+    render(<ExpressionLibraryWorkspace />)
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索地道表达" }), {
+      target: { value: "rule of thumb" },
+    })
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "管理 rule of thumb 的学习分组" }),
+    )
+
+    expect(await screen.findByText("加入分组")).toBeTruthy()
+  })
+
+  it("joins a recommended group with one memory write", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /推荐分组/ }))
+
+    expect(await screen.findByText("A2 · 入门常用")).toBeTruthy()
+    expect(screen.getByText("B2 · 熟练表达")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "仅加入推荐分组 A2 · 入门常用" }))
+
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledTimes(1)
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
+      "recommended:level-A2",
+      "A2 · 入门常用",
+      expect.arrayContaining(["clothing:shop around"]),
+    )
+  })
+
+  it("joins and immediately opens a recommended group for study", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /推荐分组/ }))
+    fireEvent.click(
+      await screen.findByRole("button", { name: "加入并学习推荐分组 A2 · 入门常用" }),
+    )
+
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
+      "recommended:level-A2",
+      "A2 · 入门常用",
+      expect.arrayContaining(["clothing:shop around"]),
+    )
+    expect(routerPush).toHaveBeenCalledWith(
+      "/workspace/expressions/study?scope=group&groupId=recommended%3Alevel-A2&mode=flashcard",
+    )
+  })
+
+  it("prompts on duplicate expressions and only overwrites after an explicit choice", async () => {
+    render(<ExpressionLibraryWorkspace />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    // 词库内置的 keep an eye on 在 health 场景；这里用 social 导入，验证跨场景同词也算重复。
+    const duplicate = {
+      ...JSON.parse(validImportContent)[0],
+      phrase: "keep an eye on",
+      sceneCategory: "social",
+    }
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "JSON 数据" }), {
+      target: { value: JSON.stringify([duplicate]) },
+    })
+
+    expect(await screen.findByRole("status", { name: "重复表达处理" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "跳过重复" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    expect(
+      (screen.getByRole("button", { name: "全部重复，跳过导入" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+
+    fireEvent.click(screen.getByRole("button", { name: "覆盖已有" }))
+    fireEvent.click(screen.getByRole("button", { name: "导入 1 条" }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const importCall = fetchMock.mock.calls[1]
+    if (!importCall) {
+      throw new Error("缺少导入请求")
+    }
+    const body = JSON.parse((importCall[1] as RequestInit).body as string)
+    expect(body.items).toHaveLength(1)
+    expect(body.items[0].sceneCategory).toBe("health")
+  })
+
+  it("batch adds pasted phrases to a study group in one memory write", async () => {
+    render(<ExpressionLibraryWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: "管理分组" }))
+    fireEvent.change(await screen.findByRole("combobox", { name: "批量目标分组" }), {
+      target: { value: "常用表达" },
+    })
+    fireEvent.change(screen.getByRole("textbox", { name: "批量表达短语" }), {
+      target: { value: "rule of thumb\nkeep an eye on\nnot in library" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "批量加入" }))
+
+    expect(memoryMocks.createGroup).toHaveBeenCalledWith("常用表达")
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledTimes(1)
+    expect(memoryMocks.addGroupItems).toHaveBeenCalledWith(
+      "new-group-id",
+      "常用表达",
+      expect.arrayContaining(["health:keep an eye on"]),
+    )
+    expect(screen.getByText(/未匹配/)).toBeTruthy()
   })
 })

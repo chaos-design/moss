@@ -587,6 +587,229 @@ describe("POST /api/conversation authentication", () => {
     expect(retryRequest.max_tokens).toBe(4096)
   })
 
+  it("retries the contract repair and adopts the first compliant follow-up", async () => {
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+    vi.stubEnv("AI_API_KEY", "secret")
+    vi.stubEnv("AI_MODEL_NAME", "model")
+    const repairedPayload = JSON.stringify({
+      reply: "Hello! How have you been?",
+      translation: "你好！最近怎么样？",
+      validation: {
+        status: "guidance",
+        corrected: "Hi! How have you been?",
+        explanation: "补全问候信息，表达更完整。",
+        issues: [
+          {
+            kind: "clarity",
+            original: "Hi",
+            corrected: "Hi! How have you been?",
+            explanation: "信息不足。",
+          },
+        ],
+        examples: [{ english: "Hi! How have you been?", chinese: "你好！最近怎么样？" }],
+      },
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Hello! How have you been?" } }],
+          }),
+          { status: 200 },
+        ),
+      )
+      // 第一次修复仍不按契约返回：纯文本。
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Still plain text, sorry." } }],
+          }),
+          { status: 200 },
+        ),
+      )
+      // 第二次修复成功返回契约 JSON。
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: repairedPayload } }],
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(createConversationRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.contractApplied).toBe(true)
+    expect(body.data.content).toBe("Hello! How have you been?")
+    expect(body.data.translation).toBe("你好！最近怎么样？")
+    expect(body.data.validation.status).toBe("guidance")
+    // 主请求 + 两次修复请求；任一次修复合规即采用。
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    for (const index of [1, 2]) {
+      const repairRequest = JSON.parse(String(fetchMock.mock.calls[index]?.[1]?.body))
+      expect(repairRequest.messages[0].content).toContain("Output ONLY one JSON object")
+      expect(repairRequest.messages[1].content).toContain("A latte, please.")
+      expect(repairRequest.messages[1].content).toContain("Hello! How have you been?")
+    }
+  })
+
+  it("keeps the degraded reply when every contract repair attempt fails", async () => {
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+    vi.stubEnv("AI_API_KEY", "secret")
+    vi.stubEnv("AI_MODEL_NAME", "model")
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Hello! How have you been?" } }],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValue(new Response(null, { status: 429 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(createConversationRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.contractApplied).toBe(false)
+    expect(body.data.content).toContain("Hello")
+    // 主请求 + 全部修复重试都失败。
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  describe("contract repair time budget", () => {
+    // 用 Date.now 偏移模拟请求耗时：修复预算 = 120s maxDuration - 已耗时 - 5s 余量。
+    function stubClock() {
+      const realNow = Date.now()
+      let nowValue = realNow
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => nowValue)
+      return {
+        advance(ms: number) {
+          nowValue += ms
+        },
+        restore: () => nowSpy.mockRestore(),
+      }
+    }
+
+    // 记录每次 AbortSignal.timeout(ms) 请求的超时值，直接验证修复的预算收窄。
+    function trackTimeouts() {
+      const realTimeout = AbortSignal.timeout.bind(AbortSignal)
+      const requested: number[] = []
+      const spy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+        requested.push(ms)
+        return realTimeout(ms)
+      })
+      return { requested, restore: () => spy.mockRestore() }
+    }
+
+    it("skips repairs when the first reply already consumed the remaining budget", async () => {
+      getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+      vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+      vi.stubEnv("AI_API_KEY", "secret")
+      vi.stubEnv("AI_MODEL_NAME", "model")
+      const clock = stubClock()
+      const timeouts = trackTimeouts()
+      const fetchMock = vi.fn().mockImplementation(() => {
+        // 初次请求返回前已耗时 110s：120 - 110 - 5 < 15，剩余预算不足，修复被跳过。
+        clock.advance(110_000)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: "Hello! How have you been?" } }],
+            }),
+            { status: 200 },
+          ),
+        )
+      })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const response = await POST(createConversationRequest())
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data.contractApplied).toBe(false)
+      expect(body.data.content).toContain("Hello")
+      // 只有主请求，修复没有发出。
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      // 只请求了主请求的 110s 超时，没有任何修复请求。
+      expect(timeouts.requested).toEqual([110_000])
+      timeouts.restore()
+      clock.restore()
+    })
+
+    it("caps each repair timeout at the remaining budget instead of the fixed 45s", async () => {
+      getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+      vi.stubEnv("AI_BASE_URL", "https://api.example.com/v1")
+      vi.stubEnv("AI_API_KEY", "secret")
+      vi.stubEnv("AI_MODEL_NAME", "model")
+      const repairedPayload = JSON.stringify({
+        reply: "Hello! How have you been?",
+        translation: "你好！最近怎么样？",
+        validation: {
+          status: "accurate",
+          corrected: "A latte, please.",
+          explanation: "表达自然。",
+        },
+      })
+      const clock = stubClock()
+      const timeouts = trackTimeouts()
+      const fetchMock = vi.fn().mockImplementation(() => {
+        const index = fetchMock.mock.calls.length - 1
+        // 主请求 40s；第一次修复 45s（累计 85s）；第二次修复 30s 预算。
+        clock.advance(index === 0 ? 40_000 : 45_000)
+        if (index === 0) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [{ message: { content: "Hello! How have you been?" } }],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (index === 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [{ message: { content: "Still plain text, sorry." } }],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: repairedPayload } }],
+            }),
+            { status: 200 },
+          ),
+        )
+      })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const response = await POST(createConversationRequest())
+      const body = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(body.data.contractApplied).toBe(true)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      // 主请求 110s；第一次修复剩余预算 75s，取 min(45s, 75s)=45s；第二次只剩 30s，收窄到 30s。
+      expect(timeouts.requested).toEqual([110_000, 45_000, 30_000])
+      timeouts.restore()
+      clock.restore()
+    })
+  })
+
   it("supports Anthropic Messages API fields", async () => {
     getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
     vi.stubEnv("AI_BASE_URL", "https://api.anthropic.com/v1")
@@ -714,6 +937,92 @@ describe("POST /api/conversation authentication", () => {
     })
     const providerRequest = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
     expect(providerRequest.model).toBe("byo-model")
+  })
+
+  it("uses the server provider even when the client sends a BYOK config", async () => {
+    vi.stubEnv("AI_API_KEY", "server-secret")
+    vi.stubEnv("AI_BASE_URL", "https://server.example.com/v1")
+    vi.stubEnv("AI_MODEL_NAME", "server-model")
+    getSupabaseServerClient.mockResolvedValue(createSupabase("user-1"))
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  reply: "Sure. What size would you like?",
+                  translation: "好的。要多大杯？",
+                  validation: {
+                    status: "accurate",
+                    corrected: "A latte, please.",
+                    explanation: "表达自然。",
+                  },
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const response = await POST(
+      new Request("https://moss.local/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: "coffee",
+          language: "auto",
+          messages: [{ role: "user", content: "A latte, please." }],
+          modelConfigEnvelope: await encryptModelConfig({
+            apiKey: "browser-secret",
+            baseUrl: "https://byo.example.com/v1",
+            model: "byo-model",
+            apiType: "chat-completions",
+          }),
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://server.example.com/v1/chat/completions",
+      expect.anything(),
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: "Bearer server-secret",
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).model).toBe("server-model")
+  })
+
+  it("does not bypass auth with a BYOK config while the server config is active", async () => {
+    vi.stubEnv("AI_API_KEY", "server-secret")
+    vi.stubEnv("AI_BASE_URL", "https://server.example.com/v1")
+    vi.stubEnv("AI_MODEL_NAME", "server-model")
+    getSupabaseServerClient.mockResolvedValue(null)
+
+    const response = await POST(
+      new Request("https://moss.local/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: "coffee",
+          language: "auto",
+          messages: [{ role: "user", content: "A latte, please." }],
+          modelConfigEnvelope: await encryptModelConfig({
+            apiKey: "browser-secret",
+            baseUrl: "https://byo.example.com/v1",
+            model: "byo-model",
+            apiType: "chat-completions",
+          }),
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: "service_not_configured" } })
   })
 
   it("keeps authenticated BYOK available when the shared limiter is unavailable", async () => {

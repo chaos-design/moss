@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { LearningMemoryProvider } from "@/components/learning-memory-provider"
 import {
@@ -13,16 +13,28 @@ import {
   ConversationSettingsPopover,
   ConversationWorkspace,
   ExpressionValidationFeedback,
+  keepTurnAvatarVisible,
   scrollLatestTranscriptTurn,
   TranscriptTurn,
   VoiceCallPanel,
 } from "@/features/conversation/conversation-workspace"
+import { setConversationPrefs } from "@/features/conversation/use-conversation-prefs"
 import { asrEngineOptions } from "@/lib/asr-config"
 import type { StoredConversationMessage } from "@/lib/conversation-history"
+import {
+  conversationSceneStorageKey,
+  saveLastConversationScene,
+} from "@/lib/conversation-history"
 import { getConversationScene } from "@/lib/conversation-scenes"
 
+// 工作区挂载时会读取上次场景并可能 router.replace 回去；把 replace 提升为可断言的 spy。
+const { routerReplace, routerRefresh } = vi.hoisted(() => ({
+  routerReplace: vi.fn(),
+  routerRefresh: vi.fn(),
+}))
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ refresh: routerRefresh, replace: routerReplace }),
 }))
 
 // TranscriptTurn consults the shared auth status before requesting a translation; these tests cover
@@ -35,8 +47,90 @@ vi.mock("@/components/auth-provider", () => ({
   }),
 }))
 
-afterEach(cleanup)
+// Composer and transcript tests submit turns and exercise speech replay, so TTS playback is
+// stubbed with stable spies (vi.hoisted keeps them identical across renders — the runtime's
+// playback callbacks depend on their identity); `stop` mirrors the real hook by resetting state.
+const { ttsSpies } = vi.hoisted(() => ({
+  ttsSpies: {
+    playbackState: "idle" as "idle" | "loading" | "playing",
+    speak: vi.fn(async (_text: string, options?: { onStart?: () => void }) => {
+      options?.onStart?.()
+    }),
+    stop: vi.fn(() => {
+      ttsSpies.playbackState = "idle"
+    }),
+  },
+}))
+vi.mock("@/features/speech/use-local-tts", () => ({
+  useLocalTts: () => ({
+    playbackState: ttsSpies.playbackState,
+    prepare: vi.fn().mockResolvedValue(undefined),
+    previewVoice: vi.fn().mockResolvedValue(undefined),
+    speak: ttsSpies.speak,
+    stop: ttsSpies.stop,
+  }),
+}))
+
+vi.mock("@/lib/model-config-envelope", () => ({
+  createModelConfigEnvelope: vi.fn().mockResolvedValue({ signature: "test" }),
+  resetModelConfigPublicKey: vi.fn(),
+}))
+
+// 转写识别条测试需要驱动语音运行时收到识别事件；其余导出（能量阈值、重采样等）保留原实现。
+const offlineAsr = vi.hoisted(() => ({
+  engine: "",
+  onEngineFallback: (_engine: "qwen3-asr" | "sensevoice") => {},
+  onPartial: (_text: string) => {},
+  onSpeechStart: () => {},
+  onTranscript: (_text: string, _language?: string) => {},
+  prepare: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+}))
+
+vi.mock("@/features/speech/use-streaming-asr", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useStreamingAsr: ({
+    engine,
+    onEngineFallback,
+    onPartial,
+    onSpeechStart,
+    onTranscript,
+  }: {
+    engine?: string
+    onEngineFallback?: (engine: "qwen3-asr" | "sensevoice") => void
+    onProcessingChange: (processing: boolean) => void
+    onPartial: (transcript: string) => void
+    onSpeechStart?: () => void
+    onTranscript: (transcript: string, language?: string) => void
+  }) => {
+    offlineAsr.engine = engine ?? ""
+    offlineAsr.onEngineFallback = onEngineFallback ?? (() => {})
+    offlineAsr.onPartial = onPartial ?? (() => {})
+    offlineAsr.onSpeechStart = onSpeechStart ?? (() => {})
+    offlineAsr.onTranscript = onTranscript
+    return {
+      available: true,
+      loadingProgress: 100,
+      pause: offlineAsr.stop,
+      prepare: offlineAsr.prepare,
+      start: offlineAsr.start,
+      stop: offlineAsr.stop,
+    }
+  },
+}))
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 beforeEach(() => {
+  ttsSpies.playbackState = "idle"
+  offlineAsr.prepare.mockReset().mockResolvedValue(undefined)
+  offlineAsr.start.mockReset().mockResolvedValue(undefined)
+  offlineAsr.stop.mockReset()
+  // jsdom 没有实现 scrollIntoView：语音通话中的实时识别条滚动会调用它。
+  window.HTMLElement.prototype.scrollIntoView = vi.fn()
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => true },
     releasePointerCapture: { configurable: true, value: vi.fn() },
@@ -73,6 +167,56 @@ describe("conversation feedback UI", () => {
     scrollLatestTranscriptTurn(transcript)
 
     expect(transcript.scrollTop).toBe(240)
+  })
+
+  it("scrolls the turn avatar back inside the viewport when it is above the top edge", () => {
+    const transcript = document.createElement("div")
+    const turn = document.createElement("article")
+    const avatar = document.createElement("span")
+    avatar.dataset.turnAvatar = ""
+    turn.append(avatar)
+    transcript.append(turn)
+    transcript.scrollTop = 200
+    transcript.getBoundingClientRect = vi.fn(() => ({ top: 100, bottom: 700 }) as DOMRect)
+    avatar.getBoundingClientRect = vi.fn(() => ({ top: 60, bottom: 92 }) as DOMRect)
+
+    keepTurnAvatarVisible(transcript, turn)
+
+    // 头像顶 60 高于容器顶 100+16，需上移内容 56px（scrollTop 200→144）。
+    expect(transcript.scrollTop).toBe(144)
+  })
+
+  it("scrolls the avatar clear of the floating panel when it is under the bottom edge", () => {
+    const transcript = document.createElement("div")
+    const turn = document.createElement("article")
+    const avatar = document.createElement("span")
+    avatar.dataset.turnAvatar = ""
+    turn.append(avatar)
+    transcript.append(turn)
+    transcript.scrollTop = 200
+    transcript.getBoundingClientRect = vi.fn(() => ({ top: 100, bottom: 700 }) as DOMRect)
+    avatar.getBoundingClientRect = vi.fn(() => ({ top: 640, bottom: 672 }) as DOMRect)
+
+    // 浮动面板顶部 660，头像底 672 越过 660-16=644，需下移内容 28px。
+    keepTurnAvatarVisible(transcript, turn, 660)
+
+    expect(transcript.scrollTop).toBe(228)
+  })
+
+  it("leaves scroll alone when the avatar is already fully visible", () => {
+    const transcript = document.createElement("div")
+    const turn = document.createElement("article")
+    const avatar = document.createElement("span")
+    avatar.dataset.turnAvatar = ""
+    turn.append(avatar)
+    transcript.append(turn)
+    transcript.scrollTop = 200
+    transcript.getBoundingClientRect = vi.fn(() => ({ top: 100, bottom: 700 }) as DOMRect)
+    avatar.getBoundingClientRect = vi.fn(() => ({ top: 200, bottom: 232 }) as DOMRect)
+
+    keepTurnAvatarVisible(transcript, turn)
+
+    expect(transcript.scrollTop).toBe(200)
   })
 
   it("keeps the settings label visible and changes the controlled tutor mode", () => {
@@ -324,6 +468,338 @@ describe("conversation feedback UI", () => {
     expect(composerClasses).not.toContain("has-disabled:bg-input/50")
   })
 
+  it("collapses the expanded composer on Escape and keeps the draft", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    expect(textarea.className).toContain("min-h-8")
+
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+    fireEvent.change(textarea, { target: { value: "Could I get a latte?" } })
+
+    fireEvent.keyDown(textarea, { key: "Escape" })
+    expect(textarea.className).toContain("min-h-8")
+    // 收起只是把屏幕还给转写内容，草稿必须原样保留。
+    expect(
+      (screen.getByRole("textbox", { name: "输入对话内容" }) as HTMLTextAreaElement).value,
+    ).toBe("Could I get a latte?")
+  })
+
+  it("leaves IME composition to the input method instead of collapsing on Escape", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+
+    // 拼音候选中按 Escape 是取消组词，不能顺手把输入框收起。
+    fireEvent.keyDown(textarea, { key: "Escape", isComposing: true })
+    expect(textarea.className).toContain("min-h-14")
+
+    fireEvent.keyDown(textarea, { key: "Escape" })
+    expect(textarea.className).toContain("min-h-8")
+  })
+
+  it("collapses an empty composer on blur and keeps a draft expanded", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+
+    fireEvent.focus(textarea)
+    fireEvent.blur(textarea)
+    expect(textarea.className).toContain("min-h-8")
+
+    fireEvent.focus(textarea)
+    fireEvent.change(textarea, { target: { value: "Still typing here." } })
+    fireEvent.blur(textarea)
+    // 正在写的草稿不因失焦被收起，避免打断输入。
+    expect(textarea.className).toContain("min-h-14")
+  })
+
+  it("collapses the empty composer via the toggle when focus stays inside the panel", () => {
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.focus(textarea)
+    expect(textarea.className).toContain("min-h-14")
+
+    // 点「收起」按钮时焦点移到面板内的按钮（relatedTarget 即该按钮）：
+    // 这不算离开面板，blur 不能把状态收掉，否则随后的 toggle 会互相抵消。
+    const toggle = screen.getByRole("button", { name: "收起输入框" })
+    fireEvent.blur(textarea, { relatedTarget: toggle })
+    expect(textarea.className).toContain("min-h-14")
+    fireEvent.click(toggle)
+    expect(textarea.className).toContain("min-h-8")
+
+    // 焦点真正离开面板（relatedTarget 为面板外元素或空）时仍要收起。
+    fireEvent.focus(textarea)
+    fireEvent.blur(textarea)
+    expect(textarea.className).toContain("min-h-8")
+  })
+
+  it("offers a stop control while a reply is pending and clears it when stopped", () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    const deferred: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve
+          }),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "I would like a latte, please." } })
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    // 生成期间提供独立的停止入口：草稿为空时这是唯一的打断方式。
+    expect(screen.getByRole("button", { name: "停止生成回复" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "停止生成回复" }))
+
+    expect(screen.queryByRole("button", { name: "停止生成回复" })).toBeNull()
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
+    // 被打断的提问保留在转写里，等待重发或删除。
+    expect(screen.getByText("I would like a latte, please.")).toBeTruthy()
+    deferred.resolve?.(null)
+  })
+
+  it("clears the pending state once the reply lands", async () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              content: "Certainly, one latte coming up.",
+              translation: "好的，一杯拿铁马上来。",
+              recall: "",
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "One latte, please." } })
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    expect(screen.getByRole("button", { name: "停止生成回复" })).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "停止生成回复" })).toBeNull(),
+    )
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeTruthy()
+    expect(screen.getByText("Certainly, one latte coming up.")).toBeTruthy()
+  })
+
+  it("keeps the pending reply visible while the assistant is answering", async () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    const deferred: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve
+          }),
+      ),
+    )
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    const textarea = screen.getByRole("textbox", {
+      name: "输入对话内容",
+    }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: "One latte, please." } })
+    const scrollIntoView = vi.mocked(HTMLElement.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }))
+
+    // 生成期「正在回应」占位要滚进可视区：浮动面板盖住转写底部，停在面板后面就没人看见。
+    await waitFor(() =>
+      expect(document.querySelector("[data-pending-reply-turn]")).toBeTruthy(),
+    )
+    const pendingTurn = document.querySelector<HTMLElement>("[data-pending-reply-turn]")
+    expect(pendingTurn).toBeTruthy()
+    // 方法调用的 this 才是被滚入可视区的元素；参数是滚动对齐选项。
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" })
+    expect(scrollIntoView.mock.instances).toContain(pendingTurn)
+    deferred.resolve?.(null)
+  })
+
+  it("hides the live recognition strip while a reply is pending", async () => {
+    const scene = getConversationScene("cafe-order")
+    setConversationPrefs((current) => ({ ...current, consecutiveQuestionDelayMs: 0 }))
+    const deferred: { resolve: ((value: unknown) => void) | null } = { resolve: null }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve
+          }),
+      ),
+    )
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getSupportedConstraints: () => ({}),
+        getUserMedia: vi.fn().mockResolvedValue({
+          getAudioTracks: () => [{ enabled: true, stop: vi.fn() }],
+          getTracks: () => [{ enabled: true, stop: vi.fn() }],
+        }),
+      },
+    })
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "切换到语音模式" }))
+    await waitFor(() => expect(screen.getAllByText("可以说话").length).toBeGreaterThan(0))
+
+    // 监听中：实时识别条随 partial 出现在转写里。
+    act(() => {
+      offlineAsr.onPartial("Could I get a")
+    })
+    expect(screen.getByText("Could I get a")).toBeTruthy()
+
+    // 提交后进入生成期：识别文本与「识别中」占位条都不再出现（回答完整之前不出现识别语音）。
+    act(() => {
+      offlineAsr.onTranscript("Could I get a latte?")
+    })
+    await waitFor(() => expect(screen.getByText("正在回应")).toBeTruthy(), { timeout: 2_500 })
+    act(() => {
+      offlineAsr.onPartial("And also a croissant")
+    })
+    expect(screen.queryByText("And also a croissant")).toBeNull()
+    expect(screen.queryByText("识别中")).toBeNull()
+    expect(screen.queryByText(/正在将这句话转换为文字/)).toBeNull()
+
+    deferred.resolve?.(null)
+    fireEvent.click(screen.getByRole("button", { name: "结束通话并切换到文字输入" }))
+  })
+
+  it("shows distinct ready and recognizing copy with a scrolling hint for long text", async () => {
+    const scene = getConversationScene("cafe-order")
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getSupportedConstraints: () => ({}),
+        getUserMedia: vi.fn().mockResolvedValue({
+          getAudioTracks: () => [{ enabled: true, stop: vi.fn() }],
+          getTracks: () => [{ enabled: true, stop: vi.fn() }],
+        }),
+      },
+    })
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "切换到语音模式" }))
+    await waitFor(() => expect(screen.getAllByText("可以说话").length).toBeGreaterThan(0))
+
+    // 准备就绪：麦克风已开、还没有听到语音。
+    expect(screen.getByText("准备就绪")).toBeTruthy()
+    expect(screen.getByText("麦克风已就绪，随时可以开口。")).toBeTruthy()
+
+    // 识别中：有 partial 后状态切到识别中，短文本静态显示。
+    act(() => {
+      offlineAsr.onPartial("Could I get a")
+    })
+    expect(screen.getByText("识别中")).toBeTruthy()
+    expect(screen.getByText("Could I get a")).toBeTruthy()
+    // 识别条不再常驻「可以继续说」提示，识别阶段只由状态行呈现。
+    expect(screen.queryByText(/可以继续说/)).toBeNull()
+
+    // 长文本进入滚动轨道，内容渲染两份以无缝循环。
+    const longPartial =
+      "Could I get a large latte with oat milk, a blueberry muffin if it is still warm, and a glass of water?"
+    act(() => {
+      offlineAsr.onPartial(longPartial)
+    })
+    expect(screen.getAllByText(longPartial).length).toBe(2)
+    expect(document.querySelector(".speech-marquee-track")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "结束通话并切换到文字输入" }))
+  })
+
+  it("tracks speech playback on the transcript replay button", async () => {
+    window.localStorage.clear()
+    const scene = getConversationScene("cafe-order")
+    ttsSpies.playbackState = "playing"
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene={false} scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 点击播放：朗读目标锁定这条回复，按钮变成停止控件。
+    fireEvent.click(screen.getByRole("button", { name: "播放本轮英语" }))
+    const stopButton = await waitFor(() => screen.getByRole("button", { name: "停止播放" }))
+    expect(stopButton.getAttribute("aria-pressed")).toBe("true")
+
+    // 再次点击停止：恢复播放入口，Agent 语音反馈状态由此可感知、可打断。
+    fireEvent.click(stopButton)
+    await waitFor(() => screen.getByRole("button", { name: "播放本轮英语" }))
+    expect(screen.queryByRole("button", { name: "停止播放" })).toBeNull()
+  })
+
   it("gives the transcript its own breathing room below the session metrics bar", () => {
     const scene = getConversationScene("cafe-order")
     render(
@@ -569,6 +1045,9 @@ describe("conversation feedback UI", () => {
   it("renders the full voice activity effect and recording reticle", () => {
     const view = render(
       <VoiceCallPanel
+        onRestartRecognition={() => {}}
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
         callSeconds={4}
         callStatus="listening"
         muted={false}
@@ -598,6 +1077,9 @@ describe("conversation feedback UI", () => {
     const onToggleSpeaker = vi.fn()
     render(
       <VoiceCallPanel
+        onRestartRecognition={() => {}}
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
         callSeconds={64}
         callStatus="listening"
         idlePrompt="你有任何问题吗？"
@@ -618,6 +1100,49 @@ describe("conversation feedback UI", () => {
     expect(onEndCall).toHaveBeenCalledOnce()
     expect(onToggleSpeaker).toHaveBeenCalledOnce()
     expect(screen.getByText("你有任何问题吗？")).toBeTruthy()
+  })
+
+  it("offers a restart-recognition entry when recognition is unavailable mid-call", () => {
+    const onRestartRecognition = vi.fn()
+    render(
+      <VoiceCallPanel
+        onRestartRecognition={onRestartRecognition}
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
+        callSeconds={12}
+        callStatus="manual"
+        muted={false}
+        onEndCall={vi.fn()}
+        onToggleMute={vi.fn()}
+        onToggleSpeaker={vi.fn()}
+        speakerEnabled
+        speechRecognitionProgress={null}
+      />,
+    )
+
+    // 文字通话态此前没有恢复入口：通话只能被动结束。重试按钮调用重启识别。
+    expect(screen.getByText("文字通话模式")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "重试语音识别" }))
+    expect(onRestartRecognition).toHaveBeenCalledOnce()
+  })
+
+  it("hides the restart-recognition entry while recognition is healthy", () => {
+    render(
+      <VoiceCallPanel
+        onRestartRecognition={() => {}}
+        onRetryRecognition={() => {}}
+        recognitionRetryPending={false}
+        callSeconds={4}
+        callStatus="listening"
+        muted={false}
+        onEndCall={vi.fn()}
+        onToggleMute={vi.fn()}
+        onToggleSpeaker={vi.fn()}
+        speakerEnabled
+        speechRecognitionProgress={100}
+      />,
+    )
+    expect(screen.queryByRole("button", { name: "重试语音识别" })).toBeNull()
   })
 
   it("shows the original error, concrete reason, correction, and practice examples", () => {
@@ -844,5 +1369,80 @@ describe("conversation feedback UI", () => {
     expect(aside.style.width).toBe("360px")
     expect(window.localStorage.getItem("moss:conversation-guide-width:v1")).toBe("360")
     expect(onCollapsedChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe("conversation last-scene restore", () => {
+  beforeEach(() => {
+    routerReplace.mockClear()
+    routerRefresh.mockClear()
+    window.localStorage.clear()
+  })
+
+  it("redirects to the last stored scene when the page has no ?scene= param", async () => {
+    saveLastConversationScene("idiomatic-english")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith(
+        `/workspace/conversation?scene=${encodeURIComponent("idiomatic-english")}`,
+      ),
+    )
+    // 重定向路径不写当前场景，避免用默认场景覆盖「上次场景」。
+    expect(window.localStorage.getItem(conversationSceneStorageKey)).toBe("idiomatic-english")
+  })
+
+  it("renders the scene-loading skeleton while the last scene differs", async () => {
+    saveLastConversationScene("idiomatic-english")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 场景未确定：先渲染骨架而非默认场景内容，重定向在后台进行且期间骨架保持。
+    expect(screen.getByRole("status", { name: "正在加载对话页面" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "咖啡店点单" })).toBeNull()
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith(
+        `/workspace/conversation?scene=${encodeURIComponent("idiomatic-english")}`,
+      ),
+    )
+    expect(screen.getByRole("status", { name: "正在加载对话页面" })).toBeTruthy()
+  })
+
+  it("renders the workspace once the stored scene matches the rendered one", async () => {
+    saveLastConversationScene("coffee")
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    // 场景立即确定：不经过骨架，直接渲染内容。
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "咖啡店点单" })).toBeTruthy(),
+    )
+    expect(screen.queryByRole("status", { name: "正在加载对话页面" })).toBeNull()
+  })
+
+  it("keeps the rendered scene and records it when nothing was stored", () => {
+    // "cafe-order" 不是场景 ID：getConversationScene 会回退到默认场景 "coffee"。
+    const scene = getConversationScene("cafe-order")
+    render(
+      <LearningMemoryProvider>
+        <ConversationWorkspace restoreLastScene scene={scene} />
+      </LearningMemoryProvider>,
+    )
+
+    expect(routerReplace).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(conversationSceneStorageKey)).toBe(scene.id)
   })
 })

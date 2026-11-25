@@ -65,6 +65,12 @@ vi.mock("@/features/shadowing/use-shadowing-recorder", () => ({
 
 beforeEach(() => {
   mocks.state = createEmptyLearningMemory(new Date("2026-08-29T08:00:00.000Z"))
+  // 学习位置/等级筛选/随机模式是本地持久化状态；清空后每个用例都从默认状态开始。
+  window.localStorage.clear()
+  // jsdom 没有实现 scrollIntoView：侧栏定位（恢复后自动定位与计数器点击）会调用它。
+  window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  // jsdom 没有平滑滚动：听对话阶段的居中跟随走 element.scrollTo({ behavior: "smooth" })。
+  window.HTMLElement.prototype.scrollTo = vi.fn()
   // Match the real recorder: automatic turn advancement resets its current result.
   mocks.reset.mockImplementation(() => {
     mocks.recorder.result = null
@@ -75,6 +81,7 @@ afterEach(() => {
   cleanup()
   mocks.onComplete = null
   mocks.recorder.result = null
+  mocks.recorder.recording = false
   mocks.recordShadowingAttempt.mockReset()
   mocks.speakWithVoice.mockReset().mockResolvedValue(undefined)
   mocks.start.mockReset()
@@ -139,6 +146,40 @@ describe("ShadowingWorkspace", () => {
 
     expect(container.scrollTop).toBe(86)
     expect(container.className).toContain("overflow-y-auto")
+  })
+
+  it("centers the playing line in the listen transcript and marks it with a soft pulse", async () => {
+    // TTS 挂起不返回：台词留在「正在播放」状态，便于断言高亮与滚动。
+    mocks.speakWithVoice.mockImplementation(() => new Promise(() => {}))
+    const view = render(<ShadowingWorkspace />)
+    const container = view.container
+      .querySelector<HTMLDivElement>('[data-shadowing-line="coffee-2"]')
+      ?.closest<HTMLDivElement>(".overflow-y-auto")
+    // 滚动助手量的是 li（data 属性所在元素），高亮类在 li 内部的台词按钮上。
+    const lineLi = view.container.querySelector<HTMLElement>('[data-shadowing-line="coffee-2"]')
+    const line = lineLi?.querySelector<HTMLElement>("button")
+    expect(container).toBeTruthy()
+    expect(line).toBeTruthy()
+    if (!container || !line || !lineLi) {
+      return
+    }
+    // 200px 视口里 40px 的台词停在 100：中心（120）要对到视口中心（100），即 +20。
+    container.getBoundingClientRect = () => ({ top: 0, bottom: 200, height: 200 }) as DOMRect
+    lineLi.getBoundingClientRect = () => ({ top: 100, bottom: 140, height: 40 }) as DOMRect
+    container.scrollTop = 0
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "播放当前台词" }))
+    })
+
+    // 正在播放的台词颜色更明显，并带弱呼吸光晕标出播放位置。
+    expect(line.className).toContain("shadowing-line-pulse")
+    expect(line.className).toContain("bg-primary/10")
+    expect(screen.getByText("正在播放")).toBeTruthy()
+    // 平滑滚动到可视区中间位置。
+    expect(vi.mocked(HTMLElement.prototype.scrollTo)).toHaveBeenCalledWith(
+      expect.objectContaining({ top: 20, behavior: "smooth" }),
+    )
   })
 
   it("advertises the hold-Space shortcut next to the record button", () => {
@@ -337,6 +378,9 @@ describe("ShadowingWorkspace", () => {
     for (const [index, expectedLine] of [
       "Iced, please, and could I have it to go?",
       "That's right. Thank you.",
+      "It's Alex. Could I also get a cup of hot water on the side?",
+      "Card, please. Oh — could you make the latte with less ice?",
+      "Thanks a lot. I'll grab a seat by the window.",
     ].entries()) {
       await act(async () => {
         mocks.onComplete?.({
@@ -355,6 +399,9 @@ describe("ShadowingWorkspace", () => {
       "Good morning! What can I get started for you today?",
       "Of course. Would you like that hot or iced?",
       "Absolutely. A medium iced oat latte to go.",
+      "Great choice. That will be four fifty, and what name for the order?",
+      "Of course. Card or cash today?",
+      "No problem, easy on the ice. We'll call your name in a few minutes.",
     ])
     await waitFor(() =>
       expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
@@ -370,9 +417,9 @@ describe("ShadowingWorkspace", () => {
         waveform: Array.from({ length: 20 }, () => 50),
       })
     })
-    expect(mocks.speakWithVoice).toHaveBeenCalledTimes(3)
+    expect(mocks.speakWithVoice).toHaveBeenCalledTimes(6)
     expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
-      "That's right. Thank you.",
+      "Thanks a lot. I'll grab a seat by the window.",
     )
   })
 
@@ -414,7 +461,7 @@ describe("ShadowingWorkspace", () => {
   it("uses two voices for a multi-turn script and keeps translations off by default", async () => {
     render(<ShadowingWorkspace />)
 
-    expect(screen.getByRole("list", { name: "咖啡店点单预设对话" }).children).toHaveLength(6)
+    expect(screen.getByRole("list", { name: "咖啡店点单预设对话" }).children).toHaveLength(12)
     expect(screen.getByText("Could I get a latte with oat milk, please?")).toBeTruthy()
     expect(screen.queryByText("早上好！今天想先来点什么？")).toBeNull()
 
@@ -422,12 +469,29 @@ describe("ShadowingWorkspace", () => {
     expect(screen.getByText("早上好！今天想先来点什么？")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "播放整段" }))
-    await waitFor(() => expect(mocks.speakWithVoice).toHaveBeenCalledTimes(6))
+    await waitFor(() => expect(mocks.speakWithVoice).toHaveBeenCalledTimes(12))
     expect(mocks.speakWithVoice.mock.calls[0]?.[1]).toMatchObject({
       value: "kokoro:af_heart",
     })
     expect(mocks.speakWithVoice.mock.calls[1]?.[1]).toMatchObject({
       value: "kokoro:am_michael",
+    })
+
+    // 同一角色的音色恒定：整段播放只出现两个角色音色，且同一句台词（同一角色）
+    // 无论出现多少次都复用同一个音色，不会逐句漂移。
+    const targets = mocks.speakWithVoice.mock.calls.map((call) => call[1] as { value: string })
+    expect(new Set(targets.map((target) => target.value))).toEqual(
+      new Set(["kokoro:af_heart", "kokoro:am_michael"]),
+    )
+    const voiceByText = new Map<string, string>()
+    mocks.speakWithVoice.mock.calls.forEach((call, index) => {
+      const text = call[0] as string
+      const seen = voiceByText.get(text)
+      if (seen) {
+        expect(targets[index].value).toBe(seen)
+      } else {
+        voiceByText.set(text, targets[index].value)
+      }
     })
 
     fireEvent.click(screen.getByRole("button", { name: "互换角色" }))
@@ -438,5 +502,204 @@ describe("ShadowingWorkspace", () => {
     expect(
       screen.getAllByText("Good morning! What can I get started for you today?").length,
     ).toBeGreaterThan(0)
+  })
+
+  it("keeps the reference waveform shape while recording and highlights it with the brand color", () => {
+    const view = render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // 待机时是参考波形，第一根条来自 referenceWaveform，也没有 pulse 高亮。
+    const waveform = screen.getByRole("img", { name: "音频波形" })
+    expect(waveform.firstElementChild?.getAttribute("style")).toContain("height: 18%")
+    expect(waveform.firstElementChild?.className).not.toContain("animate-pulse")
+
+    mocks.recorder.recording = true
+    view.rerender(<ShadowingWorkspace />)
+
+    // 录音时不改变形状，只靠颜色 + pulse 让「正在录音」醒目。
+    expect(waveform.firstElementChild?.getAttribute("style")).toContain("height: 18%")
+    expect(waveform.firstElementChild?.className).toContain("animate-pulse")
+    expect(waveform.firstElementChild?.className).toContain("bg-primary")
+  })
+
+  it("restores the last learning position and locates it in the sidebar", () => {
+    window.localStorage.setItem(
+      "moss:shadowing-position:v1",
+      JSON.stringify({ dialogueId: "shopping", lineId: "shopping-2", role: "learner" }),
+    )
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // 恢复后选中场景与目标句都对上，侧栏自动定位到该场景。
+    expect(screen.getByRole("button", { name: /商店购物/ }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    expect(screen.getByRole("region", { name: "跟读操作" }).textContent).toContain(
+      "I'm after a winter coat. Do you have this one in a medium?",
+    )
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled()
+  })
+
+  it("persists navigation and locates the selected scene from the counter", () => {
+    render(<ShadowingWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: /商店购物/ }))
+    const position = JSON.parse(
+      window.localStorage.getItem("moss:shadowing-position:v1") ?? "{}",
+    ) as { dialogueId?: string; role?: string }
+    expect(position).toMatchObject({ dialogueId: "shopping", role: "learner" })
+
+    // 「N/M」计数器是定位入口：点击把选中条目平滑滚回可视区。
+    const locateStub = vi.mocked(HTMLElement.prototype.scrollIntoView)
+    const before = locateStub.mock.calls.length
+    fireEvent.click(screen.getByRole("button", { name: "定位当前学习的场景" }))
+    expect(locateStub.mock.calls.length).toBeGreaterThan(before)
+    expect(locateStub.mock.calls.at(-1)?.[0]).toMatchObject({ behavior: "smooth" })
+  })
+
+  it("plays the focus word without entering the partner-turn flow", async () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // 进入跟读阶段会先播对方的提示句；等提示播完再试听发音，避免串台。
+    await waitFor(() => expect(mocks.speakWithVoice).toHaveBeenCalled())
+    await act(async () => {})
+    mocks.speakWithVoice.mockClear()
+
+    fireEvent.click(screen.getByRole("button", { name: "播放 oat 发音" }))
+
+    expect(mocks.speakWithVoice).toHaveBeenCalledWith(
+      "oat",
+      expect.anything(),
+      expect.anything(),
+    )
+    // 面板不会把「听发音」误显示成对方接话的回合：两个功能互不牵连。
+    expect(screen.getByRole("region", { name: "跟读操作" }).textContent).not.toContain(
+      "正在接话",
+    )
+  })
+
+  it("blurs media buttons after click so Space returns to the push-to-talk shortcut", () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    const sampleButton = screen.getByRole("button", { name: /听示范/ })
+    const sampleBlurSpy = vi.spyOn(sampleButton, "blur")
+    fireEvent.click(sampleButton)
+    expect(sampleBlurSpy).toHaveBeenCalled()
+
+    const recordButton = screen.getByRole("button", { name: "开始录音" })
+    const recordBlurSpy = vi.spyOn(recordButton, "blur")
+    fireEvent.click(recordButton)
+    expect(recordBlurSpy).toHaveBeenCalled()
+    expect(mocks.start).toHaveBeenCalledOnce()
+  })
+
+  it("filters the working set by level for the sidebar, counter, and persistence", () => {
+    render(<ShadowingWorkspace />)
+
+    fireEvent.click(screen.getByRole("button", { name: "C1" }))
+
+    expect(screen.queryByRole("button", { name: /商店购物/ })).toBeNull()
+    expect(screen.getByRole("button", { name: /商务谈判/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "定位当前学习的场景" }).textContent).toMatch(
+      /^1\/\d+$/,
+    )
+    expect(window.localStorage.getItem("moss:shadowing-filter:v1")).toBe(JSON.stringify("C1"))
+
+    fireEvent.click(screen.getByRole("button", { name: "全部" }))
+    expect(screen.getByRole("button", { name: /商店购物/ })).toBeTruthy()
+  })
+
+  it("jumps to a random other scene from the dice and toggles continuous random mode", () => {
+    render(<ShadowingWorkspace />)
+
+    // 头部只有一个随机入口（跳换按钮）；连续模式是中栏工具栏的开关，不再是第二个头部按钮。
+    expect(screen.queryByRole("button", { name: "开启随机连续学习" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "随机选择一个场景" }))
+    const position = JSON.parse(
+      window.localStorage.getItem("moss:shadowing-position:v1") ?? "{}",
+    ) as { dialogueId?: string }
+    expect(position.dialogueId).not.toBe("coffee")
+    // 随机跳换后侧栏平滑滚动到新场景。
+    expect(
+      vi.mocked(HTMLElement.prototype.scrollIntoView).mock.calls.at(-1)?.[0],
+    ).toMatchObject({
+      behavior: "smooth",
+    })
+
+    fireEvent.click(screen.getByRole("switch", { name: "随机连续学习" }))
+    expect(
+      screen.getByRole("switch", { name: "随机连续学习" }).getAttribute("aria-checked"),
+    ).toBe("true")
+    expect(window.localStorage.getItem("moss:shadowing-random:v1")).toBe("true")
+  })
+
+  it("auto-advances to a random scene after the last line when random mode is on", () => {
+    render(<ShadowingWorkspace />)
+    fireEvent.click(screen.getByRole("switch", { name: "随机连续学习" }))
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    // 咖啡场景的最后一句学习者台词（coffee-6），录完没有下一句。
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "选择学习者台词：Thanks a lot. I'll grab a seat by the window.",
+      }),
+    )
+    act(() => {
+      mocks.onComplete?.({
+        assessment: {
+          overallScore: 82,
+          clarityScore: 84,
+          fluencyScore: 79,
+          rhythmScore: 83,
+          durationSeconds: 4.2,
+          voicedRatio: 0.68,
+        },
+        audioUrl: "blob:final",
+        waveform: [],
+      })
+    })
+
+    // 随机连续模式：没有下一句时自动进入另一个随机场景，提示台词开始播放。
+    const position = JSON.parse(
+      window.localStorage.getItem("moss:shadowing-position:v1") ?? "{}",
+    ) as { dialogueId?: string }
+    expect(position.dialogueId).not.toBe("coffee")
+    expect(mocks.speakWithVoice).toHaveBeenCalled()
+  })
+
+  it("still switches randomly after the last line when auto-turn is off but random mode is on", () => {
+    render(<ShadowingWorkspace />)
+    // 关闭「自动接话」，再打开「随机连续」：两个开关独立，随机换场不应被 autoTurn 挡住。
+    fireEvent.click(screen.getByRole("switch", { name: "录完后自动播放对方台词" }))
+    fireEvent.click(screen.getByRole("switch", { name: "随机连续学习" }))
+    fireEvent.click(screen.getByRole("tab", { name: "02跟角色" }))
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "选择学习者台词：Thanks a lot. I'll grab a seat by the window.",
+      }),
+    )
+    act(() => {
+      mocks.onComplete?.({
+        assessment: {
+          overallScore: 82,
+          clarityScore: 84,
+          fluencyScore: 79,
+          rhythmScore: 83,
+          durationSeconds: 4.2,
+          voicedRatio: 0.68,
+        },
+        audioUrl: "blob:final",
+        waveform: [],
+      })
+    })
+
+    const position = JSON.parse(
+      window.localStorage.getItem("moss:shadowing-position:v1") ?? "{}",
+    ) as { dialogueId?: string }
+    expect(position.dialogueId).not.toBe("coffee")
   })
 })

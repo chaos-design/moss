@@ -57,8 +57,8 @@ describe("shadowing dialogues", () => {
       scriptKind: "preset",
       focusWord: "tabs",
     })
-    expect(dialogue?.lines).toHaveLength(12)
-    expect(dialogue?.lines.filter((line) => line.speaker === "learner")).toHaveLength(6)
+    expect(dialogue?.lines).toHaveLength(14)
+    expect(dialogue?.lines.filter((line) => line.speaker === "learner")).toHaveLength(7)
     expect(dialogue?.lines.map((line) => line.text).join(" ")).toContain("keeping tabs on")
     expect(dialogue?.lines.map((line) => line.text).join(" ")).toContain("circle back")
   })
@@ -69,9 +69,10 @@ describe("shadowing dialogues", () => {
       throw new Error("Missing coffee shop dialogue")
     }
 
-    const [opening, firstTurn, firstReply, secondTurn, secondReply, closing] = dialogue.lines
+    const [opening, firstTurn, firstReply, secondTurn, secondReply] = dialogue.lines
+    const closing = dialogue.lines.at(-1)
     if (!opening || !firstTurn || !firstReply || !secondTurn || !secondReply || !closing) {
-      throw new Error("Coffee shop dialogue must contain six alternating lines")
+      throw new Error("Coffee shop dialogue must contain alternating lines")
     }
 
     // 首句之前没有提示；角色台词按脚本顺序推进，不在角色之间跳转。
@@ -82,17 +83,13 @@ describe("shadowing dialogues", () => {
     })
     expect(getShadowingTurn(dialogue, firstTurn)).toEqual({
       cue: opening,
-      next: secondTurn,
+      next: dialogue.lines.filter((line) => line.speaker === "learner")[1],
       reply: firstReply,
     })
-    expect(getShadowingTurn(dialogue, secondReply)).toEqual({
-      cue: secondTurn,
-      next: null,
-      reply: closing,
-    })
-    // 末句之后没有接话也没有下一句，工作区据此停止而不回绕。
+    // 脚本加长后，中段的接话链继续向后推进而不是提前收尾。
+    expect(getShadowingTurn(dialogue, secondReply)?.next).toBeTruthy()
     expect(getShadowingTurn(dialogue, closing)).toEqual({
-      cue: secondReply,
+      cue: expect.objectContaining({ speaker: "partner" }),
       next: null,
       reply: null,
     })
@@ -124,5 +121,45 @@ describe("shadowing dialogues", () => {
         translation: "",
       }),
     ).toEqual({ cue: null, next: null, reply: null })
+  })
+
+  it("covers every non-locked core scene with a complete hand-written preset", () => {
+    const dialogues = getShadowingDialogues()
+    // 核心场景逐一手写（presentation 是锁定场景，走生成模板）。
+    const coreSceneIds = [
+      "small-talk",
+      "shopping",
+      "interview",
+      "grocery",
+      "renting",
+      "taxi",
+      "train",
+      "pharmacy",
+      "banking",
+      "bakery",
+      "customs",
+      "directions",
+      "home-repair",
+      "customer-support",
+      "emergency-help",
+      "class-discussion",
+      "one-on-one",
+    ] as const
+
+    expect(coreSceneIds.length + 12).toBeLessThanOrEqual(
+      dialogues.filter((dialogue) => dialogue.scriptKind === "preset").length,
+    )
+
+    for (const id of coreSceneIds) {
+      const dialogue = dialogues.find((candidate) => candidate.sceneId === id)
+      expect(dialogue?.scriptKind ?? "missing", id).toBe("preset")
+      expect(dialogue?.lines.length ?? 0, id).toBeGreaterThanOrEqual(10)
+      expect(dialogue?.focusWord, id).toBeTruthy()
+      expect(dialogue?.phonetic ?? "", id).not.toBe("场景表达")
+      expect(dialogue?.focusTip ?? "", id).toBeTruthy()
+      expect(dialogue?.level, id).toBe(
+        getAvailableConversationScenes("all").find((scene) => scene.id === id)?.level,
+      )
+    }
   })
 })

@@ -1,4 +1,5 @@
 import { isValidModelEndpoint } from "@/lib/model-config"
+import { speechRules } from "@/lib/speech-rules"
 
 // Speech services support three transports so the workspace stays usable without the local
 // Python sidecars: the loopback WebSocket/HTTP services, an OpenAI-compatible HTTP API, or the
@@ -114,12 +115,24 @@ export function parseApiVoiceValue(value: string) {
 
 const defaultAsrApiEndpoint = "https://api.openai.com/v1"
 const defaultTtsApiEndpoint = "https://api.openai.com/v1"
-const defaultAsrApiModel = "whisper-1"
-const defaultTtsApiModel = "tts-1"
+// A loopback OpenAI-compatible gateway is a first-class local option. Its address, local models
+// and limits come from the shared rule table so the browser preset and the Python adapter agree.
+const defaultAsrLocalApiEndpoint = speechRules.services.localApi.baseUrl
+const defaultTtsLocalApiEndpoint = speechRules.services.localApi.baseUrl
+const defaultAsrLocalApiModel = speechRules.models.localApi.asr
+const defaultTtsLocalApiModel = speechRules.models.localApi.tts
+// The Fish Audio adapter follows the same pattern on its own loopback port (5584).
+const defaultAsrFishAudioEndpoint = speechRules.services.fishAudio.baseUrl
+const defaultTtsFishAudioEndpoint = speechRules.services.fishAudio.baseUrl
+const defaultAsrFishAudioModel = speechRules.models.fishAudio.asr
+const defaultTtsFishAudioModel = speechRules.models.fishAudio.tts
 
-export const maximumSpeechApiKeyLength = 400
-export const maximumSpeechEndpointLength = 300
-export const maximumSpeechModelLength = 120
+const loopbackSpeechHosts = new Set(speechRules.loopbackHosts)
+const speechProtocols = new Set(speechRules.allowedProtocols)
+
+export const maximumSpeechApiKeyLength = speechRules.limits.maxApiKeyLength
+export const maximumSpeechEndpointLength = speechRules.limits.maxEndpointLength
+export const maximumSpeechModelLength = speechRules.limits.maxModelLength
 
 function isSpeechTransport(value: unknown): value is SpeechTransport {
   return typeof value === "string" && speechTransports.includes(value as SpeechTransport)
@@ -163,16 +176,18 @@ export function parseSpeechConfig(value: string | null): SpeechConfig {
 }
 
 // Environment values provide public endpoint defaults only. Credentials are entered in the
-// browser and stay in this one storage key.
+// browser and stay in this one storage key. The model is left empty unless explicitly set:
+// whether a model is required is decided by the configured service, not by this app.
 export function getEnvironmentSpeechEndpoint(service: SpeechService): SpeechEndpoint {
+  const envModel =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_API_MODEL
+      : process.env.NEXT_PUBLIC_TTS_API_MODEL
   return {
     transport: "local",
     endpoint: "",
     apiKey: "",
-    model:
-      service === "asr"
-        ? process.env.NEXT_PUBLIC_ASR_API_MODEL || defaultAsrApiModel
-        : process.env.NEXT_PUBLIC_TTS_API_MODEL || defaultTtsApiModel,
+    model: envModel?.trim() || "",
     voice: "",
   }
 }
@@ -187,6 +202,8 @@ export function getDefaultApiEndpoint(service: SpeechService) {
   ).replace(/\/+$/, "")
 }
 
+// The loopback sidecar URLs used by the "本机服务" transport. These are protocol-specific
+// (WebSocket for ASR, HTTP for TTS) and are NOT OpenAI-compatible endpoints.
 export function getDefaultLocalEndpoint(service: SpeechService) {
   const configured =
     service === "asr"
@@ -195,6 +212,54 @@ export function getDefaultLocalEndpoint(service: SpeechService) {
   return (
     configured?.trim() ||
     (service === "asr" ? "ws://127.0.0.1:5580/v1/asr/stream" : "http://127.0.0.1:5578")
+  )
+}
+
+// The base URL of a local OpenAI-compatible speech gateway, used by the "本机接口" preset in
+// settings. /api/speech/* appends /audio/transcriptions or /audio/speech to this base URL.
+export function getDefaultLocalApiEndpoint(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_LOCAL_API_URL
+      : process.env.NEXT_PUBLIC_TTS_LOCAL_API_URL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrLocalApiEndpoint : defaultTtsLocalApiEndpoint)
+  ).replace(/\/+$/, "")
+}
+
+export function getDefaultLocalApiModel(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_LOCAL_API_MODEL
+      : process.env.NEXT_PUBLIC_TTS_LOCAL_API_MODEL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrLocalApiModel : defaultTtsLocalApiModel)
+  )
+}
+
+// The base URL and default models of the local Fish Audio adapter, used by the "使用 Fish Audio
+// 接口" preset in settings. /api/speech/* appends /audio/transcriptions or /audio/speech.
+export function getDefaultFishAudioEndpoint(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_FISH_AUDIO_URL
+      : process.env.NEXT_PUBLIC_TTS_FISH_AUDIO_URL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrFishAudioEndpoint : defaultTtsFishAudioEndpoint)
+  ).replace(/\/+$/, "")
+}
+
+export function getDefaultFishAudioModel(service: SpeechService) {
+  const configured =
+    service === "asr"
+      ? process.env.NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL
+      : process.env.NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL
+  return (
+    configured?.trim() ||
+    (service === "asr" ? defaultAsrFishAudioModel : defaultTtsFishAudioModel)
   )
 }
 
@@ -222,9 +287,26 @@ export function resolveSpeechConfig(config: SpeechConfig): SpeechConfig {
   }
 }
 
-// Reuses the inference endpoint policy: HTTPS for remote hosts, loopback HTTP in development.
+// A speech endpoint may target a service on the learner's own machine. Loopback is accepted in
+// every build because the browser's request still goes through the same-origin /api/speech/*
+// proxy (for HTTP API) or a browser-local WebSocket/HTTP sidecar. Credentials in the URL are
+// rejected, and non-loopback private-network hosts remain blocked by the inference policy.
+export function isLoopbackSpeechEndpoint(endpoint: string) {
+  try {
+    const url = new URL(endpoint)
+    if (url.username || url.password) {
+      return false
+    }
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
+    return loopbackSpeechHosts.has(hostname) && speechProtocols.has(url.protocol)
+  } catch {
+    return false
+  }
+}
+
+// Reuses the inference endpoint policy for remote hosts: HTTPS only, no embedded credentials.
 export function isValidSpeechEndpoint(endpoint: string) {
-  return isValidModelEndpoint(endpoint)
+  return isLoopbackSpeechEndpoint(endpoint) || isValidModelEndpoint(endpoint)
 }
 
 export function getSpeechRequestUrl(service: SpeechService, endpoint: string) {
@@ -232,6 +314,76 @@ export function getSpeechRequestUrl(service: SpeechService, endpoint: string) {
   const suffix = service === "asr" ? "/audio/transcriptions" : "/audio/speech"
   return baseUrl.endsWith(suffix) ? baseUrl : `${baseUrl}${suffix}`
 }
+
+// 统一配置字段规范：每种接入方式下各服务需要配置的字段与必填性。
+// 设置页与对话设置都以此为准；规范表格见 docs/speech-rules.md「配置字段规范」。
+export type SpeechFieldKey = "endpoint" | "model" | "apiKey" | "voice" | "engine"
+export type SpeechFieldRequirement = "required" | "optional" | "hidden"
+export type SpeechFieldPolicy = Record<SpeechFieldKey, SpeechFieldRequirement>
+
+export const speechFieldPolicies: Record<
+  SpeechService,
+  Record<SpeechTransport, SpeechFieldPolicy>
+> = {
+  asr: {
+    local: {
+      endpoint: "optional",
+      model: "hidden",
+      apiKey: "hidden",
+      voice: "hidden",
+      engine: "optional",
+    },
+    api: {
+      endpoint: "required",
+      model: "optional",
+      apiKey: "optional",
+      voice: "hidden",
+      engine: "hidden",
+    },
+    browser: {
+      endpoint: "hidden",
+      model: "hidden",
+      apiKey: "hidden",
+      voice: "hidden",
+      engine: "hidden",
+    },
+  },
+  tts: {
+    local: {
+      endpoint: "optional",
+      model: "hidden",
+      apiKey: "hidden",
+      voice: "optional",
+      engine: "hidden",
+    },
+    api: {
+      endpoint: "required",
+      model: "optional",
+      apiKey: "optional",
+      voice: "optional",
+      engine: "hidden",
+    },
+    browser: {
+      endpoint: "hidden",
+      model: "hidden",
+      apiKey: "hidden",
+      voice: "hidden",
+      engine: "hidden",
+    },
+  },
+}
+
+export function getSpeechFieldPolicy(
+  service: SpeechService,
+  transport: SpeechTransport,
+): SpeechFieldPolicy {
+  return speechFieldPolicies[service][transport]
+}
+
+// 模型是否必填由服务端决定：OpenAI 兼容云端通常必填（占位符给出默认值），
+// 本机适配器与自建网关可留空，由服务端默认模型接管。
+export const speechModelFieldHint =
+  "按服务而定：OpenAI 等云端服务必填；本机适配器与自建网关可留空，由服务端默认模型接管。"
 
 export function describeSpeechTransport(service: SpeechService, transport: SpeechTransport) {
   if (transport === "browser") {

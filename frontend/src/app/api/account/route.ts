@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/account-data"
 import { consumeSharedRateLimit } from "@/lib/server/rate-limit"
 import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 type AuthenticationResult =
   | { authenticated: false; response: NextResponse }
@@ -34,11 +35,8 @@ async function authenticate(action: "delete" | "export"): Promise<Authentication
       response: errorResponse("service_not_configured", "服务端认证尚未配置。", 503),
     }
   }
-  const {
-    data: { user },
-    error,
-  } = await client.auth.getUser()
-  if (error || !user) {
+  const user = await resolveSessionUser(client)
+  if (!user) {
     return {
       authenticated: false,
       response: errorResponse("unauthorized", "请先登录后再管理账户数据。", 401),

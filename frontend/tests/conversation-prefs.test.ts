@@ -15,8 +15,20 @@ describe("conversation prefs", () => {
     expect(defaultConversationPrefs).toMatchObject({
       sessionResumeMinutes: 30,
       consecutiveQuestionDelayMs: 500,
-      voiceSentenceDelayMs: 1800,
+      voiceSentenceDelayMs: 1000,
     })
+  })
+
+  it("collapses a stored v6 default sentence delay to the faster v7 default", () => {
+    // v6 默认 1800ms 会让语音往返明显变慢；从未手动调过的记录跟随新默认值收紧，
+    // 显式改过的数值（例如 2400ms）原样保留。
+    expect(
+      parseConversationPrefs(JSON.stringify({ version: 6, voiceSentenceDelayMs: 1800 })),
+    ).toMatchObject({ version: 7, voiceSentenceDelayMs: 1000 })
+    expect(
+      parseConversationPrefs(JSON.stringify({ voiceSentenceDelayMs: 2400 })),
+    ).toMatchObject({ voiceSentenceDelayMs: 2400 })
+    expect(parseConversationPrefs(null)).toMatchObject({ voiceSentenceDelayMs: 1000 })
   })
 
   it("restores valid values and falls back on invalid ones", () => {
@@ -88,7 +100,7 @@ describe("conversation prefs", () => {
     ).toMatchObject({
       sessionResumeMinutes: 5,
       consecutiveQuestionDelayMs: 3000,
-      voiceSentenceDelayMs: 800,
+      voiceSentenceDelayMs: 400,
     })
   })
 

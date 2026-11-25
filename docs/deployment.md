@@ -126,13 +126,46 @@ NEXT_PUBLIC_TTS_API_URL=https://api.openai.com/v1
 NEXT_PUBLIC_TTS_API_MODEL=tts-1
 ```
 
-生产环境必须把允许的语音主机名写入白名单，否则 `/api/speech/*` 会拒绝转发：
+HTTP API 接入也可以指向本机 local 接口。设置卡片里 ASR 与 TTS 各有“使用本机接口”按钮，
+一键填入下列变量提供的根地址与模型（默认指向可选的 ElevenLabs 适配器）：
+
+```bash
+NEXT_PUBLIC_ASR_LOCAL_API_URL=http://127.0.0.1:5583/v1
+NEXT_PUBLIC_ASR_LOCAL_API_MODEL=scribe_v2
+NEXT_PUBLIC_TTS_LOCAL_API_URL=http://127.0.0.1:5583/v1
+NEXT_PUBLIC_TTS_LOCAL_API_MODEL=eleven_flash_v2_5
+```
+
+换成其他本机 OpenAI 兼容语音服务时只需改这四个值。若本机服务要求访问令牌，把令牌填进
+设置的“API 密钥”，由同源 `/api/speech/*` 以 Bearer 转发；密钥仍只保存在浏览器
+`moss:speech-config:v1`。回环主机在生产构建下内置允许，但只限规则表语音端口
+（5578/5580/5583/5584），且要求已登录会话——回环代理背后是部署主机自己的端口与适配器
+配额，不向匿名访客开放。未配置认证服务的自托管部署可显式设置
+`MOSS_ALLOW_ANONYMOUS_LOOPBACK_SPEECH=true` 开启匿名回环访问（默认关闭，失败关闭）。
+同机自托管的 `pnpm start` 登录后可用；Vercel 等无本机服务的环境不可用该链路。
+
+`/api/speech/*` 的限流键跟随请求者（登录用户按用户 ID，匿名按来源 IP），而不是请求体里
+的 endpoint，换端口或路径段无法绕过限流。
+
+设置卡片还提供“使用 Fish Audio”一键填入，对应下列变量（默认指向 5584 的 Fish Audio
+适配器）：
+
+```bash
+NEXT_PUBLIC_ASR_FISH_AUDIO_URL=http://127.0.0.1:5584/v1
+NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL=transcribe-1-pro
+NEXT_PUBLIC_TTS_FISH_AUDIO_URL=http://127.0.0.1:5584/v1
+NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL=s2.1-pro-free
+```
+
+生产环境对接**远程**语音主机时必须把允许的主机名写入白名单，否则 `/api/speech/*` 会拒绝
+转发：
 
 ```bash
 AI_ALLOWED_BROWSER_SPEECH_HOSTS=speech.example.com
 ```
 
-`api.openai.com` 与 `api.anthropic.com` 默认在白名单内。该白名单与模型服务使用的
+`api.openai.com`、`api.anthropic.com` 与回环主机 `localhost`、`127.0.0.1`、`::1` 默认在
+白名单内（回环用于本机 local 接口，无需额外主机配置；端口与登录约束见上文）。该白名单与模型服务使用的
 `AI_ALLOWED_BROWSER_MODEL_HOSTS` 相互独立，两者都要配置才能同时支持远程推理与远程语音。
 浏览器语音引擎依赖操作系统与浏览器支持（Chrome、Edge、macOS Safari 可用，识别质量由浏览器
 实现决定）；不具备该能力的浏览器保持文字模式，并在对话中明确提示。
@@ -157,6 +190,39 @@ pnpm tts:start
 
 Audio8 sidecar 监听 `127.0.0.1:5582`，自动选择 CUDA、Apple MPS 或 CPU。模型面向高质量
 中英文及多语言合成；低延迟优先时仍可在页面音色选择器中使用 Kokoro。
+
+### 可选：ElevenLabs 本机适配
+
+需要在本地验证 ElevenLabs 音色或转录时，可启动独立适配器：
+
+```bash
+pnpm elevenlabs:setup
+ELEVENLABS_API_KEY=... pnpm elevenlabs:start
+```
+
+适配器监听 `127.0.0.1:5583`，把 ElevenLabs 翻译为 OpenAI 兼容语音契约；在“偏好设置 →
+语音服务接入”中把 ASR 与 TTS 切到 HTTP API，再点各自的“使用本机接口”即可，无需手填地址。
+它不影响 `5578`/`5580` 的默认路径，也不会随 `dev:offline` 启动。`ELEVENLABS_API_KEY`
+只存在于本机适配器进程，不得写入 `NEXT_PUBLIC_*` 或浏览器配置。该链路适用于本机开发与
+应用服务器同机部署语音服务的自托管生产环境；Vercel 上无法访问用户本机端口，仍应使用
+白名单内的远程语音端点。
+
+### 可选：Fish Audio 本机适配
+
+需要在本地验证 Fish Audio 音色或转录时，可启动独立适配器：
+
+```bash
+pnpm fishaudio:setup
+FISH_API_KEY=... pnpm fishaudio:start
+```
+
+适配器监听 `127.0.0.1:5584`，把 Fish Audio 翻译为 OpenAI 兼容语音契约；在“偏好设置 →
+语音服务接入”中把 ASR 与 TTS 切到 HTTP API，再点各自的“使用 Fish Audio”即可，无需手填
+地址。默认模型为免费档 `s2.1-pro-free`（TTS）与 `transcribe-1-pro`（ASR）；付费模型在
+账户未充值时上游返回 402，适配器归一化为 `fishaudio_payment_required`。它不影响
+`5578`/`5580`/`5583` 的默认路径，也不会随 `dev:offline` 启动。`FISH_API_KEY` 只存在于
+本机适配器进程，不得写入 `NEXT_PUBLIC_*` 或浏览器配置。适用环境限制与 ElevenLabs
+适配器相同。
 
 ## 实时 ASR 服务
 
@@ -215,7 +281,9 @@ loopback WebSocket。浏览器页面使用 HTTPS 时，本机服务需提供受�
 
 当前 `update.sql` 补充对话与消息的客户端幂等键、场景键、父会话所有权策略，并将业务表
 和序列权限收敛到 authenticated 角色，同时创建 `expression_library_items`、
-`rate_limit_buckets` 与 `check_rate_limit`。必须先应用数据库更新，再部署依赖表达导入和
+`rate_limit_buckets` 与 `check_rate_limit`，并为 `expression_library_items` 增加
+`example_translation`、`usage_note`、`memory_tip`、`extra_examples` 四列以持久化 AI 生成
+的增强字段。必须先应用数据库更新，再部署依赖表达导入和
 共享限流的新应用版本。执行后应先运行 `pnpm db:test:remote` 确认匿名访问被拒绝，再使用
 两个登录账户验证会话及表达隔离、限流隔离，并用同一账户的两个浏览器验证恢复和同步。
 长期记忆表、pgvector 索引、RLS、`sync_learning_memory` 和
@@ -235,6 +303,16 @@ pnpm db:test:remote
 
 该检查要求所有业务表和记忆 RPC 对匿名角色返回 PostgreSQL `42501` 权限错误。它不会写入
 数据；新建、升级和认证用户 RLS 仍需在隔离项目中验证。
+
+**认证降级的信任边界**：服务端 API 路由与 `/workspace` 守卫共用 `resolveSessionUser`
+（`frontend/src/lib/supabase/session.ts`）。当 Node 侧 `getUser()` 连不上 Supabase Auth
+（`AuthRetryableFetchError` 等网络不可达）时，降级为读取本地会话 cookie 的 `getSession()`；
+凭证无效（401）或无会话（400）仍按未登录处理。因此：
+
+- 降级路径下的**页面守卫是提示性的**——它决定跳转/提示，不是数据边界。
+- **数据安全始终依赖 PostgREST/RLS**：所有数据读写经 PostgREST 或 `check_rate_limit`
+  等 RPC，JWT 由 Supabase 服务端验签。伪造的会话 cookie 读不到真实数据。
+- 部署方应确保 `pnpm db:test`（及远端 `db:test:remote`）在上线前通过，匿名访问被拒。
 
 准备两个仅用于验收且已确认邮箱的账户，并配置
 `SUPABASE_TEST_USER_A_EMAIL`、`SUPABASE_TEST_USER_A_PASSWORD`、
@@ -266,6 +344,15 @@ AI_ALLOWED_BROWSER_MODEL_HOSTS=models.example.com
 AI_EMBEDDING_MODEL=...
 ```
 
+可选：通过 `AI_MODEL_SERVICES` 配置多个服务端模型服务（JSON 数组，配置后优先于
+`AI_BASE_URL` 等旧变量），`AI_DEFAULT_MODEL_SERVICE` 按 name 选择默认服务（未设置或
+名字不存在时取第一个）：
+
+```bash
+AI_MODEL_SERVICES='[{"name":"primary","baseUrl":"https://api.deepseek.com/v1","apiKey":"sk-...","model":"deepseek-chat","apiType":"chat-completions"},{"name":"backup","baseUrl":"https://open.bigmodel.cn/api/paas/v4","apiKey":"...","model":"glm-4.5","apiType":"chat-completions"}]'
+AI_DEFAULT_MODEL_SERVICE=backup
+```
+
 `AI_API_TYPE` 支持 `chat-completions` 和 `anthropic-messages`；不配置时会根据
 `AI_BASE_URL` 自动推断 Anthropic 官方地址，其他地址默认使用 OpenAI 兼容协议。
 浏览器自带模型在生产环境按精确主机名白名单校验，默认已内置主流公共推理主机
@@ -289,6 +376,8 @@ Next.js 服务的内网出口。
 ### 浏览器自带模型（BYOK）与服务端密钥变量
 
 三个服务端变量共同构成浏览器自带模型的安全边界与账户删除审计：`AI_ALLOWED_BROWSER_MODEL_HOSTS`（生产 BYOK 主机白名单）、`MODEL_CONFIG_PRIVATE_KEY_BASE64`（BYOK 信封解密私钥）、`ACCOUNT_DELETION_AUDIT_SECRET`（删除审计指纹盐）。以下为每个变量的含义、格式、生成与轮换方法。
+
+**配置来源优先级**：推理配置默认取服务端 `AI_*` 环境变量（`AI_MODEL_SERVICES` / `AI_DEFAULT_MODEL_SERVICE` 优先，其次 `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL_NAME`）；只有服务端未配置时才回退到浏览器 BYOK 信封。鉴权与限流按实际使用的来源判定：服务端配置生效时，即使请求附带 BYOK 信封也仍需登录与共享限流。
 
 #### AI_ALLOWED_BROWSER_MODEL_HOSTS
 
@@ -486,14 +575,19 @@ Production、Preview 和 Development 三个环境**，只在运行时补充不�
 | `NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED` | 构建期内联 | 启用 Google 登录时必需 |
 | `NEXT_PUBLIC_DEMO_MODE` | 构建期内联 | 部署环境必须为 `false` 或不设置 |
 | `NEXT_PUBLIC_TTS_SERVICE_URL`、`NEXT_PUBLIC_ASR_SERVICE_URL`、`NEXT_PUBLIC_FUNASR_SERVICE_URL` | 构建期内联 | 保持默认 loopback 值 |
-| `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_ASR_API_MODEL`、`NEXT_PUBLIC_TTS_API_URL`、`NEXT_PUBLIC_TTS_API_MODEL` | 构建期内联 | 使用 HTTP API 语音接入时必需 |
+| `NEXT_PUBLIC_ASR_API_URL`、`NEXT_PUBLIC_ASR_API_MODEL`、`NEXT_PUBLIC_TTS_API_URL`、`NEXT_PUBLIC_TTS_API_MODEL` | 构建期内联 | 使用远程 HTTP API 语音接入时必需 |
+| `NEXT_PUBLIC_ASR_FISH_AUDIO_URL`、`NEXT_PUBLIC_ASR_FISH_AUDIO_MODEL`、`NEXT_PUBLIC_TTS_FISH_AUDIO_URL`、`NEXT_PUBLIC_TTS_FISH_AUDIO_MODEL` | 构建期内联 | 使用 Fish Audio 本机接口预设时可选，缺省回落到 `127.0.0.1:5584/v1` |
+| `NEXT_PUBLIC_ASR_LOCAL_API_URL`、`NEXT_PUBLIC_ASR_LOCAL_API_MODEL`、`NEXT_PUBLIC_TTS_LOCAL_API_URL`、`NEXT_PUBLIC_TTS_LOCAL_API_MODEL` | 构建期内联 | 使用本机 local 接口预设时可选，缺省回落到 `127.0.0.1:5583/v1` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_MODEL` | 构建期内联 | 仅旧部署兼容 |
 | `SUPABASE_SERVICE_ROLE_KEY`、`ACCOUNT_DELETION_AUDIT_SECRET` | 运行时服务端 | 账户删除与导出必需 |
-| `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` | 运行时服务端 | 非演示模式必需 |
+| `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` | 运行时服务端 | 非演示模式必需（已配置 `AI_MODEL_SERVICES` 时不再生效） |
+| `AI_MODEL_SERVICES`、`AI_DEFAULT_MODEL_SERVICE` | 运行时服务端 | 可选：多服务配置与默认服务选择 |
 | `AI_EMBEDDING_MODEL`、`AI_ALLOWED_BROWSER_MODEL_HOSTS` | 运行时服务端 | 可选 |
 | `AI_ALLOWED_BROWSER_SPEECH_HOSTS` | 运行时服务端 | 生产环境使用远程语音接口时必需 |
 | `MODEL_CONFIG_PRIVATE_KEY_BASE64` | 运行时服务端 | 生产多实例必需 |
 | `MOSS_TTS_*`、`MOSS_ASR_*`、`MOSS_KOKORO_*` | 不适用 | Vercel 上不要配置 |
+| `MOSS_ELEVENLABS_*`、`ELEVENLABS_API_KEY` | 不适用 | 仅本机可选的 ElevenLabs 适配器；Vercel 上不要配置 |
+| `MOSS_FISHAUDIO_*`、`FISH_API_KEY` | 不适用 | 仅本机可选的 Fish Audio 适配器；Vercel 上不要配置 |
 
 前三行未配置时，`next build` 仍会成功，但登录、云同步与对话会在运行时报
 `service_not_configured`。构建通过不代表配置正确。
@@ -525,7 +619,8 @@ Vercel 部署后，本机语音服务一定不可用：
 - 连接失败时 TTS 回退到浏览器原生 `speechSynthesis`；ASR 若浏览器支持
   `SpeechRecognition`，当次会话自动回退到浏览器识别并提示一次，否则保持文字模式。
 - 云端语音能力应使用 `api` 接入：配置 OpenAI 兼容端点并把主机名写入
-  `AI_ALLOWED_BROWSER_SPEECH_HOSTS`，请求由本站 `/api/speech/*` 转发。
+  `AI_ALLOWED_BROWSER_SPEECH_HOSTS`，请求由本站 `/api/speech/*` 转发。回环地址虽在
+  白名单内置允许，但 Vercel 服务器上没有本机语音服务，该链路只在同机自托管时成立。
 
 若采用集中式自托管 ASR（自建 WebSocket 服务），前端仍按回环限制拒绝远程 `ws:` 地址，
 需要先扩展 `validateLocalWebSocketUrl` 的策略，并同时补齐令牌认证、Origin 白名单和租户配额。

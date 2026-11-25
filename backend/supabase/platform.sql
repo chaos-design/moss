@@ -193,6 +193,10 @@ create table public.expression_library_items (
   reasoning text not null check (char_length(reasoning) between 1 and 1000),
   origin_note text not null check (char_length(origin_note) between 1 and 1000),
   example text not null check (char_length(example) between 1 and 500),
+  example_translation text check (char_length(example_translation) between 1 and 500),
+  usage_note text check (char_length(usage_note) between 1 and 1000),
+  memory_tip text check (char_length(memory_tip) between 1 and 500),
+  extra_examples jsonb default '[]'::jsonb check (jsonb_typeof(extra_examples) = 'array'),
   context text not null check (context in ('日常', '职场', '通用')),
   kind text not null check (
     kind in ('idiom', 'collocation', 'phrasal-verb', 'sentence-pattern')

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   createDefaultLearningMemory,
+  getActiveFavorites,
   getLearningMemoryFingerprint,
   mergeLearningMemory,
+  parseLearningMemory,
+  toggleExpressionFavorite,
 } from "@/lib/memory"
 
 const baseTime = new Date("2026-08-24T08:00:00.000Z")
@@ -119,9 +122,44 @@ describe("getLearningMemoryFingerprint", () => {
       sceneProgress: state.sceneProgress,
       items: state.items,
       profile: state.profile,
+      expressionStudy: state.expressionStudy,
       version: state.version,
     }
 
     expect(getLearningMemoryFingerprint(state)).toBe(getLearningMemoryFingerprint(reordered))
+  })
+})
+
+describe("expression study inside the learning memory snapshot", () => {
+  it("parses legacy snapshots with an empty expression study state", () => {
+    const legacy = createDefaultLearningMemory(baseTime) as Record<string, unknown>
+    delete legacy.expressionStudy
+    const parsed = parseLearningMemory(legacy, baseTime)
+    expect(parsed.expressionStudy.favorites).toEqual({})
+    expect(parsed.expressionStudy.filters.value.source).toBe("all")
+  })
+
+  it("carries favorites through the whole snapshot merge, including deletions", () => {
+    const local = createDefaultLearningMemory(baseTime)
+    const remote = structuredClone(local)
+
+    local.expressionStudy = toggleExpressionFavorite(
+      local.expressionStudy,
+      "work:keep tabs on",
+      new Date("2026-08-24T09:00:00.000Z"),
+    )
+    remote.expressionStudy = toggleExpressionFavorite(
+      remote.expressionStudy,
+      "work:break the ice",
+      new Date("2026-08-24T09:00:00.000Z"),
+    )
+    remote.expressionStudy = toggleExpressionFavorite(
+      remote.expressionStudy,
+      "work:break the ice",
+      new Date("2026-08-24T10:00:00.000Z"),
+    )
+
+    const merged = mergeLearningMemory(local, remote)
+    expect(getActiveFavorites(merged.expressionStudy)).toEqual(["work:keep tabs on"])
   })
 })

@@ -11,37 +11,100 @@ import {
   Volume2Icon,
 } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useLearningMemory } from "@/components/learning-memory-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import {
+  buildExpressionExamQuestion,
+  createExpressionCatalog,
+  type ExpressionExamQuestion,
+} from "@/features/review/expression-exam"
+import { ExpressionExamCard } from "@/features/review/expression-exam-card"
+import { ReviewScopeSwitch } from "@/features/review/review-scope-switch"
 import { useLocalTts } from "@/features/speech/use-local-tts"
+import { builtInExpressionItems } from "@/lib/expression-library"
+import {
+  getLastExpressionStorageScope,
+  loadLocalExpressionItems,
+} from "@/lib/expression-library-client"
+import type { ExpressionLibraryItem } from "@/lib/expression-library-schema"
 import type { LearningMemoryItem, RecallRating } from "@/lib/memory"
-import { createMemoryTargetHref, getReviewQueue } from "@/lib/memory"
+import {
+  createMemoryTargetHref,
+  getScopedReviewQueue,
+  isLibraryExpressionMemoryItem,
+  matchesReviewScope,
+  parseReviewScope,
+  type ReviewScope,
+  reviewScopeStorageKey,
+  reviewScopes,
+} from "@/lib/memory"
 import { cn } from "@/lib/utils"
 
 const ratings = [
-  { label: "忘记了", detail: "10 分钟后", value: "again", variant: "outline" as const },
-  { label: "有点难", detail: "缩短间隔", value: "hard", variant: "outline" as const },
-  { label: "记得", detail: "正常间隔", value: "good", variant: "default" as const },
-  { label: "很轻松", detail: "延长间隔", value: "easy", variant: "outline" as const },
+  {
+    label: "忘记了",
+    detail: "10 分钟后",
+    value: "again",
+    key: "1",
+    variant: "outline" as const,
+  },
+  { label: "有点难", detail: "缩短间隔", value: "hard", key: "2", variant: "outline" as const },
+  { label: "记得", detail: "正常间隔", value: "good", key: "3", variant: "default" as const },
+  { label: "很轻松", detail: "延长间隔", value: "easy", key: "4", variant: "outline" as const },
 ] satisfies Array<{
   label: string
   detail: string
   value: RecallRating
+  key: string
   variant: "default" | "outline"
 }>
+
+const emptyStateCopy: Record<
+  ReviewScope,
+  { title: string; description: string; action: string; href: string }
+> = {
+  mixed: {
+    title: "暂无真实复习记录",
+    description: "完成一次对话并获得表达反馈后，需要巩固的内容会按实际表现进入这里。",
+    action: "选择练习场景",
+    href: "/workspace/scenes",
+  },
+  expression: {
+    title: "还没有加入地道表达",
+    description: "在词库中挑一条表达加入长期记忆，它会以考题形式进入这里的复习队列。",
+    action: "去地道表达词库",
+    href: "/workspace/expressions",
+  },
+  scene: {
+    title: "还没有场景记忆",
+    description: "完成对话或影子跟读后，场景里的表达会按记忆强度进入这条队列。",
+    action: "选择练习场景",
+    href: "/workspace/scenes",
+  },
+}
 
 export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?: string }) {
   const { hydrated, state, rateReview, recordRecallAttempt, syncStatus } = useLearningMemory()
   const { speak } = useLocalTts()
+  const [scope, setScope] = useState<ReviewScope>("mixed")
+  const [importedExpressions, setImportedExpressions] = useState<ExpressionLibraryItem[]>([])
   const [lockedQueueIds, setLockedQueueIds] = useState<string[] | null>(null)
   const [index, setIndex] = useState(0)
   const [reviewedIds, setReviewedIds] = useState<string[]>([])
   const [revealed, setRevealed] = useState(false)
+  const [examChoiceId, setExamChoiceId] = useState<string | null>(null)
   const [completed, setCompleted] = useState(false)
+  // 本组复习的自评分布：完成页给出一句可回顾的小结，而不是只说「已更新」。
+  const [ratingCounts, setRatingCounts] = useState<Record<RecallRating, number>>({
+    again: 0,
+    hard: 0,
+    good: 0,
+    easy: 0,
+  })
   // 线索呈现的时间戳让回想尝试有真实时长，而不是一个恒为 0 的占位。
   const [cueShownAt, setCueShownAt] = useState<number | null>(null)
   const [memoryReady, setMemoryReady] = useState(
@@ -49,11 +112,15 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
   )
   const queueIds =
     lockedQueueIds ??
-    getReviewQueue(state, new Date(), initialMemoryItemId).map((item) => item.id)
+    getScopedReviewQueue(state, { targetMemoryItemId: initialMemoryItemId, scope }).map(
+      (item) => item.id,
+    )
   const queue = queueIds
     .map((id) => state.items.find((item) => item.id === id))
     .filter((item) => item !== undefined)
   const item = queue[index]
+  // 完成页的自评小结在提前 return 的分支里就要用，统计须在所有 return 之前算好。
+  const reviewedTotal = Object.values(ratingCounts).reduce((sum, count) => sum + count, 0)
   const completedFocus = queue[0]
   const completedTarget = completedFocus
     ? (completedFocus.transferTargets[0] ?? {
@@ -63,10 +130,67 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     : null
   const initialSyncSettled = hydrated && syncStatus !== "connecting" && syncStatus !== "syncing"
 
+  // 词库条目提供考题所需的释义、例句和译文；用户导入的表达同样可以出题。
+  useEffect(() => {
+    try {
+      const storage = window.localStorage
+      const storageScope = getLastExpressionStorageScope(storage)
+      setImportedExpressions(loadLocalExpressionItems(storage, storageScope))
+    } catch {
+      setImportedExpressions([])
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      setScope(parseReviewScope(window.localStorage.getItem(reviewScopeStorageKey)))
+    } catch {
+      setScope("mixed")
+    }
+  }, [])
+
+  // 从记忆列表带着目标条目进来时，如果当前范围装不下它，就先切到它所属的范围，
+  // 否则「打开这条记忆」会静默失效。只在首次水合后调整一次，之后尊重手动选择。
+  const targetScopeApplied = useRef(false)
+  useEffect(() => {
+    if (targetScopeApplied.current || !initialMemoryItemId || !hydrated) {
+      return
+    }
+    const target = state.items.find((candidate) => candidate.id === initialMemoryItemId)
+    if (!target) {
+      return
+    }
+    targetScopeApplied.current = true
+    setScope((current) =>
+      matchesReviewScope(target, current)
+        ? current
+        : isLibraryExpressionMemoryItem(target)
+          ? "expression"
+          : "scene",
+    )
+  }, [hydrated, initialMemoryItemId, state.items])
+
+  const expressionCatalog = useMemo(
+    () => createExpressionCatalog([...builtInExpressionItems, ...importedExpressions]),
+    [importedExpressions],
+  )
+  const expressionPool = useMemo(() => [...expressionCatalog.values()], [expressionCatalog])
+  const expression = item ? expressionCatalog.get(item.id) : undefined
+  // 题号稳定在条目自身：重复次数决定题型轮换，队列位置避免同组题目完全同型。
+  const examQuestion: ExpressionExamQuestion | null =
+    item && expression
+      ? buildExpressionExamQuestion({
+          item,
+          expression,
+          pool: expressionPool,
+          attempt: item.repetitions + index,
+        })
+      : null
+
   // 切换到任何一条记忆都重新开始计时，让下次尝试的时长只覆盖当前这条。
   useEffect(() => {
     setCueShownAt(performance.now())
-  }, [index, lockedQueueIds])
+  }, [index, lockedQueueIds, scope])
 
   useEffect(() => {
     if (initialSyncSettled) {
@@ -74,15 +198,63 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     }
   }, [initialSyncSettled])
 
+  // 只显示有数据的范围按钮；当前持久化的范围一条数据都没有时，自动回到「混合」，
+  // 避免困在空范围里。回退不写回 localStorage：用户偏好的范围一旦有数据仍会生效。
+  const availableScopes = useMemo(
+    () =>
+      reviewScopes.filter((candidate) =>
+        state.items.some((item) => matchesReviewScope(item, candidate)),
+      ),
+    [state.items],
+  )
+  const scopeHasData = availableScopes.includes(scope)
+  useEffect(() => {
+    if (memoryReady && !scopeHasData && scope !== "mixed") {
+      setScope("mixed")
+    }
+  }, [memoryReady, scope, scopeHasData])
+
+  function resetForScope(nextScope: ReviewScope) {
+    setScope(nextScope)
+    try {
+      window.localStorage.setItem(reviewScopeStorageKey, nextScope)
+    } catch {
+      // 本机存储不可用时仍按内存里的范围复习。
+    }
+    setLockedQueueIds(null)
+    setIndex(0)
+    setReviewedIds([])
+    setRevealed(false)
+    setExamChoiceId(null)
+    setCompleted(false)
+    setRatingCounts({ again: 0, hard: 0, good: 0, easy: 0 })
+  }
+
+  function recordAttempt() {
+    if (!item) {
+      return
+    }
+    recordRecallAttempt({
+      itemId: item.id,
+      elapsedMs: cueShownAt === null ? 0 : performance.now() - cueShownAt,
+    })
+  }
+
   function handleReveal() {
     if (!item) {
       return
     }
     // 揭示答案本身就是一次可观测的回想尝试，与随后给出的自评分开记录。
-    recordRecallAttempt({
-      itemId: item.id,
-      elapsedMs: cueShownAt === null ? 0 : performance.now() - cueShownAt,
-    })
+    recordAttempt()
+    setRevealed(true)
+  }
+
+  function handleExamChoice(optionId: string) {
+    if (!item || revealed) {
+      return
+    }
+    setExamChoiceId(optionId)
+    recordAttempt()
     setRevealed(true)
   }
 
@@ -93,6 +265,7 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
 
     setLockedQueueIds(queue.map((candidate) => candidate.id))
     rateReview(item.id, rating.value)
+    setRatingCounts((current) => ({ ...current, [rating.value]: current[rating.value] + 1 }))
     toast.success(`已记录：${rating.label}`)
     const nextReviewedIds = Array.from(new Set([...reviewedIds, item.id]))
     setReviewedIds(nextReviewedIds)
@@ -110,22 +283,81 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     )
     setIndex(nextIndex >= 0 ? nextIndex : Math.max(firstUnreviewedIndex, 0))
     setRevealed(false)
+    setExamChoiceId(null)
   }
 
   function selectReview(reviewIndex: number) {
     setLockedQueueIds(queue.map((candidate) => candidate.id))
     setIndex(reviewIndex)
     setRevealed(false)
+    setExamChoiceId(null)
+  }
+
+  function playText(text: string) {
+    void speak(text, { speed: 0.9 }).catch((error) => {
+      toast.error(error instanceof Error ? error.message : "TTS 播放失败")
+    })
   }
 
   function playAnswer() {
     if (!item) {
       return
     }
-    void speak(item.answer, { speed: 0.9 }).catch((error) => {
-      toast.error(error instanceof Error ? error.message : "TTS 播放失败")
-    })
+    playText(item.answer)
   }
+
+  // 键盘流：已揭示时数字键 1-4 直接评分；考题未作答时 1-4 / A-D 选选项；
+  // 非考题未揭示时空格或回车显示答案。手不离键盘是快速过卡的关键。
+  // 焦点落在按钮/链接上时跳过回车与空格：原生激活已经覆盖，两个来源叠加会把
+  // 一次揭示记成两次回想尝试。处理器放在 ref 里，每次渲染刷新闭包。
+  const keyboardActionRef = useRef<(event: KeyboardEvent) => void>(() => {})
+  keyboardActionRef.current = (event) => {
+    if (completed || !item || event.isComposing) {
+      return
+    }
+    const target = event.target
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+    ) {
+      return
+    }
+    const rating = ratings.find((candidate) => candidate.key === event.key)
+    if (rating && revealed) {
+      event.preventDefault()
+      handleRating(rating)
+      return
+    }
+    if (!revealed && examQuestion) {
+      const digits = ["1", "2", "3", "4"]
+      const letters = ["a", "b", "c", "d"]
+      const optionIndex =
+        digits.indexOf(event.key) >= 0
+          ? digits.indexOf(event.key)
+          : letters.indexOf(event.key.toLowerCase())
+      const option = optionIndex >= 0 ? examQuestion.options[optionIndex] : undefined
+      if (option) {
+        event.preventDefault()
+        handleExamChoice(option.id)
+      }
+      return
+    }
+    if (
+      !revealed &&
+      !examQuestion &&
+      (event.key === " " || event.key === "Enter") &&
+      !(target instanceof HTMLElement && target.closest("button, a, [role='button']"))
+    ) {
+      event.preventDefault()
+      handleReveal()
+    }
+  }
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => keyboardActionRef.current(event)
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
 
   if (!memoryReady) {
     return (
@@ -145,15 +377,19 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
   }
 
   if (!item && !completed) {
+    const empty = emptyStateCopy[scope]
     return (
       <section className="flex min-h-[520px] flex-col items-center justify-center border-y px-5 py-12 text-center">
+        <div className="mb-6 w-full max-w-md">
+          <ReviewScopeSwitch scope={scope} scopes={availableScopes} onChange={resetForScope} />
+        </div>
         <BrainCircuitIcon className="size-10 text-primary" aria-hidden="true" />
-        <h2 className="mt-4 font-serif text-2xl font-semibold">暂无真实复习记录</h2>
+        <h2 className="mt-4 font-serif text-2xl font-semibold">{empty.title}</h2>
         <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
-          完成一次对话并获得表达反馈后，需要巩固的内容会按实际表现进入这里。
+          {empty.description}
         </p>
-        <Link href="/workspace/scenes" className={cn(buttonVariants(), "mt-6")}>
-          选择练习场景
+        <Link href={empty.href} className={cn(buttonVariants(), "mt-6")}>
+          {empty.action}
           <ArrowRightIcon data-icon="inline-end" />
         </Link>
       </section>
@@ -173,6 +409,22 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
         <p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
           Moss 已根据你的找回难度重排复习时间。现在进入新场景，主动使用刚刚找回的表达。
         </p>
+        {reviewedTotal > 0 ? (
+          <section
+            aria-label="本组自评分布"
+            className="mt-5 flex flex-wrap items-center justify-center gap-2"
+          >
+            <span className="text-xs text-muted-foreground">本组共 {reviewedTotal} 条</span>
+            {ratings.map((rating) => (
+              <span
+                key={rating.value}
+                className="rounded-full border bg-background px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+              >
+                {rating.label} {ratingCounts[rating.value]}
+              </span>
+            ))}
+          </section>
+        ) : null}
         <Link
           href={
             completedFocus && completedTarget
@@ -191,7 +443,13 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
     )
   }
 
+  if (!item) {
+    return null
+  }
+
   const progress = ((index + (revealed ? 0.5 : 0)) / queue.length) * 100
+  const examMode = examQuestion !== null
+  const libraryItem = isLibraryExpressionMemoryItem(item)
 
   return (
     <section className="grid min-h-0 min-w-0 gap-4 lg:h-full lg:grid-cols-[220px_minmax(0,1fr)_260px] xl:grid-cols-[248px_minmax(0,1fr)_300px]">
@@ -222,66 +480,103 @@ export function ReviewWorkspace({ initialMemoryItemId }: { initialMemoryItemId?:
             className="mt-3"
             aria-label={`本组复习进度 ${Math.round(progress)}%`}
           />
+          <div className="mt-4 border-t pt-3">
+            <ReviewScopeSwitch
+              scope={scope}
+              scopes={availableScopes}
+              onChange={resetForScope}
+            />
+          </div>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-y">
           <div className="flex min-h-full flex-col justify-center px-5 py-9 md:px-12">
-            <div className="mx-auto w-full max-w-2xl text-center">
-              <p className="font-mono text-[10px] font-semibold uppercase text-primary">
-                Recall from context
-              </p>
-              <h2 className="mt-4 font-serif text-2xl font-semibold leading-10 md:text-3xl">
-                {item.cue}
-              </h2>
+            {examQuestion ? (
+              <ExpressionExamCard
+                key={item.id}
+                question={examQuestion}
+                chosenOptionId={examChoiceId}
+                answered={revealed}
+                onChoose={handleExamChoice}
+                onSkip={handleReveal}
+                onPlayExample={() => playText(examQuestion.example)}
+              />
+            ) : (
+              <div className="mx-auto w-full max-w-2xl text-center">
+                <p className="font-mono text-[10px] font-semibold uppercase text-primary">
+                  Recall from context
+                </p>
+                <h2 className="mt-4 font-serif text-2xl font-semibold leading-10 md:text-3xl">
+                  {item.cue}
+                </h2>
 
-              {revealed ? (
-                <div className="mt-8 border-y py-6">
-                  <p className="text-xs text-muted-foreground">推荐表达</p>
-                  <div className="mt-3 flex items-start justify-center gap-2">
-                    <p className="font-serif text-xl leading-8 md:text-2xl">{item.answer}</p>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="mt-0.5"
-                      aria-label="播放推荐表达"
-                      onClick={playAnswer}
-                    >
-                      <Volume2Icon />
-                    </Button>
+                {revealed ? (
+                  <div className="mt-8 border-y py-6">
+                    <p className="text-xs text-muted-foreground">推荐表达</p>
+                    <div className="mt-3 flex items-start justify-center gap-2">
+                      <p className="font-serif text-xl leading-8 md:text-2xl">{item.answer}</p>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="mt-0.5"
+                        aria-label="播放推荐表达"
+                        onClick={playAnswer}
+                      >
+                        <Volume2Icon />
+                      </Button>
+                    </div>
+                    <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+                      {item.explanation}
+                    </p>
                   </div>
-                  <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
-                    {item.explanation}
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-7 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                  <RotateCcwIcon className="size-4 text-primary" aria-hidden="true" />
-                  <span>先从情境中完整说出表达，再查看答案。</span>
-                </div>
-              )}
-            </div>
+                ) : (
+                  <div className="mt-7 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <RotateCcwIcon className="size-4 text-primary" aria-hidden="true" />
+                    <span>
+                      {libraryItem
+                        ? "先自己回想这条表达，再查看答案。"
+                        : "先从情境中完整说出表达，再查看答案。"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         <footer className="shrink-0 p-4">
           {revealed ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {ratings.map((rating) => (
-                <Button
-                  key={rating.value}
-                  variant={rating.variant}
-                  className="h-14 flex-col gap-0.5 py-2.5"
-                  onClick={() => handleRating(rating)}
-                >
-                  <span>{rating.label}</span>
-                  <span className="text-[10px] font-normal opacity-65">{rating.detail}</span>
-                </Button>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {ratings.map((rating) => (
+                  <Button
+                    key={rating.value}
+                    variant={rating.variant}
+                    className="h-14 flex-col gap-0.5 py-2.5"
+                    onClick={() => handleRating(rating)}
+                  >
+                    <span>{rating.label}</span>
+                    <span className="text-[10px] font-normal opacity-65">{rating.detail}</span>
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                键盘 1-4 可直接评分
+              </p>
+            </>
+          ) : examMode ? (
+            <p className="text-center text-xs text-muted-foreground">
+              选一个答案，作答后立即看到结果与释义。可用键盘 1-4 作答。
+            </p>
           ) : (
-            <Button className="w-full" size="lg" onClick={handleReveal}>
-              显示答案
-            </Button>
+            <>
+              <Button className="w-full" size="lg" onClick={handleReveal}>
+                显示答案
+              </Button>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                空格键也可显示答案
+              </p>
+            </>
           )}
         </footer>
       </div>

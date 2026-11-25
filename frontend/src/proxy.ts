@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr"
 import { type NextRequest, NextResponse } from "next/server"
 import { isDemoMode } from "@/lib/runtime-mode"
 import { getSupabasePublicConfig } from "@/lib/supabase/config"
+import { hasUsableSession } from "@/lib/supabase/session"
 
 function createLoginRedirect(request: NextRequest, error?: string) {
   const loginUrl = new URL("/login", request.url)
@@ -40,11 +41,7 @@ export async function proxy(request: NextRequest) {
       },
     },
   })
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!(await hasUsableSession(supabase))) {
     return createLoginRedirect(request)
   }
 

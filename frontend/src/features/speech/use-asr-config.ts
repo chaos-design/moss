@@ -42,18 +42,27 @@ function subscribe(listener: () => void) {
   }
 }
 
+// Module-level setter keeps the effective engine in sync for tests and for surfaces that
+// restore a per-service selection without going through the hook.
+export function setAsrConfig(update: (current: AsrEngine) => AsrEngine) {
+  cachedEngine = update(cachedEngine)
+  initialized = true
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(
+      asrConfigStorageKey,
+      JSON.stringify({ version: 1, engine: cachedEngine }),
+    )
+  }
+  for (const listener of listeners) {
+    listener()
+  }
+  return cachedEngine
+}
+
 export function useAsrConfig() {
   const engine = useSyncExternalStore(subscribe, getSnapshot, () => defaultAsrEngine)
   const selectEngine = useCallback((nextEngine: AsrEngine) => {
-    cachedEngine = nextEngine
-    initialized = true
-    window.localStorage.setItem(
-      asrConfigStorageKey,
-      JSON.stringify({ version: 1, engine: nextEngine }),
-    )
-    for (const listener of listeners) {
-      listener()
-    }
+    setAsrConfig(() => nextEngine)
   }, [])
   return { engine, selectEngine }
 }

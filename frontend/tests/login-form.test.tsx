@@ -7,10 +7,15 @@ import { getAuthErrorMessage, LoginForm } from "@/features/auth/login-form"
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   replace: vi.fn(),
+  locationReplace: vi.fn(),
   signInWithOAuth: vi.fn(),
   signInWithPassword: vi.fn(),
   signUp: vi.fn(),
 }))
+
+// jsdom 在 vitest 里允许重新定义 window.location；把它换成可观测的替身，
+// 用于断言登录跳转不会触发整页重载（同时提供 origin 给 callbackUrl 使用）。
+const originalLocation = Object.getOwnPropertyDescriptor(window, "location")
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }),
@@ -32,19 +37,49 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED", "false")
   mocks.refresh.mockReset()
   mocks.replace.mockReset()
+  mocks.locationReplace.mockReset()
   mocks.signInWithOAuth.mockReset()
   mocks.signInWithPassword.mockReset()
   mocks.signUp.mockReset().mockResolvedValue({ data: { session: null }, error: null })
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: {
+      origin: "http://localhost:3000",
+      href: "http://localhost:3000/login",
+      pathname: "/login",
+      replace: mocks.locationReplace,
+    },
+  })
 })
 
 afterEach(() => {
   cleanup()
   vi.unstubAllEnvs()
+  if (originalLocation) {
+    Object.defineProperty(window, "location", originalLocation)
+  }
 })
 
 describe("login form", () => {
+  function consentCheckbox() {
+    return screen.getByRole("checkbox", { name: "同意服务条款与隐私政策" })
+  }
+
+  function isConsentChecked() {
+    return consentCheckbox().getAttribute("aria-checked") === "true"
+  }
+
   function agreeToTerms() {
-    fireEvent.click(screen.getByRole("checkbox", { name: "同意服务条款与隐私政策" }))
+    fireEvent.click(consentCheckbox())
+  }
+
+  function fillCredentials() {
+    fireEvent.change(screen.getByLabelText("邮箱"), {
+      target: { value: "learner@example.com" },
+    })
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "long-password" },
+    })
   }
 
   it("uses the local callback URL for email confirmation", async () => {
@@ -68,6 +103,104 @@ describe("login form", () => {
             "http://localhost:3000/auth/callback?next=%2Fworkspace%2Fconversation%3Fscene%3Dmeeting",
         },
       })
+    })
+  })
+
+  it("enters the workspace after a successful sign-in without reloading the current page", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1", email: "learner@example.com" } } },
+      error: null,
+    })
+    render(<LoginForm nextPath="/workspace" />)
+    fireEvent.change(screen.getByLabelText("邮箱"), {
+      target: { value: "learner@example.com" },
+    })
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "long-password" },
+    })
+    agreeToTerms()
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+
+    await waitFor(() => {
+      expect(mocks.replace).toHaveBeenCalledWith("/workspace")
+    })
+    // 回归断言：用客户端软导航进入目标页，不整页重载，也不追加 refresh()。
+    expect(mocks.locationReplace).not.toHaveBeenCalled()
+    expect(mocks.refresh).not.toHaveBeenCalled()
+  })
+
+  it("keeps the pre-filled credentials from the built-in browser and still enters the workspace", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1", email: "learner@example.com" } } },
+      error: null,
+    })
+    render(<LoginForm nextPath="/workspace/conversation?scene=meeting" />)
+
+    // 复现内置浏览器场景：账号密码由浏览器预填（autofill）直接写入 DOM value，
+    // 不派发 change 事件。凭证必须原样提交，且不能被清空或要求重新输入。
+    const email = screen.getByLabelText("邮箱") as HTMLInputElement
+    const password = screen.getByLabelText("密码") as HTMLInputElement
+    email.value = "learner@example.com"
+    password.value = "long-password"
+    agreeToTerms()
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+
+    await waitFor(() => {
+      expect(mocks.signInWithPassword).toHaveBeenCalledWith({
+        email: "learner@example.com",
+        password: "long-password",
+      })
+      expect(mocks.replace).toHaveBeenCalledWith("/workspace/conversation?scene=meeting")
+    })
+    expect(email.value).toBe("learner@example.com")
+    expect(password.value).toBe("long-password")
+    expect(mocks.locationReplace).not.toHaveBeenCalled()
+    expect(mocks.refresh).not.toHaveBeenCalled()
+  })
+
+  it("does not navigate when sign-in fails", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: null },
+      error: { code: "invalid_credentials" },
+    })
+    render(<LoginForm nextPath="/workspace" />)
+    fillCredentials()
+    agreeToTerms()
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+
+    await waitFor(() => {
+      expect(mocks.signInWithPassword).toHaveBeenCalledTimes(1)
+    })
+    expect(mocks.locationReplace).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
+  it("does not navigate when no session was established", async () => {
+    mocks.signInWithPassword.mockResolvedValue({ data: { session: null }, error: null })
+    render(<LoginForm nextPath="/workspace" />)
+    fillCredentials()
+    agreeToTerms()
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+
+    await waitFor(() => {
+      expect(mocks.signInWithPassword).toHaveBeenCalledTimes(1)
+    })
+    expect(mocks.locationReplace).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the workspace when the post-login target is the login page itself", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1" } } },
+      error: null,
+    })
+    render(<LoginForm nextPath="/login" />)
+    fillCredentials()
+    agreeToTerms()
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+
+    await waitFor(() => {
+      expect(mocks.replace).toHaveBeenCalledWith("/workspace")
     })
   })
 
@@ -101,32 +234,80 @@ describe("login form", () => {
     expect(screen.getByRole("link", { name: "隐私政策" }).getAttribute("href")).toBe("/privacy")
   })
 
-  it("keeps login and register disabled until the terms are accepted", () => {
+  it("opens a consent dialog instead of disabling login before the terms are accepted", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1" } } },
+      error: null,
+    })
     render(<LoginForm nextPath="/workspace" />)
+    fillCredentials()
 
     const loginButton = screen.getByRole("button", { name: "进入学习空间" })
-    expect((loginButton as HTMLButtonElement).disabled).toBe(true)
+    // 按钮不再禁用：点击后用弹窗请求确认，而不是直接阻止交互。
+    expect((loginButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(loginButton)
 
-    fireEvent.click(screen.getByRole("tab", { name: "创建账户" }))
-    const registerButton = screen.getByRole("button", { name: "创建账户" })
-    expect((registerButton as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole("alertdialog")).toBeTruthy()
+    expect(screen.getByText("先同意服务条款与隐私政策")).toBeTruthy()
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
 
-    agreeToTerms()
-    expect(
-      (screen.getByRole("button", { name: "创建账户" }) as HTMLButtonElement).disabled,
-    ).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: "取消" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).toBeNull()
+    })
+    expect(isConsentChecked()).toBe(false)
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled()
   })
 
-  it("keeps Google login disabled until the terms are accepted", () => {
+  it("checks the agreement and signs in directly after confirming the consent dialog", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: "u1" } } },
+      error: null,
+    })
+    render(<LoginForm nextPath="/workspace" />)
+    fillCredentials()
+
+    fireEvent.click(screen.getByRole("button", { name: "进入学习空间" }))
+    fireEvent.click(screen.getByRole("button", { name: "同意并登录" }))
+
+    await waitFor(() => {
+      expect(mocks.replace).toHaveBeenCalledWith("/workspace")
+    })
+    expect(isConsentChecked()).toBe(true)
+    expect(screen.queryByRole("alertdialog")).toBeNull()
+  })
+
+  it("opens the consent dialog before Google login and continues after confirming", async () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED", "true")
+    mocks.signInWithOAuth.mockResolvedValue({ error: null })
     render(<LoginForm nextPath="/workspace" />)
 
     const googleButton = screen.getByRole("button", { name: /使用 Google 继续/ })
-    expect((googleButton as HTMLButtonElement).disabled).toBe(true)
+    expect((googleButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(googleButton)
 
-    agreeToTerms()
-    expect(
-      (screen.getByRole("button", { name: /使用 Google 继续/ }) as HTMLButtonElement).disabled,
-    ).toBe(false)
+    expect(screen.getByRole("alertdialog")).toBeTruthy()
+    expect(mocks.signInWithOAuth).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "同意并登录" }))
+
+    await waitFor(() => {
+      expect(mocks.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        options: {
+          redirectTo: "http://localhost:3000/auth/callback?next=%2Fworkspace",
+        },
+      })
+    })
+    expect(isConsentChecked()).toBe(true)
+  })
+
+  it("uses register wording in the consent dialog on the create-account tab", () => {
+    render(<LoginForm nextPath="/workspace" />)
+    fireEvent.click(screen.getByRole("tab", { name: "创建账户" }))
+    fillCredentials()
+    fireEvent.click(screen.getByRole("button", { name: "创建账户" }))
+    expect(screen.getByRole("button", { name: "同意并注册" })).toBeTruthy()
   })
 })

@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ReviewWorkspace } from "@/features/review/review-workspace"
+import { builtInExpressionItems } from "@/lib/expression-library"
 import {
   createDefaultLearningMemory,
   createEmptyLearningMemory,
+  createExpressionMemoryItemId,
+  getScopedReviewQueue,
+  type LearningMemoryItem,
   type LearningMemoryState,
   type LearningMemorySyncStatus,
+  reviewScopeStorageKey,
 } from "@/lib/memory"
 
 const mocks = vi.hoisted(() => ({
@@ -33,7 +38,36 @@ vi.mock("@/features/speech/use-local-tts", () => ({
   }),
 }))
 
+const reviewExpression = builtInExpressionItems[0]
+
+function expressionMemoryItem(): LearningMemoryItem {
+  if (!reviewExpression) {
+    throw new Error("Missing built-in expression")
+  }
+  return {
+    id: createExpressionMemoryItemId(reviewExpression.clientId),
+    kind: "expression",
+    label: reviewExpression.phrase,
+    cue: reviewExpression.meaning,
+    answer: reviewExpression.phrase,
+    explanation: reviewExpression.why,
+    sourceSceneId: reviewExpression.sceneCategory,
+    sourceSceneTitle: "社交关系",
+    transferTargets: [],
+    strength: 45,
+    encounters: 1,
+    successfulRecalls: 0,
+    lapseCount: 0,
+    intervalDays: 1,
+    easeFactor: 2.3,
+    repetitions: 0,
+    lastSeenAt: "2026-08-28T08:00:00.000Z",
+    nextReviewAt: "2026-08-28T08:00:00.000Z",
+  }
+}
+
 beforeEach(() => {
+  window.localStorage.clear()
   mocks.syncStatus = "local"
   mocks.rateReview.mockReset()
   mocks.recordRecallAttempt.mockReset()
@@ -62,7 +96,8 @@ describe("ReviewWorkspace", () => {
 
   it("records a recall attempt when the answer is revealed, not when it is rated", () => {
     render(<ReviewWorkspace />)
-    const focus = mocks.state?.items.find((item) => item.id === "clarify-trade-off")
+    // 队列首位由到期时间与强度决定，不再固定为某一条示例记忆。
+    const focus = mocks.state ? getScopedReviewQueue(mocks.state)[0] : undefined
     if (!focus) {
       throw new Error("Missing review memory")
     }
@@ -121,5 +156,176 @@ describe("ReviewWorkspace", () => {
     view.rerender(<ReviewWorkspace initialMemoryItemId="clarify-trade-off" />)
     expect(screen.queryByText("正在读取学习记忆")).toBeNull()
     expect(screen.getByText("在会议中请对方进一步解释一个取舍")).toBeTruthy()
+  })
+
+  it("separates idiomatic expression review from scene review", () => {
+    if (!mocks.state) {
+      throw new Error("Missing memory state")
+    }
+    mocks.state.items = [expressionMemoryItem(), ...mocks.state.items]
+
+    render(<ReviewWorkspace />)
+    const scopeGroup = screen.getAllByRole("group", { name: "复习范围" })[0]
+    if (!scopeGroup) {
+      throw new Error("Missing scope switch")
+    }
+
+    fireEvent.click(within(scopeGroup).getByRole("button", { name: "地道表达" }))
+    expect(screen.getByRole("button", { name: "地道表达" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    // 只有一条词库表达，场景记忆不会混进「地道表达」范围。
+    expect(screen.getByText("第 1 条，共 1 条")).toBeTruthy()
+    expect(screen.queryByText("在会议中请对方进一步解释一个取舍")).toBeNull()
+  })
+
+  it("only queues scene memories when the scene scope is active", () => {
+    if (!mocks.state) {
+      throw new Error("Missing memory state")
+    }
+    mocks.state.items = [expressionMemoryItem(), ...mocks.state.items]
+
+    render(<ReviewWorkspace />)
+    const scopeGroup = screen.getAllByRole("group", { name: "复习范围" })[0]
+    if (!scopeGroup) {
+      throw new Error("Missing scope switch")
+    }
+
+    fireEvent.click(within(scopeGroup).getByRole("button", { name: "场景" }))
+    const sceneCount = mocks.state
+      ? getScopedReviewQueue(mocks.state, { scope: "scene" }).length
+      : 0
+    expect(sceneCount).toBeGreaterThan(0)
+    expect(screen.getByText(`第 1 条，共 ${sceneCount} 条`)).toBeTruthy()
+    expect(screen.queryByText(reviewExpression.phrase)).toBeNull()
+    expect(screen.queryByText(reviewExpression.meaning)).toBeNull()
+  })
+
+  it("asks an exam question for a library expression and scores the answer", () => {
+    if (!mocks.state || !reviewExpression) {
+      throw new Error("Missing memory state")
+    }
+    const expressionItem = expressionMemoryItem()
+    mocks.state.items = [expressionItem]
+
+    render(<ReviewWorkspace initialMemoryItemId={expressionItem.id} />)
+
+    // 题干是英文表达，四个中文释义选项，作答前不显示答案。
+    expect(screen.getByRole("heading", { name: reviewExpression.phrase })).toBeTruthy()
+    expect(screen.getByText("选出最贴近的中文含义")).toBeTruthy()
+    const options = within(screen.getByRole("group", { name: "选项" })).getAllByRole("button")
+    expect(options).toHaveLength(4)
+    expect(screen.queryByRole("button", { name: /记得/ })).toBeNull()
+
+    const wrongOption = options.find(
+      (option) => !option.textContent?.includes(reviewExpression.meaning),
+    )
+    if (!wrongOption) {
+      throw new Error("Missing distractor option")
+    }
+    fireEvent.click(wrongOption)
+
+    expect(screen.getByText("这道题没有答对")).toBeTruthy()
+    expect(screen.getByText("正确答案：")).toBeTruthy()
+    // 目标表达在例句中被高亮，文本节点会被拆开，按段落整体文本断言。
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          (element.textContent ?? "").includes(reviewExpression.example),
+      ),
+    ).toBeTruthy()
+    expect(mocks.recordRecallAttempt).toHaveBeenCalledWith({
+      itemId: expressionItem.id,
+      elapsedMs: expect.any(Number),
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /记得/ }))
+    expect(mocks.rateReview).toHaveBeenCalledWith(expressionItem.id, "good")
+  })
+
+  it("supports the keyboard flow: space reveals, digits rate", () => {
+    render(<ReviewWorkspace />)
+    const focus = mocks.state ? getScopedReviewQueue(mocks.state)[0] : undefined
+    if (!focus) {
+      throw new Error("Missing review memory")
+    }
+
+    fireEvent.keyDown(window, { key: " " })
+    expect(mocks.recordRecallAttempt).toHaveBeenCalledTimes(1)
+    expect(mocks.rateReview).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(window, { key: "3" })
+    expect(mocks.rateReview).toHaveBeenCalledWith(focus.id, "good")
+  })
+
+  it("answers exam options from the keyboard and rates the result", () => {
+    const expressionItem = expressionMemoryItem()
+    if (!mocks.state) {
+      throw new Error("Missing memory state")
+    }
+    mocks.state.items = [expressionItem]
+
+    render(<ReviewWorkspace initialMemoryItemId={expressionItem.id} />)
+    // 考题未作答时 1-4 / A-D 直接选选项；作答后数字键切换为评分。
+    fireEvent.keyDown(window, { key: "a" })
+    expect(mocks.recordRecallAttempt).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(window, { key: "1" })
+    expect(mocks.rateReview).toHaveBeenCalledWith(expressionItem.id, "again")
+  })
+
+  it("summarizes the rating distribution on the completion screen", () => {
+    const requested = mocks.state?.items.find((item) => item.id === "clarify-trade-off")
+    if (!mocks.state || !requested) {
+      throw new Error("Missing requested review memory")
+    }
+    mocks.state = { ...mocks.state, items: [requested] }
+
+    render(<ReviewWorkspace initialMemoryItemId="clarify-trade-off" />)
+    fireEvent.click(screen.getByRole("button", { name: "显示答案" }))
+    fireEvent.click(screen.getByRole("button", { name: /记得/ }))
+
+    expect(screen.getByLabelText("本组自评分布")).toBeTruthy()
+    expect(screen.getByText("本组共 1 条")).toBeTruthy()
+    expect(screen.getByText("记得 1")).toBeTruthy()
+  })
+
+  it("hides the empty expression scope and falls back to mixed instead of trapping the learner", async () => {
+    // 默认学习记忆没有任何地道表达条目；持久化偏好指向「地道表达」。
+    window.localStorage.setItem(reviewScopeStorageKey, "expression")
+    render(<ReviewWorkspace />)
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "混合" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    )
+    // 空范围不渲染按钮，但不会困在里面：自动回退到混合，场景范围仍可直接切换。
+    expect(screen.queryByRole("button", { name: "地道表达" })).toBeNull()
+    expect(screen.getByRole("button", { name: "场景" })).toBeTruthy()
+    expect(screen.queryByText("还没有加入地道表达")).toBeNull()
+  })
+
+  it("keeps every scope button when each scope has data", () => {
+    const expressionItem = expressionMemoryItem()
+    if (!mocks.state) {
+      throw new Error("Missing memory state")
+    }
+    mocks.state = { ...mocks.state, items: [expressionItem, ...mocks.state.items] }
+    render(<ReviewWorkspace />)
+
+    expect(screen.getByRole("button", { name: "混合" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "地道表达" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "场景" })).toBeTruthy()
+  })
+
+  it("hides the whole scope filter when learning memory has no items at all", () => {
+    mocks.state = createEmptyLearningMemory(new Date("2026-08-29T08:00:00.000Z"))
+    render(<ReviewWorkspace />)
+
+    expect(screen.getByText("暂无真实复习记录")).toBeTruthy()
+    // 所有范围都为空时筛选没有意义：整行（含「复习范围」标签）都不渲染。
+    expect(screen.queryByText("复习范围")).toBeNull()
   })
 })

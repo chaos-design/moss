@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   createServerClient: vi.fn(),
   getSupabaseServerClient: vi.fn(),
+  getUser: vi.fn(),
+  getSession: vi.fn(),
 }))
 
 vi.mock("@supabase/ssr", () => ({
@@ -28,6 +30,8 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
   mocks.createServerClient.mockReset()
   mocks.getSupabaseServerClient.mockReset()
+  mocks.getUser.mockReset()
+  mocks.getSession.mockReset()
 })
 
 afterEach(() => {
@@ -70,6 +74,78 @@ describe("workspace authentication proxy", () => {
       "/workspace/review",
     )
     expect(allowed.headers.get("x-middleware-next")).toBe("1")
+  })
+
+  function mockAuthClient() {
+    mocks.createServerClient.mockReturnValue({
+      auth: { getUser: mocks.getUser, getSession: mocks.getSession },
+    })
+  }
+
+  it("lets a signed-in learner through when the server cannot reach Supabase Auth", async () => {
+    // 浏览器能登录，但 Node 的 fetch 不走本机代理：getUser() 报 fetch failed。
+    // 此时必须凭刚写入的会话 cookie 放行，否则 /workspace 被 307 弹回 /login，
+    // 跳转就表现为「只刷新当前页面，进不去系统页面」。
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co")
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable")
+    mockAuthClient()
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { name: "AuthRetryableFetchError", status: 0, message: "fetch failed" },
+    })
+    mocks.getSession.mockResolvedValue({ data: { session: { user: { id: "user-1" } } } })
+
+    const response = await proxy(createWorkspaceRequest())
+
+    expect(response.headers.get("x-middleware-next")).toBe("1")
+    expect(response.headers.get("location")).toBeNull()
+    expect(mocks.getSession).toHaveBeenCalledTimes(1)
+  })
+
+  it("still blocks invalid credentials instead of falling back to the local session", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co")
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable")
+    mockAuthClient()
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { name: "AuthApiError", status: 401, message: "invalid claim" },
+    })
+    mocks.getSession.mockResolvedValue({ data: { session: { user: { id: "user-1" } } } })
+
+    const response = await proxy(createWorkspaceRequest())
+
+    expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/login")
+    expect(mocks.getSession).not.toHaveBeenCalled()
+  })
+
+  it("keeps anonymous requests on the login page without any extra lookup", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co")
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable")
+    mockAuthClient()
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { name: "AuthSessionMissingError", status: 400, message: "Auth session missing!" },
+    })
+
+    const response = await proxy(createWorkspaceRequest())
+
+    expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/login")
+    expect(mocks.getSession).not.toHaveBeenCalled()
+  })
+
+  it("still redirects when the network is down and there is no local session", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co")
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable")
+    mockAuthClient()
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { name: "AuthRetryableFetchError", status: 0, message: "fetch failed" },
+    })
+    mocks.getSession.mockResolvedValue({ data: { session: null } })
+
+    const response = await proxy(createWorkspaceRequest())
+
+    expect(new URL(response.headers.get("location") ?? "").pathname).toBe("/login")
   })
 })
 

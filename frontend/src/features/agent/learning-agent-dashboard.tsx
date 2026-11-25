@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils"
 
 const stepIcons = {
   recall: RotateCcwIcon,
+  expression: BrainCircuitIcon,
   conversation: MessageCircleMoreIcon,
   shadowing: AudioLinesIcon,
 } satisfies Record<LearningPlanStep["id"], typeof RotateCcwIcon>

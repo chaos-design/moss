@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { AiProviderStatusError, getAiProviderConfig, requestAiText } from "@/lib/ai-provider"
+import { AiProviderStatusError, requestAiText } from "@/lib/ai-provider"
 import { removeMarkdownEmphasis } from "@/lib/conversation-feedback"
 import {
   decryptModelConfigEnvelope,
@@ -11,10 +11,11 @@ import {
   type BrowserModelConfig,
   isValidBrowserModelConfig,
   isValidModelConfigEnvelope,
-  toProviderConfig,
+  resolveProviderConfig,
 } from "@/lib/server/browser-model-config"
 import { consumeSharedRateLimit, isRateLimited } from "@/lib/server/rate-limit"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { resolveSessionUser } from "@/lib/supabase/session"
 
 type TranslationRequest = {
   text: string
@@ -91,18 +92,19 @@ export async function POST(request: Request) {
     }
     clientModelConfig = decrypted
   }
+  const { providerConfig, usingClientConfig } = resolveProviderConfig(clientModelConfig)
 
   const supabase = await getSupabaseServerClient()
-  if (!supabase && !clientModelConfig) {
+  if (!supabase && !usingClientConfig) {
     return NextResponse.json(
       { error: { code: "service_not_configured", message: "服务端认证尚未配置。" } },
       { status: 503 },
     )
   }
 
-  const authResult = supabase ? await supabase.auth.getUser() : null
-  const user = authResult?.data.user
-  if ((!user || authResult.error) && !clientModelConfig) {
+  const sessionUser = supabase ? await resolveSessionUser(supabase) : null
+  const user = sessionUser
+  if (!user && !usingClientConfig) {
     return NextResponse.json(
       { error: { code: "unauthorized", message: "请先登录后再使用翻译。" } },
       { status: 401 },
@@ -116,7 +118,7 @@ export async function POST(request: Request) {
           bucket: "translation",
         })
       : undefined
-  if (sharedRateLimit === null && !clientModelConfig) {
+  if (sharedRateLimit === null && !usingClientConfig) {
     return NextResponse.json(
       {
         error: {
@@ -127,7 +129,8 @@ export async function POST(request: Request) {
       { status: 503 },
     )
   }
-  const clientKey = user?.id ?? clientModelConfig?.baseUrl ?? "anonymous"
+  const clientKey =
+    user?.id ?? (usingClientConfig ? clientModelConfig?.baseUrl : undefined) ?? "anonymous"
   const rateLimited =
     sharedRateLimit?.limited ??
     isRateLimited({
@@ -142,9 +145,6 @@ export async function POST(request: Request) {
     )
   }
 
-  const providerConfig = clientModelConfig
-    ? toProviderConfig(clientModelConfig)
-    : getAiProviderConfig()
   if (!providerConfig) {
     return NextResponse.json(
       { error: { code: "service_not_configured", message: "AI 服务尚未配置。" } },

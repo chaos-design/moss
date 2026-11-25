@@ -48,14 +48,16 @@ afterEach(() => {
 })
 
 describe("WorkspaceHeader", () => {
-  it("collapses the brand wordmark below 380px so the sticky row fits the viewport", () => {
+  it("collapses the brand wordmark below sm so the sticky row fits a 390px viewport", () => {
     render(<WorkspaceHeader />)
 
     const header = screen.getByRole("banner")
     const brand = within(header).getByRole("link", { name: "Moss 学习首页" })
 
-    expect(brand.className).toContain("max-[380px]:[&>span:last-child]:hidden")
-    // 文字列仍保留在 DOM 中：低于 380px 只是视觉隐藏，而不是被移除。
+    // nowrap 的品牌全称作宽超过 170px：390px 视口下连「Moss」字样都会把整行撑到 480px，
+    // 因此文字列在 sm（640px）以下整体视觉隐藏，只留 32px 标记。
+    expect(brand.className).toContain("max-sm:[&>span:last-child]:hidden")
+    // 文字列仍保留在 DOM 中：低于 sm 只是视觉隐藏，而不是被移除。
     expect(brand.textContent).toContain("Moss")
   })
 
